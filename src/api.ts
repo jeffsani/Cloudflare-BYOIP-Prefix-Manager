@@ -122,6 +122,24 @@ export async function createServiceBinding(
   return r.json();
 }
 
+// --- Delete Service Binding ---
+
+export async function deleteServiceBinding(
+  accountId: string,
+  prefixId: string,
+  bindingId: string,
+  token: string,
+): Promise<CfApiResponse<null>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings/${bindingId}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    },
+  );
+  return r.json();
+}
+
 // --- BGP Advertisement Toggle ---
 
 export async function toggleBgpAdvertisement(
@@ -309,26 +327,14 @@ interface RipestatVisibilityResponse {
     }>;
     query_time: string;
     resource: string;
+    related_prefixes: string[];
   };
 }
 
-export async function lookupRipestatVisibility(prefix: string): Promise<RipestatVisibilityResult> {
-  const r = await fetchWithRetry(
-    `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
-    {
-      headers: {
-        Accept: 'application/json',
-        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
-      },
-    },
-  );
-  if (!r.ok) throw new Error(`RIPEstat visibility lookup failed: ${r.status}`);
-  const data = (await r.json()) as RipestatVisibilityResponse;
-
-  if (data.status !== 'ok' || !data.data?.visibilities) {
-    throw new Error('RIPEstat visibility data unavailable');
-  }
-
+function parseRipestatVisibility(
+  data: RipestatVisibilityResponse,
+  prefix: string,
+): { result: RipestatVisibilityResult; allNotSeeing: boolean } {
   const isIPv6 = prefix.includes(':');
   const rrcs: RipestatVisibilityResult['rrcs'] = [];
   let totalSeeing = 0;
@@ -358,12 +364,52 @@ export async function lookupRipestatVisibility(prefix: string): Promise<Ripestat
   }
 
   return {
-    rrcs,
-    total_seeing: totalSeeing,
-    total_peers: totalPeers,
-    visibility: totalPeers > 0 ? totalSeeing / totalPeers : 0,
-    query_time: data.data.query_time || '',
+    result: {
+      rrcs,
+      total_seeing: totalSeeing,
+      total_peers: totalPeers,
+      visibility: totalPeers > 0 ? totalSeeing / totalPeers : 0,
+      query_time: data.data.query_time || '',
+    },
+    allNotSeeing: totalPeers > 0 && totalSeeing === 0,
   };
+}
+
+async function fetchRipestatVisibility(resource: string): Promise<RipestatVisibilityResponse> {
+  const r = await fetchWithRetry(
+    `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(resource)}&sourceapp=network-tools`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+      },
+    },
+  );
+  if (!r.ok) throw new Error(`RIPEstat visibility lookup failed: ${r.status}`);
+  const data = (await r.json()) as RipestatVisibilityResponse;
+  if (data.status !== 'ok' || !data.data?.visibilities) {
+    throw new Error('RIPEstat visibility data unavailable');
+  }
+  return data;
+}
+
+export async function lookupRipestatVisibility(prefix: string): Promise<RipestatVisibilityResult> {
+  const data = await fetchRipestatVisibility(prefix);
+  const { result, allNotSeeing } = parseRipestatVisibility(data, prefix);
+
+  // If 0% visibility, the exact prefix may not be announced — RIPEstat requires
+  // an exact prefix match. Check related_prefixes and retry with the first match.
+  if (allNotSeeing && data.data.related_prefixes?.length > 0) {
+    const related = data.data.related_prefixes[0];
+    const retryData = await fetchRipestatVisibility(related);
+    const retry = parseRipestatVisibility(retryData, related);
+    // Tag the result so the UI knows we used a related prefix
+    retry.result.query_time = (retry.result.query_time || '') +
+      ' (using related prefix ' + related + ')';
+    return retry.result;
+  }
+
+  return result;
 }
 
 // --- RDAP / Whois Lookup ---
