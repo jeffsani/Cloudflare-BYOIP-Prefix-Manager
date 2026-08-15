@@ -81,7 +81,7 @@ export function renderDashboard(userEmail: string): string {
     .rdap-tip { display: none; position: fixed; z-index: 9999; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
     .validation-hover { position: relative; display: inline-block; cursor: help; }
-    .validation-tip { display: none; position: absolute; z-index: 70; top: 100%; left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: auto; }
+    .validation-tip { display: none; position: fixed; z-index: 9999; min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: auto; }
     .validation-tip::before { content: ''; position: absolute; bottom: 100%; left: 0; right: 0; height: 6px; }
     .validation-hover:hover .validation-tip { display: block; }
     .rdap-row { display: flex; gap: 6px; }
@@ -164,6 +164,14 @@ export function renderDashboard(userEmail: string): string {
     .lg-chip-tip { position: relative; }
     .lg-chip-tip .lg-chip-tiptext { display: none; position: absolute; z-index: 60; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 10px; white-space: nowrap; color: var(--text-primary); pointer-events: none; }
     .lg-chip-tip:hover .lg-chip-tiptext { display: block; }
+    .al-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; white-space: nowrap; }
+    .al-badge-green { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .al-badge-red { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+    .al-badge-blue { background: rgba(59,130,246,0.15); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); }
+    .al-badge-yellow { background: rgba(234,179,8,0.15); color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
+    .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
+    .al-row { border-bottom: 1px solid var(--border); }
+    .al-row:last-child { border-bottom: none; }
   </style>
 </head>
 <body class="font-sans min-h-screen">
@@ -295,7 +303,7 @@ export function renderDashboard(userEmail: string): string {
     </div>
 
     <!-- Stats Row -->
-    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
       <div class="panel p-3 text-center">
         <div id="stat-total" class="text-xl font-bold" style="color:var(--text-strong)">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Total Prefixes</div>
@@ -315,6 +323,16 @@ export function renderDashboard(userEmail: string): string {
         <div id="stat-locked" class="text-xl font-bold text-yellow-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Locked</div>
         <div id="stat-locked-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
+      </div>
+      <div class="panel p-3 text-center">
+        <div id="stat-irr" class="text-xl font-bold text-green-400">0</div>
+        <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">IRR</div>
+        <div id="stat-irr-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
+      </div>
+      <div class="panel p-3 text-center">
+        <div id="stat-rpki" class="text-xl font-bold text-green-400">0</div>
+        <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">RPKI</div>
+        <div id="stat-rpki-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
     </div>
 
@@ -361,6 +379,27 @@ export function renderDashboard(userEmail: string): string {
         </table>
       </div>
       <div id="pagination-controls" class="hidden border-t border-cf-border px-4 py-3 flex items-center justify-between"></div>
+    </div>
+
+    <!-- Activity Log Panel -->
+    <div id="activity-log-panel" class="panel overflow-hidden mt-4">
+      <div onclick="toggleActivityLog()" class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-[rgba(246,130,31,0.05)] transition">
+        <div class="flex items-center gap-2">
+          <span id="activity-log-chevron" class="chevron text-cf-gray text-xs">&#9654;</span>
+          <svg class="w-4 h-4 text-cf-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+          <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Activity Log</h3>
+          <span id="activity-log-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
+        </div>
+        <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
+      </div>
+      <div id="activity-log-body" class="hidden" style="border-top:1px solid var(--border)">
+        <div id="activity-log-content">
+          <div class="px-4 py-8 text-center text-cf-gray text-xs">
+            <div class="spinner" style="margin:0 auto 8px"></div>
+            Loading activity log...
+          </div>
+        </div>
+      </div>
     </div>
   </main>
 
@@ -583,6 +622,8 @@ export function renderDashboard(userEmail: string): string {
     var pendingDeleteDelegation = null;
     var currentPage = 1;
     var pageSize = 25;
+    var activityLogLoaded = false;
+    var activityLogExpanded = false;
 
     // ─── Tooltip Positioning (fixed, escapes overflow:hidden) ────
     function positionTooltip(triggerEl, tipEl) {
@@ -603,7 +644,7 @@ export function renderDashboard(userEmail: string): string {
       });
     }
 
-    document.addEventListener('mouseenter', function(e) {
+    document.addEventListener('mouseover', function(e) {
       var infoTip = e.target.closest('.info-tip');
       if (infoTip) {
         var bubble = infoTip.querySelector('.info-bubble');
@@ -622,7 +663,7 @@ export function renderDashboard(userEmail: string): string {
         if (tip) positionTooltip(cidrHover, tip);
         return;
       }
-    }, true);
+    });
 
     document.addEventListener('focusin', function(e) {
       var infoTip = e.target.closest('.info-tip');
@@ -630,7 +671,7 @@ export function renderDashboard(userEmail: string): string {
         var bubble = infoTip.querySelector('.info-bubble');
         if (bubble) positionTooltip(infoTip, bubble);
       }
-    }, true);
+    });
 
     // ─── Init ─────────────────────────────────────────────────────
     (function init() {
@@ -844,6 +885,12 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' Parent / ' + s.bgp.withdrawn + ' Child';
         document.getElementById('stat-locked').textContent = s.parent.locked;
         document.getElementById('stat-locked-sub').textContent = 'Parent only';
+        document.getElementById('stat-irr').textContent = s.irr.valid;
+        document.getElementById('stat-irr-sub').textContent = s.irr.valid + ' Valid / ' + s.irr.invalid + ' Issues';
+        document.getElementById('stat-irr').className = 'text-xl font-bold ' + (s.irr.invalid > 0 ? 'text-yellow-400' : 'text-green-400');
+        document.getElementById('stat-rpki').textContent = s.rpki.valid;
+        document.getElementById('stat-rpki-sub').textContent = s.rpki.valid + ' Valid / ' + s.rpki.invalid + ' Issues';
+        document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (s.rpki.invalid > 0 ? 'text-yellow-400' : 'text-green-400');
       } else {
         var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
         var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
@@ -856,6 +903,16 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-withdrawn-sub').textContent = '';
         document.getElementById('stat-locked').textContent = locked;
         document.getElementById('stat-locked-sub').textContent = '';
+        var irrValid = allPrefixes.filter(function(p) { return (p.irr_validation_state || '').toLowerCase() === 'valid'; }).length;
+        var irrInvalid = allPrefixes.filter(function(p) { var s = (p.irr_validation_state || '').toLowerCase(); return s === 'invalid' || s === 'mismatch_asn' || s === 'missing'; }).length;
+        document.getElementById('stat-irr').textContent = irrValid;
+        document.getElementById('stat-irr-sub').textContent = irrValid + ' Valid / ' + irrInvalid + ' Issues';
+        document.getElementById('stat-irr').className = 'text-xl font-bold ' + (irrInvalid > 0 ? 'text-yellow-400' : 'text-green-400');
+        var rpkiValid = allPrefixes.filter(function(p) { return (p.rpki_validation_state || '').toLowerCase() === 'valid'; }).length;
+        var rpkiInvalid = allPrefixes.filter(function(p) { var s = (p.rpki_validation_state || '').toLowerCase(); return s === 'invalid' || s === 'mismatch_asn' || s === 'missing'; }).length;
+        document.getElementById('stat-rpki').textContent = rpkiValid;
+        document.getElementById('stat-rpki-sub').textContent = rpkiValid + ' Valid / ' + rpkiInvalid + ' Issues';
+        document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (rpkiInvalid > 0 ? 'text-yellow-400' : 'text-green-400');
       }
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
     }
@@ -1217,6 +1274,7 @@ export function renderDashboard(userEmail: string): string {
           if (!expandedRows[t.prefixId]) {
             toggleRow(t.prefixId);
           }
+          refreshActivityLog();
         } else {
           alert('Toggle failed: ' + (data.error || 'Unknown error'));
         }
@@ -1282,6 +1340,7 @@ export function renderDashboard(userEmail: string): string {
         // Refresh
         delete childData[t.prefixId];
         loadPrefixes();
+        refreshActivityLog();
       } catch (e) {
         alert('Toggle failed: ' + e);
       }
@@ -1337,6 +1396,7 @@ export function renderDashboard(userEmail: string): string {
           // Update local data
           if (prefix) prefix.description = newDesc;
           renderPrefixTable();
+          refreshActivityLog();
         } else {
           alert('Failed to update description: ' + (data.error || 'Unknown error'));
           cancelEditDescription(prefixId);
@@ -1483,6 +1543,7 @@ export function renderDashboard(userEmail: string): string {
           // Refresh data
           clearSelection();
           loadPrefixes();
+          refreshActivityLog();
         } else {
           alert('Bulk toggle failed: ' + (data.error || 'Unknown error'));
         }
@@ -1843,6 +1904,7 @@ export function renderDashboard(userEmail: string): string {
           delete childData[prefixId];
           expandedRows[prefixId] = false;
           setTimeout(function() { toggleRow(prefixId); }, 100);
+          refreshActivityLog();
         } else {
           var errEl = document.getElementById('child-prefix-error');
           errEl.textContent = data.error || 'Failed to create child prefix';
@@ -2120,6 +2182,7 @@ export function renderDashboard(userEmail: string): string {
           delete childData[prefixId];
           expandedRows[prefixId] = false;
           setTimeout(function() { toggleRow(prefixId); }, 100);
+          refreshActivityLog();
         } else {
           var errEl = document.getElementById('binding-error');
           errEl.textContent = data.error || 'Failed to create binding';
@@ -2169,6 +2232,7 @@ export function renderDashboard(userEmail: string): string {
           delete childData[d.prefixId];
           expandedRows[d.prefixId] = false;
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          refreshActivityLog();
         } else {
           alert('Delete failed: ' + (data.error || 'Unknown error'));
           btn.disabled = false;
@@ -2280,6 +2344,7 @@ export function renderDashboard(userEmail: string): string {
           delete childData[prefixId];
           expandedRows[prefixId] = false;
           setTimeout(function() { toggleRow(prefixId); }, 100);
+          refreshActivityLog();
         } else {
           var errEl = document.getElementById('delegation-error');
           errEl.textContent = data.error || 'Failed to create delegation';
@@ -2328,6 +2393,7 @@ export function renderDashboard(userEmail: string): string {
           delete childData[d.prefixId];
           expandedRows[d.prefixId] = false;
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          refreshActivityLog();
         } else {
           alert('Delete failed: ' + (data.error || 'Unknown error'));
           btn.disabled = false;
@@ -2452,6 +2518,7 @@ export function renderDashboard(userEmail: string): string {
         var data = await resp.json();
         if (data.ok) {
           loadPrefixes();
+          refreshActivityLog();
         } else {
           alert('Validation failed: ' + (data.error || 'Unknown error'));
         }
@@ -3395,6 +3462,105 @@ export function renderDashboard(userEmail: string): string {
         return '<span class="validation-hover">' + badge + '<span class="validation-tip">' + tip + '</span></span>';
       }
       return badge;
+    }
+
+    // ─── Activity Log ───────────────────────────────────────────
+    function toggleActivityLog() {
+      activityLogExpanded = !activityLogExpanded;
+      var body = document.getElementById('activity-log-body');
+      var chevron = document.getElementById('activity-log-chevron');
+      var hint = document.getElementById('activity-log-hint');
+      if (activityLogExpanded) {
+        body.classList.remove('hidden');
+        chevron.classList.add('open');
+        if (hint) hint.textContent = 'Click to collapse';
+        if (!activityLogLoaded) loadActivityLog();
+      } else {
+        body.classList.add('hidden');
+        chevron.classList.remove('open');
+        if (hint) hint.textContent = 'Click to expand';
+      }
+    }
+
+    async function loadActivityLog() {
+      try {
+        var resp = await fetch('/api/activity');
+        var data = await resp.json();
+        activityLogLoaded = true;
+        renderActivityLog(data.activity || []);
+      } catch (e) {
+        document.getElementById('activity-log-content').innerHTML =
+          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load activity log</div>';
+      }
+    }
+
+    function refreshActivityLog() {
+      if (activityLogExpanded) loadActivityLog();
+    }
+
+    function formatActionBadge(action) {
+      var map = {
+        'advertise': { label: 'Advertised', css: 'al-badge-green' },
+        'withdraw': { label: 'Withdrawn', css: 'al-badge-red' },
+        'bulk_advertise': { label: 'Bulk Advertised', css: 'al-badge-green' },
+        'bulk_withdraw': { label: 'Bulk Withdrawn', css: 'al-badge-red' },
+        'create_bgp_prefix': { label: 'Created BGP Prefix', css: 'al-badge-blue' },
+        'create_binding': { label: 'Created Binding', css: 'al-badge-blue' },
+        'delete_binding': { label: 'Deleted Binding', css: 'al-badge-red' },
+        'create_delegation': { label: 'Created Delegation', css: 'al-badge-blue' },
+        'delete_delegation': { label: 'Deleted Delegation', css: 'al-badge-red' },
+        'update_description': { label: 'Updated Description', css: 'al-badge-gray' },
+        'validate': { label: 'Validated', css: 'al-badge-yellow' }
+      };
+      var info = map[action] || { label: action, css: 'al-badge-gray' };
+      return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';
+    }
+
+    function formatActivityTime(dateStr) {
+      try {
+        var d = new Date(dateStr + (dateStr.endsWith('Z') ? '' : 'Z'));
+        return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
+          ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return dateStr;
+      }
+    }
+
+    function renderActivityLog(entries) {
+      var countEl = document.getElementById('activity-log-count');
+      if (countEl) {
+        countEl.textContent = entries.length;
+        countEl.classList.toggle('hidden', entries.length === 0);
+      }
+
+      if (entries.length === 0) {
+        document.getElementById('activity-log-content').innerHTML =
+          '<div class="px-4 py-8 text-center text-cf-gray text-xs">' +
+          '<svg class="w-6 h-6 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>' +
+          'No activity recorded yet</div>';
+        return;
+      }
+
+      var html = '<table class="w-full text-xs">' +
+        '<thead><tr class="border-b border-cf-border text-left">' +
+        '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Date / Time</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">Action</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Details</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">User</th>' +
+        '</tr></thead><tbody>';
+
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        html += '<tr class="al-row">' +
+          '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
+          '<td class="px-3 py-2.5">' + formatActionBadge(e.action) + '</td>' +
+          '<td class="px-3 py-2.5" style="color:var(--text-primary)">' + escHtml(e.details) + '</td>' +
+          '<td class="px-3 py-2.5 text-cf-gray font-mono">' + escHtml(e.user_email) + '</td>' +
+          '</tr>';
+      }
+
+      html += '</tbody></table>';
+      document.getElementById('activity-log-content').innerHTML = html;
     }
 
     function escHtml(s) {

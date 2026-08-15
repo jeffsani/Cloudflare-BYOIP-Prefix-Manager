@@ -58,6 +58,10 @@ async function logActivity(db: D1Database, email: string, action: string, detail
       .prepare('INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)')
       .bind(email, action, details)
       .run();
+    // Prune entries older than 180 days
+    await db
+      .prepare("DELETE FROM activity_log WHERE created_at < datetime('now', '-180 days')")
+      .run();
   } catch (e) {
     console.error('Failed to log activity:', e);
   }
@@ -303,6 +307,16 @@ app.get('/api/prefixes/stats', async (c) => {
         total: allBgpPrefixes.length,
         advertised: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === true).length,
         withdrawn: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === false).length,
+      },
+      irr: {
+        valid: prefixes.filter((p) => p.irr_validation_state?.toLowerCase() === 'valid').length,
+        invalid: prefixes.filter((p) => ['invalid', 'mismatch_asn', 'missing'].includes(p.irr_validation_state?.toLowerCase())).length,
+        pending: prefixes.filter((p) => p.irr_validation_state?.toLowerCase() === 'pending').length,
+      },
+      rpki: {
+        valid: prefixes.filter((p) => p.rpki_validation_state?.toLowerCase() === 'valid').length,
+        invalid: prefixes.filter((p) => ['invalid', 'mismatch_asn', 'missing'].includes(p.rpki_validation_state?.toLowerCase())).length,
+        pending: prefixes.filter((p) => p.rpki_validation_state?.toLowerCase() === 'pending').length,
       },
       per_prefix: perPrefix,
     };
