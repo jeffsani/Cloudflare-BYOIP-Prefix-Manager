@@ -237,6 +237,7 @@ export function renderDashboard(userEmail: string): string {
         <table class="w-full text-xs">
           <thead>
             <tr class="border-b border-cf-border text-left">
+              <th class="px-2 py-2.5 text-cf-gray font-medium w-8"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" style="cursor:pointer;accent-color:#F6821F"></th>
               <th class="px-3 py-2.5 text-cf-gray font-medium w-8"></th>
               <th class="px-2 py-2.5 text-cf-gray font-medium w-8"></th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">Prefix (CIDR)</th>
@@ -249,7 +250,7 @@ export function renderDashboard(userEmail: string): string {
             </tr>
           </thead>
           <tbody id="prefix-table-body">
-            <tr><td colspan="9" class="px-4 py-12 text-center text-cf-gray">
+            <tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray">
               <div class="flex flex-col items-center gap-2">
                 <svg class="w-8 h-8 text-cf-gray opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/></svg>
                 <span>Configure an account in Settings to view BYOIP prefixes</span>
@@ -598,21 +599,21 @@ export function renderDashboard(userEmail: string): string {
     async function loadPrefixes() {
       if (!activeAccountId) return;
       var tbody = document.getElementById('prefix-table-body');
-      tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
       expandedRows = {};
       childData = {};
       try {
         var resp = await fetch('/api/prefixes?account_id=' + activeAccountId);
         var data = await resp.json();
         if (data.error) {
-          tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-red-400">' + escHtml(data.error) + '</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">' + escHtml(data.error) + '</td></tr>';
           return;
         }
         allPrefixes = data.prefixes || [];
         updateStats();
         applyFilters();
       } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-red-400">Failed to load: ' + escHtml(String(e)) + '</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">Failed to load: ' + escHtml(String(e)) + '</td></tr>';
       }
     }
 
@@ -651,7 +652,7 @@ export function renderDashboard(userEmail: string): string {
     function renderPrefixTable() {
       var tbody = document.getElementById('prefix-table-body');
       if (filteredPrefixes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="px-4 py-8 text-center text-cf-gray">No prefixes match the current filters</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-cf-gray">No prefixes match the current filters</td></tr>';
         return;
       }
 
@@ -673,8 +674,29 @@ export function renderDashboard(userEmail: string): string {
       var statusBadge = statusBadgeHtml(p.advertised);
       var irrBadge = validationBadge(p.irr_validation_state);
       var rpkiBadge = validationBadge(p.rpki_validation_state);
+      var isChecked = selectedPrefixes.has(p.id);
+
+      // Parent-level toggle button
+      var parentToggleHtml = '';
+      if (p.on_demand_enabled) {
+        var isAdv = p.advertised === true;
+        parentToggleHtml = '<button class="toggle-btn' + (isAdv ? ' active' : '') + '"' +
+          (p.on_demand_locked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + (isAdv ? 'false' : 'true') + ',\\'' + escAttr(p.cidr) + '\\')"' + ' title="' + (isAdv ? 'Withdraw' : 'Advertise') + ' prefix"') +
+          '><span class="toggle-knob"></span></button>';
+      }
+
+      // Description with inline edit
+      var descHtml = '<span id="desc-display-' + escAttr(p.id) + '">' +
+        '<span class="desc-text">' + escHtml(p.description || '—') + '</span>' +
+        '<button onclick="event.stopPropagation();startEditDescription(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.description || '') + '\\')" class="text-cf-gray hover:text-cf-orange ml-1 inline-flex align-middle" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+        '</span>' +
+        '<span id="desc-edit-' + escAttr(p.id) + '" class="hidden">' +
+          '<input type="text" value="' + escAttr(p.description || '') + '" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none w-40" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveDescription(\\'' + escAttr(p.id) + '\\',this.value)}else if(event.key===\\'Escape\\'){cancelEditDescription(\\'' + escAttr(p.id) + '\\')}" onblur="saveDescription(\\'' + escAttr(p.id) + '\\',this.value)">' +
+          '<span id="desc-spinner-' + escAttr(p.id) + '" class="hidden ml-1"><span class="spinner" style="width:12px;height:12px"></span></span>' +
+        '</span>';
 
       return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + p.id + '\\')">' +
+        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked ? 'checked' : '') + ' onchange="updateBulkSelection()" style="cursor:pointer;accent-color:#F6821F"></td>' +
         '<td class="px-3 py-2.5"><span class="' + chevClass + '" style="font-size:16px">&#9656;</span></td>' +
         '<td class="px-2 py-2.5">' + lockIcon + '</td>' +
         '<td class="px-3 py-2.5 font-mono font-medium" style="color:var(--text-strong)"><span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(p.cidr) + '\\',this)">' + escHtml(p.cidr) + '<span class="rdap-tip"></span></span></td>' +
@@ -682,8 +704,9 @@ export function renderDashboard(userEmail: string): string {
         '<td class="px-3 py-2.5">' + statusBadge + '</td>' +
         '<td class="px-3 py-2.5">' + irrBadge + '</td>' +
         '<td class="px-3 py-2.5">' + rpkiBadge + '</td>' +
-        '<td class="px-3 py-2.5 text-cf-gray max-w-[200px] truncate" title="' + escAttr(p.description || '') + '">' + escHtml(p.description || '—') + '</td>' +
-        '<td class="px-3 py-2.5 flex gap-1">' +
+        '<td class="px-3 py-2.5 text-cf-gray max-w-[200px] truncate">' + descHtml + '</td>' +
+        '<td class="px-3 py-2.5 flex gap-1 items-center">' +
+          parentToggleHtml +
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg></button>' +
@@ -737,7 +760,7 @@ export function renderDashboard(userEmail: string): string {
         }
       }
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
-        html += '<tr class="child-row border-b border-cf-border"><td colspan="9" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
+        html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
       // Add binding row
       var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });

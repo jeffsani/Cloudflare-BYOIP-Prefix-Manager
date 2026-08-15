@@ -177,6 +177,25 @@ export async function verifyTokenPermissions(
   return results;
 }
 
+// --- Update Prefix Description ---
+
+export async function updatePrefixDescription(
+  accountId: string,
+  prefixId: string,
+  description: string,
+  token: string,
+): Promise<CfApiResponse<CfPrefix>> {
+  const r = await fetch(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(token),
+      body: JSON.stringify({ description }),
+    },
+  );
+  return r.json();
+}
+
 // --- Prefix Validation ---
 
 export async function validatePrefix(

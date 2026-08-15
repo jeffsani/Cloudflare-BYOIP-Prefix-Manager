@@ -9,6 +9,7 @@ import {
   listServices,
   createServiceBinding,
   toggleBgpAdvertisement,
+  updatePrefixDescription,
   validatePrefix,
   verifyTokenPermissions,
   lookupBgpRoutes,
@@ -498,6 +499,125 @@ app.post('/api/prefixes/:prefixId/bgp/:bgpPrefixId/toggle', async (c) => {
     );
 
     return c.json({ ok: true, bgp_prefix: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Update prefix description
+app.patch('/api/prefixes/:prefixId/description', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ description: string; account_id?: string }>();
+  const prefixId = c.req.param('prefixId');
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const data = await updatePrefixDescription(acct.account_id, prefixId, body.description ?? '', token);
+
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'update_description',
+      `Updated description for prefix ${data.result?.cidr || prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, prefix: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Bulk toggle BGP advertisement for multiple prefixes
+app.post('/api/prefixes/bulk-toggle', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ prefix_ids: string[]; advertised: boolean; account_id?: string }>();
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  if (!body.prefix_ids || body.prefix_ids.length === 0) {
+    return c.json({ error: 'prefix_ids array is required' }, 400);
+  }
+
+  try {
+    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const results: Array<{
+      prefix_id: string;
+      cidr: string;
+      toggled: number;
+      skipped: number;
+      errors: string[];
+    }> = [];
+
+    for (const prefixId of body.prefix_ids) {
+      const result = { prefix_id: prefixId, cidr: '', toggled: 0, skipped: 0, errors: [] as string[] };
+
+      try {
+        // Fetch BGP sub-prefixes for this prefix
+        const bgpData = await listBgpPrefixes(acct.account_id, prefixId, token);
+        if (!bgpData.success || !bgpData.result) {
+          result.errors.push(bgpData.errors?.[0]?.message || 'Failed to fetch BGP prefixes');
+          results.push(result);
+          continue;
+        }
+
+        for (const bp of bgpData.result) {
+          if (!result.cidr && bp.cidr) result.cidr = bp.cidr;
+
+          if (!bp.on_demand?.on_demand_enabled || bp.on_demand?.on_demand_locked) {
+            result.skipped++;
+            continue;
+          }
+
+          // Skip if already in desired state
+          if (bp.on_demand?.advertised === body.advertised) {
+            result.skipped++;
+            continue;
+          }
+
+          try {
+            const toggleData = await toggleBgpAdvertisement(
+              acct.account_id,
+              prefixId,
+              bp.id,
+              body.advertised,
+              token,
+            );
+            if (toggleData.success) {
+              result.toggled++;
+            } else {
+              result.errors.push(
+                `${bp.cidr}: ${toggleData.errors?.[0]?.message || 'Toggle failed'}`,
+              );
+            }
+          } catch (err) {
+            result.errors.push(`${bp.cidr}: ${err instanceof Error ? err.message : 'Toggle failed'}`);
+          }
+        }
+      } catch (err) {
+        result.errors.push(err instanceof Error ? err.message : 'Failed to process prefix');
+      }
+
+      results.push(result);
+    }
+
+    // Log activity
+    const action = body.advertised ? 'bulk_advertise' : 'bulk_withdraw';
+    const totalToggled = results.reduce((sum, r) => sum + r.toggled, 0);
+    const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
+    await logActivity(
+      c.env.DB,
+      email,
+      action,
+      `Bulk ${body.advertised ? 'advertise' : 'withdraw'}: ${totalToggled} toggled, ${totalSkipped} skipped across ${body.prefix_ids.length} prefixes in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, results });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
