@@ -298,6 +298,39 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Add Service Binding Modal -->
+  <div id="binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBindingModal()">
+    <div class="modal-content" style="max-width:480px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Service Binding</h3>
+        <p id="binding-modal-prefix" class="text-xs text-cf-gray mt-0.5 font-mono"></p>
+      </div>
+      <div class="p-4">
+        <p class="text-[10px] text-cf-gray mb-3">Route traffic for a CIDR range within this prefix to a Cloudflare service. Changes take 4–6 hours to propagate.</p>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Service</label>
+          <select id="binding-service" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            <option value="">Loading services...</option>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">CIDR</label>
+          <div class="flex gap-2">
+            <input id="binding-ip" type="text" placeholder="IP address" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+            <span class="text-cf-gray self-center">/</span>
+            <select id="binding-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+          </div>
+        </div>
+        <div id="binding-validation" class="text-[10px] mb-3 hidden"></div>
+        <div id="binding-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="binding-submit-btn" onclick="submitBinding()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Binding</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ─── State ────────────────────────────────────────────────────
     var savedAccounts = [];
@@ -309,6 +342,8 @@ export function renderDashboard(userEmail: string): string {
     var pendingToggle = null;
     var expandedAccountTokens = {};
     var rdapCache = {};
+    var servicesCache = {};
+    var bindingModalContext = null;
 
     // ─── Init ─────────────────────────────────────────────────────
     (function init() {
@@ -651,6 +686,7 @@ export function renderDashboard(userEmail: string): string {
         '<td class="px-3 py-2.5 flex gap-1">' +
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
+          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg></button>' +
         '</td>' +
       '</tr>';
     }
@@ -703,6 +739,18 @@ export function renderDashboard(userEmail: string): string {
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
         html += '<tr class="child-row border-b border-cf-border"><td colspan="9" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
+      // Add binding row
+      var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
+      var parentCidr = parentPrefix ? parentPrefix.cidr : '';
+      html += '<tr class="child-row border-b border-cf-border">' +
+        '<td class="px-3"></td><td class="px-2"></td>' +
+        '<td class="px-3 pl-8" colspan="7">' +
+          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
+            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
+            'Add Service Binding' +
+          '</button>' +
+        '</td>' +
+      '</tr>';
       return html;
     }
 
@@ -778,6 +826,255 @@ export function renderDashboard(userEmail: string): string {
         }
       } catch (e) {
         alert('Toggle failed: ' + e);
+      }
+    }
+
+    // ─── Service Binding Modal ─────────────────────────────────────
+
+    // CIDR / IP math helpers using BigInt for IPv6 support
+    function isIPv6(cidr) { return cidr.indexOf(':') !== -1; }
+
+    function parseIPv4(ip) {
+      var parts = ip.split('.');
+      if (parts.length !== 4) return null;
+      var n = BigInt(0);
+      for (var i = 0; i < 4; i++) {
+        var v = parseInt(parts[i], 10);
+        if (isNaN(v) || v < 0 || v > 255) return null;
+        n = (n << BigInt(8)) | BigInt(v);
+      }
+      return n;
+    }
+
+    function parseIPv6(ip) {
+      // Expand :: shorthand
+      var halves = ip.split('::');
+      var groups = [];
+      if (halves.length > 2) return null;
+      if (halves.length === 2) {
+        var left = halves[0] ? halves[0].split(':') : [];
+        var right = halves[1] ? halves[1].split(':') : [];
+        var missing = 8 - left.length - right.length;
+        if (missing < 0) return null;
+        groups = left.slice();
+        for (var m = 0; m < missing; m++) groups.push('0');
+        groups = groups.concat(right);
+      } else {
+        groups = ip.split(':');
+      }
+      if (groups.length !== 8) return null;
+      var n = BigInt(0);
+      for (var i = 0; i < 8; i++) {
+        var v = parseInt(groups[i] || '0', 16);
+        if (isNaN(v) || v < 0 || v > 0xFFFF) return null;
+        n = (n << BigInt(16)) | BigInt(v);
+      }
+      return n;
+    }
+
+    function parseCIDR(cidr) {
+      var parts = cidr.split('/');
+      if (parts.length !== 2) return null;
+      var maskLen = parseInt(parts[1], 10);
+      if (isNaN(maskLen)) return null;
+      var v6 = isIPv6(cidr);
+      var totalBits = v6 ? 128 : 32;
+      if (maskLen < 0 || maskLen > totalBits) return null;
+      var ip = v6 ? parseIPv6(parts[0]) : parseIPv4(parts[0]);
+      if (ip === null) return null;
+      var mask = totalBits === maskLen ? (v6 ? (BigInt(1) << BigInt(128)) - BigInt(1) : (BigInt(1) << BigInt(32)) - BigInt(1)) :
+                 ((BigInt(1) << BigInt(totalBits)) - BigInt(1)) ^ ((BigInt(1) << BigInt(totalBits - maskLen)) - BigInt(1));
+      var network = ip & mask;
+      return { ip: ip, network: network, mask: mask, maskLen: maskLen, totalBits: totalBits, v6: v6 };
+    }
+
+    function cidrContains(parent, child) {
+      if (parent.v6 !== child.v6) return false;
+      if (child.maskLen < parent.maskLen) return false;
+      return (child.network & parent.mask) === parent.network;
+    }
+
+    function cidrOverlaps(a, b) {
+      if (a.v6 !== b.v6) return false;
+      // Two CIDRs overlap if the smaller one's network falls within the larger, or vice versa
+      if (a.maskLen <= b.maskLen) {
+        return (b.network & a.mask) === a.network;
+      } else {
+        return (a.network & b.mask) === b.network;
+      }
+    }
+
+    function ipToString(n, v6) {
+      if (!v6) {
+        return [Number((n >> BigInt(24)) & BigInt(255)), Number((n >> BigInt(16)) & BigInt(255)), Number((n >> BigInt(8)) & BigInt(255)), Number(n & BigInt(255))].join('.');
+      }
+      var groups = [];
+      for (var i = 7; i >= 0; i--) {
+        groups.push(Number((n >> BigInt(i * 16)) & BigInt(0xFFFF)).toString(16));
+      }
+      return groups.join(':');
+    }
+
+    async function loadServices() {
+      if (servicesCache[activeAccountId]) return servicesCache[activeAccountId];
+      try {
+        var resp = await fetch('/api/services?account_id=' + activeAccountId);
+        var data = await resp.json();
+        var services = data.services || [];
+        servicesCache[activeAccountId] = services;
+        return services;
+      } catch (e) {
+        return [];
+      }
+    }
+
+    async function openBindingModal(prefixId, parentCidr) {
+      bindingModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+      var parsed = parseCIDR(parentCidr);
+      if (!parsed) return;
+
+      // Set prefix label
+      document.getElementById('binding-modal-prefix').textContent = 'Prefix: ' + parentCidr;
+
+      // Populate mask dropdown
+      var maskSel = document.getElementById('binding-mask');
+      var maxMask = parsed.v6 ? 48 : 32;
+      var html = '';
+      for (var m = parsed.maskLen; m <= maxMask; m++) {
+        html += '<option value="' + m + '"' + (m === parsed.maskLen ? ' selected' : '') + '>/' + m + '</option>';
+      }
+      maskSel.innerHTML = html;
+
+      // Pre-fill IP with parent network address
+      document.getElementById('binding-ip').value = ipToString(parsed.network, parsed.v6);
+
+      // Clear validation
+      document.getElementById('binding-validation').classList.add('hidden');
+      document.getElementById('binding-error').classList.add('hidden');
+      document.getElementById('binding-submit-btn').disabled = false;
+
+      // Load services into dropdown
+      var svcSel = document.getElementById('binding-service');
+      svcSel.innerHTML = '<option value="">Loading services...</option>';
+      document.getElementById('binding-modal').classList.remove('hidden');
+
+      var services = await loadServices();
+      if (services.length === 0) {
+        svcSel.innerHTML = '<option value="">No services available</option>';
+      } else {
+        svcSel.innerHTML = services.map(function(s) {
+          return '<option value="' + escAttr(s.id) + '">' + escHtml(s.name) + '</option>';
+        }).join('');
+      }
+
+      // If this is the first binding, lock CIDR to match parent prefix
+      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      if (existingBindings.length === 0) {
+        document.getElementById('binding-ip').value = ipToString(parsed.network, parsed.v6);
+        maskSel.value = String(parsed.maskLen);
+        document.getElementById('binding-ip').disabled = true;
+        maskSel.disabled = true;
+        var valEl = document.getElementById('binding-validation');
+        valEl.innerHTML = '<span class="text-yellow-400">First binding must cover the entire prefix (' + escHtml(parentCidr) + ').</span>';
+        valEl.classList.remove('hidden');
+      } else {
+        document.getElementById('binding-ip').disabled = false;
+        maskSel.disabled = false;
+      }
+    }
+
+    function closeBindingModal() {
+      document.getElementById('binding-modal').classList.add('hidden');
+      bindingModalContext = null;
+    }
+
+    function validateBinding() {
+      if (!bindingModalContext) return null;
+      var parentCidr = bindingModalContext.parentCidr;
+      var prefixId = bindingModalContext.prefixId;
+      var parentParsed = parseCIDR(parentCidr);
+      if (!parentParsed) return 'Invalid parent prefix';
+
+      var ip = document.getElementById('binding-ip').value.trim();
+      var mask = document.getElementById('binding-mask').value;
+      if (!ip) return 'IP address is required';
+
+      var childCidr = ip + '/' + mask;
+      var childParsed = parseCIDR(childCidr);
+      if (!childParsed) return 'Invalid IP address';
+
+      // Check address family matches
+      if (childParsed.v6 !== parentParsed.v6) return 'Address family mismatch (IPv4 vs IPv6)';
+
+      // Check containment
+      if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
+
+      // Check overlap with existing bindings
+      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      for (var i = 0; i < existingBindings.length; i++) {
+        var existing = parseCIDR(existingBindings[i].cidr);
+        if (existing && cidrOverlaps(childParsed, existing)) {
+          return 'CIDR ' + childCidr + ' overlaps existing binding ' + existingBindings[i].cidr + ' (' + existingBindings[i].service_name + ')';
+        }
+      }
+
+      return null; // valid
+    }
+
+    async function submitBinding() {
+      if (!bindingModalContext) return;
+      var serviceId = document.getElementById('binding-service').value;
+      if (!serviceId) {
+        var errEl = document.getElementById('binding-error');
+        errEl.textContent = 'Please select a service';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var validationError = validateBinding();
+      if (validationError) {
+        var errEl = document.getElementById('binding-error');
+        errEl.textContent = validationError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var ip = document.getElementById('binding-ip').value.trim();
+      var mask = document.getElementById('binding-mask').value;
+      var cidr = ip + '/' + mask;
+      var prefixId = bindingModalContext.prefixId;
+
+      // Disable button and show loading
+      var btn = document.getElementById('binding-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      document.getElementById('binding-error').classList.add('hidden');
+
+      try {
+        var resp = await fetch('/api/prefixes/' + prefixId + '/bindings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cidr: cidr, service_id: serviceId, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeBindingModal();
+          // Refresh the child data for this prefix
+          delete childData[prefixId];
+          expandedRows[prefixId] = false;
+          setTimeout(function() { toggleRow(prefixId); }, 100);
+        } else {
+          var errEl = document.getElementById('binding-error');
+          errEl.textContent = data.error || 'Failed to create binding';
+          errEl.classList.remove('hidden');
+        }
+      } catch (e) {
+        var errEl = document.getElementById('binding-error');
+        errEl.textContent = 'Request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Binding';
       }
     }
 

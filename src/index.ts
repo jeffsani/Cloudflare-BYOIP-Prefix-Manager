@@ -7,6 +7,7 @@ import {
   listBgpPrefixes,
   listServiceBindings,
   listServices,
+  createServiceBinding,
   toggleBgpAdvertisement,
   validatePrefix,
   verifyTokenPermissions,
@@ -408,6 +409,38 @@ app.get('/api/prefixes/:prefixId/bindings', async (c) => {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
     }
     return c.json({ bindings: data.result || [] });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Create a service binding for a prefix
+app.post('/api/prefixes/:prefixId/bindings', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ cidr: string; service_id: string; account_id?: string }>();
+  const prefixId = c.req.param('prefixId');
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  if (!body.cidr || !body.service_id) {
+    return c.json({ error: 'cidr and service_id are required' }, 400);
+  }
+
+  try {
+    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const data = await createServiceBinding(acct.account_id, prefixId, body.cidr, body.service_id, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'create_binding',
+      `Service binding ${body.cidr} → ${data.result?.service_name || body.service_id} on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, binding: data.result });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
