@@ -143,6 +143,21 @@ export interface ActivityLogEntry {
   created_at: string;
 }
 
+// --- RPKI ROA Lookup types ---
+
+export interface RpkiPrefixOrigin {
+  origin: number;
+  peer_count: number;
+  prefix: string;
+  rpki_validation: string;
+}
+
+export interface RpkiLookupResult {
+  prefix_origins: RpkiPrefixOrigin[];
+  data_time: string;
+  total_peers: number;
+}
+
 // --- RDAP / Whois types ---
 
 export interface RdapResult {

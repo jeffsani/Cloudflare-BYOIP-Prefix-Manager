@@ -483,6 +483,7 @@ export function renderDashboard(userEmail: string): string {
     var pendingBulkToggle = null;
     var servicesCache = {};
     var bindingModalContext = null;
+    var childPrefixModalContext = null;
 
     // ─── Init ─────────────────────────────────────────────────────
     (function init() {
@@ -902,16 +903,22 @@ export function renderDashboard(userEmail: string): string {
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
         html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
-      // Add binding row
+      // Add binding / child prefix row
       var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
       var parentCidr = parentPrefix ? parentPrefix.cidr : '';
       html += '<tr class="child-row border-b border-cf-border">' +
         '<td class="px-2"></td><td class="px-3"></td><td class="px-2"></td>' +
         '<td class="px-3 pl-8" colspan="7">' +
-          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
-            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
-            'Add Service Binding' +
-          '</button>' +
+          '<div class="flex items-center gap-3">' +
+            '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
+              '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
+              'Add Service Binding' +
+            '</button>' +
+            '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
+              '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
+              'Add Child Prefix' +
+            '</button>' +
+          '</div>' +
         '</td>' +
       '</tr>';
       return html;
@@ -1353,6 +1360,125 @@ export function renderDashboard(userEmail: string): string {
         return services;
       } catch (e) {
         return [];
+      }
+    }
+
+    // ─── Child Prefix Modal ─────────────────────────────────────
+
+    function openChildPrefixModal(prefixId, parentCidr) {
+      childPrefixModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+      var parsed = parseCIDR(parentCidr);
+      if (!parsed) return;
+
+      // Set parent prefix label
+      document.getElementById('child-prefix-modal-parent').textContent = 'Parent: ' + parentCidr;
+
+      // Populate mask dropdown (parent mask + 1 through /24 for IPv4, /48 for IPv6)
+      var maskSel = document.getElementById('child-prefix-mask');
+      var minMask = parsed.maskLen + 1;
+      var maxMask = parsed.v6 ? 48 : 24;
+      var html = '';
+      for (var m = minMask; m <= maxMask; m++) {
+        html += '<option value="' + m + '"' + (m === minMask ? ' selected' : '') + '>/' + m + '</option>';
+      }
+      maskSel.innerHTML = html;
+
+      // Pre-fill IP with parent network address
+      document.getElementById('child-prefix-ip').value = ipToString(parsed.network, parsed.v6);
+
+      // Clear error
+      document.getElementById('child-prefix-error').classList.add('hidden');
+      document.getElementById('child-prefix-submit-btn').disabled = false;
+      document.getElementById('child-prefix-submit-btn').textContent = 'Create Child Prefix';
+
+      document.getElementById('child-prefix-modal').classList.remove('hidden');
+    }
+
+    function closeChildPrefixModal() {
+      document.getElementById('child-prefix-modal').classList.add('hidden');
+      childPrefixModalContext = null;
+    }
+
+    function validateChildPrefix() {
+      if (!childPrefixModalContext) return null;
+      var parentCidr = childPrefixModalContext.parentCidr;
+      var prefixId = childPrefixModalContext.prefixId;
+      var parentParsed = parseCIDR(parentCidr);
+      if (!parentParsed) return 'Invalid parent prefix';
+
+      var ip = document.getElementById('child-prefix-ip').value.trim();
+      var mask = document.getElementById('child-prefix-mask').value;
+      if (!ip) return 'IP address is required';
+
+      var childCidr = ip + '/' + mask;
+      var childParsed = parseCIDR(childCidr);
+      if (!childParsed) return 'Invalid IP address';
+
+      // Check address family matches
+      if (childParsed.v6 !== parentParsed.v6) return 'Address family mismatch (IPv4 vs IPv6)';
+
+      // Check containment
+      if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
+
+      // Check overlap with existing BGP child prefixes
+      var existingBgp = (childData[prefixId] && childData[prefixId].bgp_prefixes) || [];
+      for (var i = 0; i < existingBgp.length; i++) {
+        var existing = parseCIDR(existingBgp[i].cidr);
+        if (existing && cidrOverlaps(childParsed, existing)) {
+          return 'CIDR ' + childCidr + ' overlaps existing child prefix ' + existingBgp[i].cidr;
+        }
+      }
+
+      return null; // valid
+    }
+
+    async function submitChildPrefix() {
+      if (!childPrefixModalContext) return;
+
+      var validationError = validateChildPrefix();
+      if (validationError) {
+        var errEl = document.getElementById('child-prefix-error');
+        errEl.textContent = validationError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var ip = document.getElementById('child-prefix-ip').value.trim();
+      var mask = document.getElementById('child-prefix-mask').value;
+      var cidr = ip + '/' + mask;
+      var prefixId = childPrefixModalContext.prefixId;
+
+      // Disable button and show loading
+      var btn = document.getElementById('child-prefix-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      document.getElementById('child-prefix-error').classList.add('hidden');
+
+      try {
+        var resp = await fetch('/api/prefixes/' + prefixId + '/bgp', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cidr: cidr, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeChildPrefixModal();
+          // Refresh the child data for this prefix
+          delete childData[prefixId];
+          expandedRows[prefixId] = false;
+          setTimeout(function() { toggleRow(prefixId); }, 100);
+        } else {
+          var errEl = document.getElementById('child-prefix-error');
+          errEl.textContent = data.error || 'Failed to create child prefix';
+          errEl.classList.remove('hidden');
+        }
+      } catch (e) {
+        var errEl = document.getElementById('child-prefix-error');
+        errEl.textContent = 'Request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Child Prefix';
       }
     }
 
