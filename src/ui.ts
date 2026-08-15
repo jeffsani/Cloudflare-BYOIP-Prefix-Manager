@@ -18,6 +18,7 @@ export function renderDashboard(userEmail: string): string {
     };
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script>
@@ -94,11 +95,59 @@ export function renderDashboard(userEmail: string): string {
     .toggle-btn:disabled { opacity: 0.4; cursor: not-allowed; }
     .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 100; display: flex; align-items: center; justify-content: center; }
     .modal-content { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; width: 95vw; max-width: 1200px; max-height: 90vh; overflow: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-    .lg-node { cursor: default; }
+    .lg-node { cursor: pointer; }
     .lg-node rect { rx: 6; ry: 6; }
-    .lg-edge { fill: none; stroke-width: 1.5; opacity: 0.6; }
-    .lg-node:hover rect { stroke: #F6821F; stroke-width: 2; }
-    .lg-node:hover .lg-edge-connected { opacity: 1; }
+    .lg-node:hover rect { stroke: #F6821F !important; stroke-width: 2.5 !important; }
+    .lg-edge { fill: none; stroke-width: 2; stroke-dasharray: 6 4; }
+    .lg-graph-wrap { position: relative; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--surface); }
+    .lg-graph-svg { display: block; width: 100%; cursor: grab; }
+    .lg-graph-svg.panning { cursor: grabbing; }
+    .lg-zoom-controls { position: absolute; bottom: 12px; left: 12px; display: flex; flex-direction: column; gap: 4px; z-index: 10; }
+    .lg-zoom-btn { width: 28px; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 16px; line-height: 1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+    .lg-zoom-btn:hover { border-color: #F6821F; color: #F6821F; }
+    .lg-filter-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; }
+    .lg-filter-bar select, .lg-filter-bar input[type="text"] { padding: 4px 8px; border-radius: 6px; border: 1px solid var(--border); background: var(--input-bg); color: var(--text-primary); font-size: 12px; outline: none; }
+    .lg-filter-bar select:focus, .lg-filter-bar input[type="text"]:focus { border-color: #F6821F; }
+    .lg-filter-bar label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-primary); cursor: pointer; user-select: none; }
+    .lg-filter-bar input[type="checkbox"] { accent-color: #3b82f6; cursor: pointer; }
+    .lg-path-toggle { display: inline-flex; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+    .lg-path-toggle button { padding: 4px 12px; font-size: 12px; font-weight: 500; border: none; cursor: pointer; background: var(--input-bg); color: var(--text-primary); transition: all 0.15s; }
+    .lg-path-toggle button.active { background: #F6821F; color: #fff; }
+    .lg-path-toggle button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .lg-info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; color: var(--muted); cursor: help; position: relative; }
+    .lg-info-icon:hover { color: #F6821F; border-color: #F6821F; }
+    .lg-info-icon .lg-info-tip { display: none; position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: 300px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 10px; color: var(--text-primary); white-space: normal; font-weight: 400; }
+    .lg-info-icon:hover .lg-info-tip { display: block; }
+    .lg-vis-section { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
+    .lg-vis-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .lg-vis-badge { display: inline-flex; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+    .lg-vis-badge-green { background: rgba(34,197,94,0.2); color: #22c55e; }
+    .lg-vis-badge-yellow { background: rgba(234,179,8,0.2); color: #eab308; }
+    .lg-vis-badge-red { background: rgba(239,68,68,0.2); color: #ef4444; }
+    .lg-vis-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+    .lg-vis-row.lg-vis-partial { background: rgba(234,179,8,0.05); border: 1px solid rgba(234,179,8,0.3); border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
+    .lg-vis-name { min-width: 140px; color: var(--text-primary); font-weight: 500; }
+    .lg-vis-bar-wrap { flex: 1; max-width: 300px; height: 10px; background: var(--input-bg); border-radius: 5px; overflow: hidden; }
+    .lg-vis-bar { height: 100%; border-radius: 5px; transition: width 0.3s; }
+    .lg-vis-bar-green { background: #22c55e; }
+    .lg-vis-bar-yellow { background: #eab308; }
+    .lg-vis-bar-gray { background: var(--muted); }
+    .lg-vis-pct { min-width: 40px; text-align: right; color: var(--text-primary); }
+    .lg-vis-peers { min-width: 80px; text-align: right; color: var(--muted); }
+    .lg-asn-chip { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: 'Inter', monospace; background: var(--input-bg); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+    .lg-asn-chip:hover { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.4); }
+    .lg-asn-chip-invalid { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
+    .lg-asn-chip-filtered { box-shadow: 0 0 0 2px #6366f1; border-color: #6366f1; }
+    .lg-community-tag { display: inline-flex; padding: 1px 5px; border-radius: 3px; font-size: 10px; font-family: monospace; background: var(--input-bg); border: 1px solid var(--border); margin: 1px; white-space: nowrap; color: var(--text-primary); }
+    .lg-filter-banner { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 12px; border-radius: 6px; font-size: 12px; margin-top: 8px; }
+    [data-theme="dark"] .lg-filter-banner { background: rgba(234,179,8,0.08); border: 1px solid rgba(234,179,8,0.25); color: #fbbf24; }
+    [data-theme="light"] .lg-filter-banner { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; }
+    .lg-json-modal-content { max-width: 640px; }
+    .lg-table-row-invalid { background: rgba(239,68,68,0.05); }
+    .lg-table-row-invalid:hover { background: rgba(239,68,68,0.1) !important; }
+    .lg-chip-tip { position: relative; }
+    .lg-chip-tip .lg-chip-tiptext { display: none; position: absolute; z-index: 60; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 10px; white-space: nowrap; color: var(--text-primary); pointer-events: none; }
+    .lg-chip-tip:hover .lg-chip-tiptext { display: block; }
   </style>
 </head>
 <body class="font-sans min-h-screen">
@@ -278,21 +327,39 @@ export function renderDashboard(userEmail: string): string {
 
   <!-- Looking Glass Modal -->
   <div id="lg-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeLgModal()">
-    <div class="modal-content">
-      <div class="flex items-center justify-between p-4 border-b border-cf-border">
+    <div class="modal-content" style="max-width:95vw;width:1400px;max-height:95vh;display:flex;flex-direction:column;">
+      <div class="flex items-center justify-between p-4 border-b border-cf-border flex-shrink-0">
         <div>
           <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Looking Glass</h3>
-          <p id="lg-prefix-label" class="text-xs text-cf-gray mt-0.5"></p>
+          <p id="lg-prefix-label" class="text-xs text-cf-gray mt-0.5 font-mono"></p>
         </div>
         <button onclick="closeLgModal()" class="text-cf-gray hover:text-cf-orange p-1">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
         </button>
       </div>
-      <div id="lg-content" class="p-4">
+      <div id="lg-content" class="p-4 overflow-y-auto flex-1">
         <div class="flex items-center justify-center py-12">
           <div class="spinner"></div>
           <span class="ml-2 text-xs text-cf-gray">Loading BGP routes...</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Looking Glass JSON Modal -->
+  <div id="lg-json-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeLgJsonModal()" style="z-index:110">
+    <div class="modal-content lg-json-modal-content">
+      <div class="flex items-center justify-between p-3 border-b border-cf-border">
+        <div class="flex items-center gap-2">
+          <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Route JSON</h3>
+          <button onclick="copyLgJson()" class="text-cf-gray hover:text-cf-orange text-[10px] px-1.5 py-0.5 border border-cf-border rounded hover:border-cf-orange" id="lg-json-copy-btn">Copy</button>
+        </div>
+        <button onclick="closeLgJsonModal()" class="text-cf-gray hover:text-cf-orange p-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-3 overflow-auto" style="max-height:60vh">
+        <pre id="lg-json-content" class="text-[11px] font-mono p-3 rounded-lg" style="background:var(--input-bg);color:var(--text-primary);white-space:pre-wrap;word-break:break-all;"></pre>
       </div>
     </div>
   </div>
@@ -1583,11 +1650,628 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Looking Glass ────────────────────────────────────────────
+    var lgState = {
+      result: null,
+      prefix: '',
+      isIPv6: false,
+      asnInfoMap: {},
+      rpkiMap: {},
+      originAsns: new Set(),
+      taintedAsns: new Set(),
+      showTier1: true,
+      filterAsn: '',
+      showRpkiValid: true,
+      showRpkiInvalid: true,
+      filterCollector: '',
+      showVisibility: true,
+      // SVG pan/zoom state
+      viewBox: { x: 0, y: 0, w: 800, h: 400 },
+      baseViewBox: { x: 0, y: 0, w: 800, h: 400 },
+      isPanning: false,
+      panStart: { x: 0, y: 0 },
+      panVBStart: { x: 0, y: 0 }
+    };
+
+    // Tier-1 ASes
+    var TIER1_IPV4 = [6762, 12956, 2914, 3356, 6453, 1239, 701, 6461, 3257, 1299, 3491, 7018, 3320, 5511, 6830, 174];
+    var TIER1_IPV6 = TIER1_IPV4.concat([6939]);
+    var TIER1_ALL_SET = {};
+    TIER1_IPV4.concat([6939]).forEach(function(a) { TIER1_ALL_SET[a] = true; });
+
+    function lgTier1Set() { return lgState.isIPv6 ? TIER1_IPV6 : TIER1_IPV4; }
+
+    function lgIsTier1(asn) { var s = lgTier1Set(); for (var i=0;i<s.length;i++) if (s[i]===asn) return true; return false; }
+
+    function lgTruncatePath(path) {
+      var s = lgTier1Set();
+      for (var i = 0; i < path.length; i++) {
+        for (var j=0;j<s.length;j++) { if (s[j]===path[i]) return path.slice(i); }
+      }
+      return path;
+    }
+
+    function lgPathReachesTier1(path) {
+      var s = lgTier1Set();
+      for (var i=0;i<path.length;i++) for (var j=0;j<s.length;j++) if (s[j]===path[i]) return true;
+      return false;
+    }
+
+    function lgCleanPath(path) {
+      if (!path || path.length === 0) return [];
+      var c = [path[0]];
+      for (var i=1;i<path.length;i++) if (path[i]!==path[i-1]) c.push(path[i]);
+      return c;
+    }
+
+    function lgCountryFlag(code) {
+      if (!code || code.length !== 2) return '';
+      var u = code.toUpperCase();
+      return String.fromCodePoint(0x1F1E6 + u.charCodeAt(0) - 65) + String.fromCodePoint(0x1F1E6 + u.charCodeAt(1) - 65);
+    }
+
+    function lgGetName(asn) {
+      var info = lgState.asnInfoMap[asn];
+      if (!info) return '';
+      var name = info.org_name || info.as_name || '';
+      if (TIER1_ALL_SET[asn]) return name.split(/\\s+/)[0] || name;
+      return name.length > 16 ? name.substring(0, 15) + '\\u2026' : name;
+    }
+
+    function lgRelativeTime(ts) {
+      if (!ts) return '\\u2014';
+      var diff = (Date.now() - new Date(ts).getTime()) / 1000;
+      if (diff < 0) return 'just now';
+      if (diff < 60) return Math.floor(diff) + 's ago';
+      if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+      if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+      return Math.floor(diff/86400) + 'd ago';
+    }
+
+    function lgGetFilteredRoutes() {
+      var routes = lgState.result ? lgState.result.routes : [];
+      return routes.filter(function(r) {
+        if (!r.as_path || r.as_path.length === 0) return false;
+        if (lgState.filterCollector && r.collector !== lgState.filterCollector) return false;
+        if (lgState.filterAsn) {
+          var fa = parseInt(lgState.filterAsn);
+          if (!isNaN(fa) && r.as_path.indexOf(fa) === -1) return false;
+        }
+        var origin = r.as_path[r.as_path.length - 1];
+        var rpki = lgState.rpkiMap[origin];
+        if (rpki === 'valid' && !lgState.showRpkiValid) return false;
+        if (rpki === 'invalid' && !lgState.showRpkiInvalid) return false;
+        return true;
+      });
+    }
+
+    function lgGetProcessedPaths(filtered) {
+      return filtered.map(function(r) {
+        var cleaned = lgCleanPath(r.as_path);
+        if (lgState.showTier1 && lgPathReachesTier1(cleaned)) {
+          return lgTruncatePath(cleaned);
+        }
+        return cleaned;
+      });
+    }
+
+    // Check if tier-1 truncation produces empty result or misses filtered ASN
+    function lgShouldForceFullPaths(filtered) {
+      if (filtered.length === 0) return false;
+      var hasTier1 = false;
+      for (var i=0;i<filtered.length;i++) {
+        if (lgPathReachesTier1(lgCleanPath(filtered[i].as_path))) { hasTier1 = true; break; }
+      }
+      if (!hasTier1) return true;
+      if (lgState.filterAsn) {
+        var fa = parseInt(lgState.filterAsn);
+        if (!isNaN(fa)) {
+          var found = false;
+          for (var i=0;i<filtered.length;i++) {
+            var t = lgTruncatePath(lgCleanPath(filtered[i].as_path));
+            if (t.indexOf(fa) !== -1) { found = true; break; }
+          }
+          if (!found) {
+            for (var i=0;i<filtered.length;i++) {
+              if (lgCleanPath(filtered[i].as_path).indexOf(fa) !== -1) return true;
+            }
+          }
+        }
+      }
+      return false;
+    }
+
+    function lgBuildGraph(paths) {
+      var nodeIds = {};
+      var edgeKeys = {};
+      var edges = [];
+      var originAsns = lgState.originAsns;
+
+      for (var p=0;p<paths.length;p++) {
+        var reversed = paths[p].slice().reverse();
+        for (var n=0;n<reversed.length;n++) {
+          nodeIds[reversed[n]] = true;
+          if (n > 0) {
+            var ek = reversed[n-1] + '->' + reversed[n];
+            if (!edgeKeys[ek]) { edgeKeys[ek] = true; edges.push({from: reversed[n-1], to: reversed[n]}); }
+          }
+        }
+      }
+
+      var nodes = Object.keys(nodeIds).map(Number);
+      if (nodes.length === 0) return { nodes: [], edges: [], positions: {} };
+
+      // Use dagre for layout
+      var g = new dagre.graphlib.Graph();
+      g.setDefaultEdgeLabel(function() { return {}; });
+      g.setGraph({ rankdir: 'LR', nodesep: 40, ranksep: 120, marginx: 30, marginy: 30 });
+
+      var nw = 150, nh = 46;
+      nodes.forEach(function(asn) { g.setNode(String(asn), { width: nw, height: nh }); });
+      edges.forEach(function(e) { g.setEdge(String(e.from), String(e.to)); });
+      dagre.layout(g);
+
+      var positions = {};
+      nodes.forEach(function(asn) {
+        var nd = g.node(String(asn));
+        positions[asn] = { x: nd.x - nw/2, y: nd.y - nh/2 };
+      });
+
+      return { nodes: nodes, edges: edges, positions: positions, nodeWidth: nw, nodeHeight: nh };
+    }
+
+    function lgRenderSvg(graph) {
+      var nodes = graph.nodes, edges = graph.edges, positions = graph.positions;
+      var nw = graph.nodeWidth || 150, nh = graph.nodeHeight || 46;
+      if (nodes.length === 0) return '<div class="text-center py-8 text-cf-gray text-xs">No routes to display with current filters</div>';
+
+      // Compute bounds
+      var minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      nodes.forEach(function(asn) {
+        var p = positions[asn];
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.x + nw > maxX) maxX = p.x + nw;
+        if (p.y + nh > maxY) maxY = p.y + nh;
+      });
+      var pad = 40;
+      var vbX = minX - pad, vbY = minY - pad, vbW = (maxX - minX) + 2*pad, vbH = (maxY - minY) + 2*pad;
+      lgState.baseViewBox = { x: vbX, y: vbY, w: vbW, h: vbH };
+      lgState.viewBox = { x: vbX, y: vbY, w: vbW, h: vbH };
+
+      var isLight = document.documentElement.getAttribute('data-theme') === 'light';
+      var edgeColor = '#8A2BE2';
+      var textColor = isLight ? '#111827' : '#E5E7EB';
+      var subTextColor = isLight ? '#6B7280' : '#8B949E';
+      var defaultFill = isLight ? '#FFFFFF' : '#1F2937';
+      var defaultStroke = isLight ? '#D1D5DB' : '#374151';
+
+      var svg = '<svg id="lg-svg" xmlns="http://www.w3.org/2000/svg" viewBox="' + vbX + ' ' + vbY + ' ' + vbW + ' ' + vbH + '" class="lg-graph-svg" style="height:500px;">';
+      svg += '<defs><marker id="lg-arrow" viewBox="0 0 10 8" refX="10" refY="4" markerWidth="8" markerHeight="6" orient="auto"><path d="M0,0 L10,4 L0,8" fill="' + edgeColor + '" opacity="0.7"/></marker></defs>';
+
+      // Edges
+      edges.forEach(function(e) {
+        var fp = positions[e.from], tp = positions[e.to];
+        if (!fp || !tp) return;
+        var x1 = fp.x + nw, y1 = fp.y + nh/2, x2 = tp.x, y2 = tp.y + nh/2;
+        var cpx = (x1 + x2) / 2;
+        svg += '<path class="lg-edge" d="M' + x1 + ',' + y1 + ' C' + cpx + ',' + y1 + ' ' + cpx + ',' + y2 + ' ' + x2 + ',' + y2 + '" stroke="' + edgeColor + '" marker-end="url(#lg-arrow)"/>';
+      });
+
+      // Nodes
+      nodes.forEach(function(asn) {
+        var p = positions[asn];
+        if (!p) return;
+        var info = lgState.asnInfoMap[asn] || {};
+        var isOrigin = lgState.originAsns.has(asn);
+        var rpki = isOrigin ? (lgState.rpkiMap[asn] || null) : null;
+        var isTainted = lgState.taintedAsns.has(asn) && rpki !== 'invalid';
+        var isFiltered = lgState.filterAsn && String(asn) === lgState.filterAsn;
+
+        var fill = defaultFill, stroke = defaultStroke, strokeW = 1.5;
+        if (rpki === 'valid') { stroke = '#4ade80'; fill = isLight ? '#F0FDF4' : '#052E16'; }
+        else if (rpki === 'invalid') { stroke = '#f87171'; fill = isLight ? '#FEF2F2' : '#450A0A'; strokeW = 2; }
+        else if (isTainted) { stroke = '#fbbf24'; fill = isLight ? '#FFFBEB' : '#422006'; }
+        if (isFiltered) { strokeW = 2.5; stroke = '#6366f1'; }
+
+        var flag = lgCountryFlag(info.country_code || '');
+        var name = lgGetName(asn);
+        var rpkiIcon = '';
+        if (rpki === 'valid') rpkiIcon = ' <tspan fill="#16a34a" font-size="11">\\u2713</tspan>';
+        else if (rpki === 'invalid') rpkiIcon = ' <tspan fill="#dc2626" font-size="11">\\u2717</tspan>';
+
+        svg += '<g class="lg-node" onclick="lgToggleAsnFilter(' + asn + ')" transform="translate(' + p.x + ',' + p.y + ')">';
+        svg += '<rect width="' + nw + '" height="' + nh + '" fill="' + fill + '" stroke="' + stroke + '" stroke-width="' + strokeW + '" rx="6"/>';
+        svg += '<text x="' + (nw/2) + '" y="18" text-anchor="middle" fill="' + textColor + '" font-size="13" font-weight="600" font-family="Inter,system-ui,sans-serif">AS ' + asn + rpkiIcon + '</text>';
+        if (flag || name) {
+          svg += '<text x="' + (nw/2) + '" y="34" text-anchor="middle" fill="' + subTextColor + '" font-size="10" font-family="Inter,system-ui,sans-serif">' + flag + (flag && name ? ' ' : '') + escHtml(name) + '</text>';
+        }
+        svg += '</g>';
+      });
+
+      svg += '</svg>';
+      return svg;
+    }
+
+    function lgRenderFilters() {
+      var routes = lgState.result ? lgState.result.routes : [];
+      var meta = lgState.result ? lgState.result.meta : {};
+      var collectors = meta.collectors || [];
+
+      // Count RPKI
+      var preRpki = routes.filter(function(r) {
+        if (!r.as_path || r.as_path.length === 0) return false;
+        if (lgState.filterCollector && r.collector !== lgState.filterCollector) return false;
+        if (lgState.filterAsn) { var fa = parseInt(lgState.filterAsn); if (!isNaN(fa) && r.as_path.indexOf(fa) === -1) return false; }
+        return true;
+      });
+      var validCount = 0, invalidCount = 0;
+      preRpki.forEach(function(r) {
+        var origin = r.as_path[r.as_path.length - 1];
+        var rpki = lgState.rpkiMap[origin];
+        if (rpki === 'valid') validCount++;
+        else if (rpki === 'invalid') invalidCount++;
+      });
+
+      var collectorsHtml = '<select onchange="lgState.filterCollector=this.value;lgRefresh()" style="min-width:130px">';
+      collectorsHtml += '<option value="">All collectors (' + collectors.length + ')</option>';
+      collectors.forEach(function(c) {
+        var sel = lgState.filterCollector === c.collector ? ' selected' : '';
+        collectorsHtml += '<option value="' + escAttr(c.collector) + '"' + sel + '>' + escHtml(c.collector) + ' (' + c.peers_count + ' peers)</option>';
+      });
+      collectorsHtml += '</select>';
+
+      var html = '<div class="lg-filter-bar">';
+      html += collectorsHtml;
+      html += '<label style="gap:2px"><span style="font-weight:500">ASN filter</span> <input type="text" value="' + escAttr(lgState.filterAsn) + '" placeholder="Filter..." oninput="lgState.filterAsn=this.value;lgRefresh()" style="width:90px"></label>';
+      if (lgState.filterAsn) html += '<button onclick="lgState.filterAsn=\\'\\';lgRefresh()" style="font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none">&times;</button>';
+      html += '<label><input type="checkbox" ' + (lgState.showRpkiValid ? 'checked' : '') + ' onchange="lgState.showRpkiValid=this.checked;lgRefresh()"> RPKI valid (' + validCount + ')</label>';
+      html += '<label><input type="checkbox" ' + (lgState.showRpkiInvalid ? 'checked' : '') + ' onchange="lgState.showRpkiInvalid=this.checked;lgRefresh()"> RPKI invalid (' + invalidCount + ')</label>';
+      html += '</div>';
+      return html;
+    }
+
+    function lgRenderPathToggle(filtered, forceFullMsg) {
+      var disableTier1 = !!forceFullMsg;
+      var html = '<div style="display:flex;align-items:center;gap:8px;margin:8px 0">';
+      html += '<div class="lg-path-toggle">';
+      html += '<button onclick="lgState.showTier1=true;lgRefresh()" class="' + (lgState.showTier1 && !disableTier1 ? 'active' : '') + '"' + (disableTier1 ? ' disabled' : '') + '>Tier-1 paths</button>';
+      html += '<button onclick="lgState.showTier1=false;lgRefresh()" class="' + (!lgState.showTier1 || disableTier1 ? 'active' : '') + '">Full paths</button>';
+      html += '</div>';
+      html += '<span class="lg-info-icon">i<span class="lg-info-tip">Tier-1 ASes: ' + TIER1_IPV4.join(', ') + (lgState.isIPv6 ? ', 6939 (IPv6)' : '') + '</span></span>';
+      if (forceFullMsg) html += '<span style="font-size:11px;color:var(--muted);font-style:italic">' + escHtml(forceFullMsg) + '</span>';
+      html += '</div>';
+      return html;
+    }
+
+    function lgRenderVisibility() {
+      var meta = lgState.result ? lgState.result.meta : {};
+      var prefixOrigins = meta.prefix_origins || [];
+      var collectors = meta.collectors || [];
+      var routes = lgState.result ? lgState.result.routes : [];
+      if (prefixOrigins.length === 0) return '';
+
+      // Overall visibility (from first prefix_origin)
+      var po = prefixOrigins[0];
+      var visPct = Math.round(po.visibility * 100 * 10) / 10;
+      var visBadgeClass = visPct >= 95 ? 'lg-vis-badge-green' : visPct >= 50 ? 'lg-vis-badge-yellow' : 'lg-vis-badge-red';
+
+      var html = '<div class="lg-vis-section">';
+      html += '<div class="lg-vis-header">';
+      html += '<span style="font-weight:600;font-size:13px;color:var(--text-strong)">Prefix Visibility</span>';
+      html += '<span class="lg-vis-badge ' + visBadgeClass + '">' + visPct + '% visible</span>';
+      html += '<span style="font-size:12px;color:var(--muted)">' + po.total_visible + ' / ' + po.total_peers + ' peers see ' + escHtml(lgState.prefix) + '</span>';
+      html += '<button onclick="lgState.showVisibility=!lgState.showVisibility;lgRefresh()" style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">' + (lgState.showVisibility ? 'Hide' : 'Show') + ' visibility</button>';
+      html += '</div>';
+
+      if (lgState.showVisibility) {
+        // Compute per-collector visibility
+        var collectorRoutes = {};
+        var collectorPeers = {};
+        routes.forEach(function(r) {
+          if (!collectorRoutes[r.collector]) collectorRoutes[r.collector] = new Set();
+          collectorRoutes[r.collector].add(r.peer_ip || r.peer_asn);
+        });
+        collectors.forEach(function(c) { collectorPeers[c.collector] = c.peers_count; });
+
+        collectors.forEach(function(c) {
+          var seen = collectorRoutes[c.collector] ? collectorRoutes[c.collector].size : 0;
+          var total = c.peers_count || 1;
+          var pct = Math.round(seen / total * 100);
+          var barClass = pct >= 100 ? 'lg-vis-bar-green' : pct > 0 ? 'lg-vis-bar-yellow' : 'lg-vis-bar-gray';
+          var isPartial = pct > 0 && pct < 100;
+          var missing = total - seen;
+          var isIPv6Only = c.peers_v4_count === 0 && c.peers_v6_count > 0;
+
+          html += '<div class="lg-vis-row' + (isPartial ? ' lg-vis-partial' : '') + '">';
+          html += '<span class="lg-vis-name">' + escHtml(c.collector) + '</span>';
+          html += '<div class="lg-vis-bar-wrap"><div class="lg-vis-bar ' + barClass + '" style="width:' + Math.min(pct, 100) + '%"></div></div>';
+          html += '<span class="lg-vis-pct">' + pct + '%</span>';
+          if (isIPv6Only) html += '<span class="lg-vis-badge lg-vis-badge-green" style="font-size:10px">IPv6 only</span>';
+          if (missing > 0 && pct < 100) html += '<span class="lg-vis-badge lg-vis-badge-red" style="font-size:10px">' + missing + ' missing</span>';
+          html += '<span class="lg-vis-peers">' + seen + ' / ' + total + ' peers</span>';
+          html += '</div>';
+        });
+      }
+
+      html += '</div>';
+      return html;
+    }
+
+    function lgRenderTable(filtered) {
+      if (filtered.length === 0) return '<div class="text-center py-4 text-cf-gray text-xs">No routes match the current filters</div>';
+
+      var html = '<div class="overflow-x-auto mt-4 border-t border-cf-border pt-4">';
+      html += '<div class="flex items-center justify-between mb-2 flex-wrap gap-2">';
+      html += '<h3 style="font-size:13px;font-weight:600;color:var(--text-strong)">Routes to <span class="font-mono" style="color:#6366f1">' + escHtml(lgState.prefix) + '</span></h3>';
+      html += '<span style="font-size:11px;color:var(--muted)">' + filtered.length + ' routes</span>';
+      html += '</div>';
+
+      html += '<table class="w-full text-xs"><thead><tr class="border-b border-cf-border">';
+      html += '<th class="px-1 py-2 text-cf-gray font-medium w-8">JSON</th>';
+      html += '<th class="px-2 py-2 text-cf-gray font-medium text-left">Last updated</th>';
+      html += '<th class="px-2 py-2 text-cf-gray font-medium text-left">Collector</th>';
+      html += '<th class="px-2 py-2 text-cf-gray font-medium text-left">AS Path</th>';
+      html += '<th class="px-2 py-2 text-cf-gray font-medium text-left">Communities</th>';
+      html += '</tr></thead><tbody>';
+
+      for (var i = 0; i < filtered.length; i++) {
+        var route = filtered[i];
+        var origin = route.as_path[route.as_path.length - 1];
+        var rpki = lgState.rpkiMap[origin];
+        var rowClass = rpki === 'invalid' ? ' lg-table-row-invalid' : '';
+
+        html += '<tr class="border-b border-cf-border hover:bg-cf-surface' + rowClass + '">';
+
+        // JSON button
+        html += '<td class="px-1 py-1.5 text-center"><button onclick="lgShowJson(' + i + ')" class="text-cf-gray hover:text-cf-orange" title="View JSON"><svg class="w-3.5 h-3.5 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"/></svg></button></td>';
+
+        // Timestamp
+        html += '<td class="px-2 py-1.5 text-cf-gray whitespace-nowrap"><span class="lg-chip-tip">' + lgRelativeTime(route.timestamp) + '<span class="lg-chip-tiptext">' + escHtml(route.timestamp || '') + '</span></span></td>';
+
+        // Collector
+        html += '<td class="px-2 py-1.5 text-cf-gray whitespace-nowrap"><span class="lg-chip-tip">' + escHtml(route.collector || '') + '<span class="lg-chip-tiptext">Peer: ' + escHtml(route.peer_ip || '') + '</span></span></td>';
+
+        // AS Path chips
+        html += '<td class="px-2 py-1.5"><div style="display:flex;flex-wrap:nowrap;gap:3px;align-items:center">';
+        for (var j = 0; j < route.as_path.length; j++) {
+          var asn = route.as_path[j];
+          var isOrig = j === route.as_path.length - 1;
+          var chipRpki = isOrig ? (lgState.rpkiMap[asn] || null) : null;
+          var chipClass = 'lg-asn-chip lg-chip-tip';
+          if (chipRpki === 'invalid') chipClass += ' lg-asn-chip-invalid';
+          if (lgState.filterAsn && String(asn) === lgState.filterAsn) chipClass += ' lg-asn-chip-filtered';
+          var info = lgState.asnInfoMap[asn] || {};
+          var tipText = lgCountryFlag(info.country_code || '') + ' ' + (info.org_name || info.as_name || 'AS' + asn);
+          if (isOrig && chipRpki) tipText += ' \\u00b7 RPKI: ' + chipRpki;
+          var rpkiIcon = '';
+          if (chipRpki === 'valid') rpkiIcon = '<span style="color:#16a34a;margin-left:2px">\\u2713</span>';
+          else if (chipRpki === 'invalid') rpkiIcon = '<span style="color:#dc2626;margin-left:2px">\\u2717</span>';
+
+          html += '<span class="' + chipClass + '" onclick="lgToggleAsnFilter(' + asn + ')">' + asn + rpkiIcon + '<span class="lg-chip-tiptext">' + escHtml(tipText) + '</span></span>';
+        }
+        html += '</div></td>';
+
+        // Communities
+        html += '<td class="px-2 py-1.5"><div style="display:flex;flex-wrap:wrap;gap:2px">';
+        var communities = route.communities || [];
+        if (typeof communities === 'string') communities = communities.split(' ').filter(Boolean);
+        for (var k = 0; k < communities.length; k++) {
+          html += '<span class="lg-community-tag">' + escHtml(communities[k]) + '</span>';
+        }
+        html += '</div></td>';
+
+        html += '</tr>';
+      }
+
+      html += '</tbody></table></div>';
+      return html;
+    }
+
+    function lgRenderFilterBanner(filtered, total) {
+      if (filtered.length >= total || total === 0) return '';
+      var parts = [];
+      if (lgState.filterAsn) parts.push('ASN ' + escHtml(lgState.filterAsn));
+      if (lgState.filterCollector) parts.push('collector: ' + escHtml(lgState.filterCollector));
+      if (!lgState.showRpkiValid) parts.push('hiding RPKI valid');
+      if (!lgState.showRpkiInvalid) parts.push('hiding RPKI invalid');
+      var html = '<div class="lg-filter-banner">';
+      html += '<span>Filters active \\u2014 showing <strong>' + filtered.length + '</strong> of <strong>' + total + '</strong> routes' + (parts.length ? ' (' + parts.join(', ') + ')' : '') + '</span>';
+      html += '<button onclick="lgState.filterAsn=\\'\\';lgState.filterCollector=\\'\\';lgState.showRpkiValid=true;lgState.showRpkiInvalid=true;lgRefresh()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid;cursor:pointer;background:none;color:inherit">Clear all</button>';
+      html += '</div>';
+      return html;
+    }
+
+    function lgRefresh() {
+      if (!lgState.result) return;
+      var container = document.getElementById('lg-content');
+      var allRoutes = lgState.result.routes || [];
+      var filtered = lgGetFilteredRoutes();
+
+      // Check if we need to force full paths
+      var forceFullMsg = '';
+      if (lgState.showTier1) {
+        if (lgShouldForceFullPaths(filtered)) {
+          lgState.showTier1 = false;
+          if (!lgPathReachesTier1(lgCleanPath((filtered[0] || {}).as_path || []))) {
+            forceFullMsg = 'No paths reach Tier-1 \\u2014 showing full paths';
+          } else {
+            forceFullMsg = 'Filtered ASN not in Tier-1 paths \\u2014 showing full paths';
+          }
+        }
+      }
+
+      var processedPaths = lgGetProcessedPaths(filtered);
+      var graph = lgBuildGraph(processedPaths);
+
+      var html = '';
+      html += lgRenderFilters();
+      html += lgRenderPathToggle(filtered, forceFullMsg);
+
+      // Graph
+      html += '<div class="lg-graph-wrap" id="lg-graph-wrap">';
+      html += lgRenderSvg(graph);
+      html += '<div class="lg-zoom-controls">';
+      html += '<button class="lg-zoom-btn" onclick="lgZoom(0.8)" title="Zoom in">+</button>';
+      html += '<button class="lg-zoom-btn" onclick="lgZoom(1.25)" title="Zoom out">&minus;</button>';
+      html += '<button class="lg-zoom-btn" onclick="lgFitView()" title="Fit view" style="font-size:12px">&#x2922;</button>';
+      html += '</div>';
+      html += '</div>';
+
+      // Filter banner
+      html += lgRenderFilterBanner(filtered, allRoutes.length);
+
+      // Visibility
+      html += lgRenderVisibility();
+
+      // Table
+      html += lgRenderTable(filtered);
+
+      container.innerHTML = html;
+
+      // Attach pan/zoom events
+      lgAttachSvgEvents();
+    }
+
+    // Register document-level pan handlers only once
+    var lgDocEventsAttached = false;
+    function lgAttachDocEvents() {
+      if (lgDocEventsAttached) return;
+      lgDocEventsAttached = true;
+      document.addEventListener('mousemove', function(e) {
+        if (!lgState.isPanning) return;
+        var svgEl = document.getElementById('lg-svg');
+        if (!svgEl) return;
+        var rect = svgEl.getBoundingClientRect();
+        var scaleX = lgState.viewBox.w / rect.width;
+        var scaleY = lgState.viewBox.h / rect.height;
+        var dx = (e.clientX - lgState.panStart.x) * scaleX;
+        var dy = (e.clientY - lgState.panStart.y) * scaleY;
+        lgState.viewBox.x = lgState.panVBStart.x - dx;
+        lgState.viewBox.y = lgState.panVBStart.y - dy;
+        lgUpdateViewBox();
+      });
+      document.addEventListener('mouseup', function() {
+        if (lgState.isPanning) {
+          lgState.isPanning = false;
+          var svgEl = document.getElementById('lg-svg');
+          if (svgEl) svgEl.classList.remove('panning');
+        }
+      });
+    }
+
+    function lgAttachSvgEvents() {
+      var svg = document.getElementById('lg-svg');
+      if (!svg) return;
+      lgAttachDocEvents();
+
+      svg.addEventListener('mousedown', function(e) {
+        if (e.target.closest('.lg-node')) return;
+        lgState.isPanning = true;
+        lgState.panStart = { x: e.clientX, y: e.clientY };
+        lgState.panVBStart = { x: lgState.viewBox.x, y: lgState.viewBox.y };
+        svg.classList.add('panning');
+        e.preventDefault();
+      });
+      svg.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var factor = e.deltaY > 0 ? 1.1 : 0.9;
+        lgZoomAt(factor, e.clientX, e.clientY);
+      }, { passive: false });
+    }
+
+    function lgUpdateViewBox() {
+      var svg = document.getElementById('lg-svg');
+      if (!svg) return;
+      var vb = lgState.viewBox;
+      svg.setAttribute('viewBox', vb.x + ' ' + vb.y + ' ' + vb.w + ' ' + vb.h);
+    }
+
+    function lgZoom(factor) {
+      var svg = document.getElementById('lg-svg');
+      if (!svg) return;
+      var rect = svg.getBoundingClientRect();
+      lgZoomAt(factor, rect.left + rect.width / 2, rect.top + rect.height / 2);
+    }
+
+    function lgZoomAt(factor, clientX, clientY) {
+      var svg = document.getElementById('lg-svg');
+      if (!svg) return;
+      var rect = svg.getBoundingClientRect();
+      var vb = lgState.viewBox;
+      var mx = vb.x + (clientX - rect.left) / rect.width * vb.w;
+      var my = vb.y + (clientY - rect.top) / rect.height * vb.h;
+      var newW = vb.w * factor;
+      var newH = vb.h * factor;
+      lgState.viewBox = {
+        x: mx - (mx - vb.x) * factor,
+        y: my - (my - vb.y) * factor,
+        w: newW,
+        h: newH
+      };
+      lgUpdateViewBox();
+    }
+
+    function lgFitView() {
+      lgState.viewBox = { x: lgState.baseViewBox.x, y: lgState.baseViewBox.y, w: lgState.baseViewBox.w, h: lgState.baseViewBox.h };
+      lgUpdateViewBox();
+    }
+
+    function lgToggleAsnFilter(asn) {
+      lgState.filterAsn = lgState.filterAsn === String(asn) ? '' : String(asn);
+      lgRefresh();
+    }
+
+    function lgShowJson(idx) {
+      var filtered = lgGetFilteredRoutes();
+      var route = filtered[idx];
+      if (!route) return;
+      var json = JSON.stringify({
+        timestamp: route.timestamp,
+        prefix: route.prefix,
+        as_path: route.as_path,
+        collector: route.collector,
+        peer_ip: route.peer_ip,
+        peer_asn: route.peer_asn,
+        next_hop: route.next_hop,
+        communities: route.communities
+      }, null, 2);
+      document.getElementById('lg-json-content').textContent = json;
+      document.getElementById('lg-json-modal').classList.remove('hidden');
+      document.getElementById('lg-json-copy-btn').textContent = 'Copy';
+    }
+
+    function closeLgJsonModal() {
+      document.getElementById('lg-json-modal').classList.add('hidden');
+    }
+
+    function copyLgJson() {
+      var text = document.getElementById('lg-json-content').textContent;
+      navigator.clipboard.writeText(text).then(function() {
+        document.getElementById('lg-json-copy-btn').textContent = 'Copied!';
+        setTimeout(function() { document.getElementById('lg-json-copy-btn').textContent = 'Copy'; }, 1500);
+      });
+    }
+
     async function openLgModal(prefix) {
       document.getElementById('lg-prefix-label').textContent = prefix;
       document.getElementById('lg-content').innerHTML =
         '<div class="flex items-center justify-center py-12"><div class="spinner"></div><span class="ml-2 text-xs text-cf-gray">Loading BGP routes for ' + escHtml(prefix) + '...</span></div>';
       document.getElementById('lg-modal').classList.remove('hidden');
+
+      // Reset state
+      lgState.result = null;
+      lgState.prefix = prefix;
+      lgState.isIPv6 = prefix.indexOf(':') !== -1;
+      lgState.asnInfoMap = {};
+      lgState.rpkiMap = {};
+      lgState.originAsns = new Set();
+      lgState.taintedAsns = new Set();
+      lgState.showTier1 = true;
+      lgState.filterAsn = '';
+      lgState.showRpkiValid = true;
+      lgState.showRpkiInvalid = true;
+      lgState.filterCollector = '';
+      lgState.showVisibility = true;
 
       try {
         var resp = await fetch('/api/looking-glass', {
@@ -1601,7 +2285,50 @@ export function renderDashboard(userEmail: string): string {
             '<div class="text-center py-8 text-red-400 text-xs">' + escHtml(data.error) + '</div>';
           return;
         }
-        renderLookingGlass(data.result, prefix);
+        var result = data.result;
+        if (!result || !result.routes || result.routes.length === 0) {
+          document.getElementById('lg-content').innerHTML =
+            '<div class="text-center py-8 text-cf-gray text-xs">No BGP routes found for ' + escHtml(prefix) + '</div>';
+          return;
+        }
+
+        lgState.result = result;
+
+        // Build lookup maps
+        var meta = result.meta || {};
+        if (meta.asn_info) {
+          for (var i = 0; i < meta.asn_info.length; i++) {
+            var info = meta.asn_info[i];
+            lgState.asnInfoMap[info.asn] = info;
+          }
+        }
+        if (meta.prefix_origins) {
+          for (var i = 0; i < meta.prefix_origins.length; i++) {
+            var po = meta.prefix_origins[i];
+            lgState.rpkiMap[po.origin] = po.rpki_validation;
+          }
+        }
+
+        // Determine origin ASNs and tainted ASNs
+        result.routes.forEach(function(r) {
+          if (r.as_path && r.as_path.length > 0) {
+            var origin = r.as_path[r.as_path.length - 1];
+            lgState.originAsns.add(origin);
+            if (lgState.rpkiMap[origin] === 'invalid') {
+              r.as_path.forEach(function(asn) { lgState.taintedAsns.add(asn); });
+            }
+          }
+        });
+
+        // Auto-detect: if RPKI invalid exists, show invalid only + force full paths
+        var hasInvalid = false;
+        for (var key in lgState.rpkiMap) { if (lgState.rpkiMap[key] === 'invalid') { hasInvalid = true; break; } }
+        if (hasInvalid) {
+          lgState.showRpkiValid = false;
+          lgState.showRpkiInvalid = true;
+        }
+
+        lgRefresh();
       } catch (e) {
         document.getElementById('lg-content').innerHTML =
           '<div class="text-center py-8 text-red-400 text-xs">Failed to load: ' + escHtml(String(e)) + '</div>';
@@ -1610,197 +2337,7 @@ export function renderDashboard(userEmail: string): string {
 
     function closeLgModal() {
       document.getElementById('lg-modal').classList.add('hidden');
-    }
-
-    function renderLookingGlass(result, prefix) {
-      var container = document.getElementById('lg-content');
-      if (!result || !result.routes || result.routes.length === 0) {
-        container.innerHTML = '<div class="text-center py-8 text-cf-gray text-xs">No BGP routes found for ' + escHtml(prefix) + '</div>';
-        return;
-      }
-
-      var routes = result.routes;
-      var meta = result.meta || {};
-      var asnInfoMap = {};
-      if (meta.asn_info) {
-        for (var i = 0; i < meta.asn_info.length; i++) {
-          var info = meta.asn_info[i];
-          asnInfoMap[info.asn] = info;
-        }
-      }
-
-      // Build RPKI map from prefix_origins
-      var rpkiMap = {};
-      if (meta.prefix_origins) {
-        for (var i = 0; i < meta.prefix_origins.length; i++) {
-          var po = meta.prefix_origins[i];
-          rpkiMap[po.origin] = po.rpki_validation;
-        }
-      }
-
-      // Build graph data: unique nodes and edges
-      var nodeSet = {};
-      var edgeSet = {};
-      var nodeLayers = {};
-
-      for (var r = 0; r < routes.length; r++) {
-        var path = routes[r].as_path;
-        if (!path || path.length === 0) continue;
-        // Remove prepending (consecutive duplicates)
-        var cleaned = [path[0]];
-        for (var k = 1; k < path.length; k++) {
-          if (path[k] !== path[k - 1]) cleaned.push(path[k]);
-        }
-        // Origin is last ASN; reverse so origin is at left (layer 0)
-        var reversed = cleaned.slice().reverse();
-        for (var n = 0; n < reversed.length; n++) {
-          var asn = reversed[n];
-          if (!nodeSet[asn]) {
-            nodeSet[asn] = true;
-            nodeLayers[asn] = n;
-          } else {
-            // Take the minimum layer (closest to origin)
-            nodeLayers[asn] = Math.min(nodeLayers[asn], n);
-          }
-          if (n > 0) {
-            var eKey = reversed[n - 1] + '-' + reversed[n];
-            edgeSet[eKey] = { from: reversed[n - 1], to: reversed[n] };
-          }
-        }
-      }
-
-      // Assign layers and compute positions
-      var nodes = Object.keys(nodeSet).map(Number);
-      var edges = Object.values(edgeSet);
-
-      // Group nodes by layer
-      var layers = {};
-      var maxLayer = 0;
-      for (var i = 0; i < nodes.length; i++) {
-        var l = nodeLayers[nodes[i]];
-        if (!layers[l]) layers[l] = [];
-        layers[l].push(nodes[i]);
-        maxLayer = Math.max(maxLayer, l);
-      }
-
-      // Calculate positions
-      var nodeWidth = 140;
-      var nodeHeight = 36;
-      var layerGap = 180;
-      var nodeGap = 50;
-      var positions = {};
-      var svgWidth = (maxLayer + 1) * layerGap + 100;
-      var maxNodesInLayer = 0;
-      for (var l in layers) {
-        maxNodesInLayer = Math.max(maxNodesInLayer, layers[l].length);
-      }
-      var svgHeight = Math.max(300, maxNodesInLayer * (nodeHeight + nodeGap) + 60);
-
-      for (var l = 0; l <= maxLayer; l++) {
-        var layerNodes = layers[l] || [];
-        var totalHeight = layerNodes.length * nodeHeight + (layerNodes.length - 1) * nodeGap;
-        var startY = (svgHeight - totalHeight) / 2;
-        for (var j = 0; j < layerNodes.length; j++) {
-          positions[layerNodes[j]] = {
-            x: 50 + l * layerGap,
-            y: startY + j * (nodeHeight + nodeGap)
-          };
-        }
-      }
-
-      // Country flag helper
-      function countryFlag(code) {
-        if (!code || code.length !== 2) return '';
-        var c1 = 0x1F1E6 + code.charCodeAt(0) - 65;
-        var c2 = 0x1F1E6 + code.charCodeAt(1) - 65;
-        return String.fromCodePoint(c1) + String.fromCodePoint(c2);
-      }
-
-      // Render SVG
-      var svgParts = ['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + svgWidth + ' ' + svgHeight + '" style="width:100%;height:auto;min-height:300px;max-height:600px;">'];
-
-      // Draw edges
-      for (var e = 0; e < edges.length; e++) {
-        var fromPos = positions[edges[e].from];
-        var toPos = positions[edges[e].to];
-        if (!fromPos || !toPos) continue;
-        var x1 = fromPos.x + nodeWidth;
-        var y1 = fromPos.y + nodeHeight / 2;
-        var x2 = toPos.x;
-        var y2 = toPos.y + nodeHeight / 2;
-        var cpx = (x1 + x2) / 2;
-        svgParts.push('<path class="lg-edge" d="M' + x1 + ',' + y1 + ' C' + cpx + ',' + y1 + ' ' + cpx + ',' + y2 + ' ' + x2 + ',' + y2 + '" stroke="' + (document.documentElement.getAttribute('data-theme') === 'light' ? '#9CA3AF' : '#4B5563') + '"/>');
-      }
-
-      // Draw nodes
-      for (var i = 0; i < nodes.length; i++) {
-        var asn = nodes[i];
-        var pos = positions[asn];
-        if (!pos) continue;
-        var info = asnInfoMap[asn] || {};
-        var rpki = rpkiMap[asn];
-        var fillColor = rpki === 'valid' ? (document.documentElement.getAttribute('data-theme') === 'light' ? '#DCFCE7' : '#052E16') :
-                        rpki === 'invalid' ? (document.documentElement.getAttribute('data-theme') === 'light' ? '#FEE2E2' : '#450A0A') :
-                        (document.documentElement.getAttribute('data-theme') === 'light' ? '#F3F4F6' : '#1F2937');
-        var strokeColor = rpki === 'valid' ? '#22c55e' : rpki === 'invalid' ? '#ef4444' : (document.documentElement.getAttribute('data-theme') === 'light' ? '#D1D5DB' : '#374151');
-        var textColor = document.documentElement.getAttribute('data-theme') === 'light' ? '#111827' : '#E5E7EB';
-        var flag = countryFlag(info.country_code ? info.country_code.toUpperCase() : '');
-        var orgName = info.org_name || info.as_name || '';
-        if (orgName.length > 16) orgName = orgName.substring(0, 14) + '..';
-
-        svgParts.push('<g class="lg-node" transform="translate(' + pos.x + ',' + pos.y + ')">');
-        svgParts.push('<rect width="' + nodeWidth + '" height="' + nodeHeight + '" fill="' + fillColor + '" stroke="' + strokeColor + '" stroke-width="1.5" rx="6"/>');
-        svgParts.push('<text x="' + (nodeWidth / 2) + '" y="14" text-anchor="middle" fill="' + textColor + '" font-size="11" font-weight="600" font-family="Inter,system-ui,sans-serif">' + flag + ' AS' + asn + '</text>');
-        svgParts.push('<text x="' + (nodeWidth / 2) + '" y="28" text-anchor="middle" fill="' + (document.documentElement.getAttribute('data-theme') === 'light' ? '#6B7280' : '#8B949E') + '" font-size="9" font-family="Inter,system-ui,sans-serif">' + escHtml(orgName) + '</text>');
-        svgParts.push('</g>');
-      }
-
-      svgParts.push('</svg>');
-
-      // Build route table
-      var tableHtml = '<div class="overflow-x-auto mt-4 border-t border-cf-border pt-4">' +
-        '<div class="flex items-center justify-between mb-2">' +
-          '<span class="text-xs font-medium" style="color:var(--text-strong)">' + routes.length + ' routes from ' + (meta.collectors ? meta.collectors.length : '?') + ' collectors</span>' +
-        '</div>' +
-        '<table class="w-full text-xs">' +
-        '<thead><tr class="border-b border-cf-border">' +
-          '<th class="px-2 py-2 text-cf-gray font-medium text-left">Collector</th>' +
-          '<th class="px-2 py-2 text-cf-gray font-medium text-left">AS Path</th>' +
-          '<th class="px-2 py-2 text-cf-gray font-medium text-left">Next Hop</th>' +
-          '<th class="px-2 py-2 text-cf-gray font-medium text-left">Peer ASN</th>' +
-        '</tr></thead><tbody>';
-
-      for (var r = 0; r < Math.min(routes.length, 50); r++) {
-        var route = routes[r];
-        var pathStr = (route.as_path || []).join(' ');
-        tableHtml += '<tr class="border-b border-cf-border hover:bg-cf-surface">' +
-          '<td class="px-2 py-1.5 text-cf-gray">' + escHtml(route.collector || '') + '</td>' +
-          '<td class="px-2 py-1.5 font-mono" style="color:var(--text-strong)">' + escHtml(pathStr) + '</td>' +
-          '<td class="px-2 py-1.5 font-mono text-cf-gray">' + escHtml(route.next_hop || '') + '</td>' +
-          '<td class="px-2 py-1.5 text-cf-gray">' + (route.peer_asn || '') + '</td>' +
-        '</tr>';
-      }
-      if (routes.length > 50) {
-        tableHtml += '<tr><td colspan="4" class="px-2 py-2 text-center text-cf-gray italic">Showing 50 of ' + routes.length + ' routes</td></tr>';
-      }
-      tableHtml += '</tbody></table></div>';
-
-      // RPKI & prefix origin info
-      var rpkiHtml = '';
-      if (meta.prefix_origins && meta.prefix_origins.length > 0) {
-        rpkiHtml = '<div class="flex flex-wrap gap-2 mt-3">';
-        for (var i = 0; i < meta.prefix_origins.length; i++) {
-          var po = meta.prefix_origins[i];
-          var badge = po.rpki_validation === 'valid' ? 'badge-valid' : po.rpki_validation === 'invalid' ? 'badge-invalid' : 'badge-unknown';
-          rpkiHtml += '<span class="' + badge + '">Origin AS' + po.origin + ': RPKI ' + po.rpki_validation + ' (' + Math.round(po.visibility * 100) + '% visibility)</span>';
-        }
-        rpkiHtml += '</div>';
-      }
-
-      container.innerHTML =
-        '<div class="border border-cf-border rounded-lg p-3 overflow-x-auto">' + svgParts.join('') + '</div>' +
-        rpkiHtml +
-        tableHtml;
+      lgState.result = null;
     }
 
     // ─── Helpers ──────────────────────────────────────────────────
