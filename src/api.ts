@@ -6,6 +6,8 @@ import type {
   CfService,
   LgResult,
   RdapResult,
+  RpkiLookupResult,
+  RpkiPrefixOrigin,
 } from './types';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
@@ -242,6 +244,30 @@ export async function lookupBgpRoutes(prefix: string, token: string): Promise<Lg
     throw new Error('Radar API lookup failed');
   }
   return data.result;
+}
+
+// --- RPKI ROA Lookup (Cloudflare Radar) ---
+
+export async function lookupRpki(prefix: string, token: string): Promise<RpkiLookupResult> {
+  const r = await fetch(
+    `${RADAR_API}/radar/bgp/routes/pfx2as?prefix=${encodeURIComponent(prefix)}`,
+    { headers: authHeaders(token) },
+  );
+  const data = (await r.json()) as {
+    success: boolean;
+    result: {
+      meta: { data_time: string; total_peers: number };
+      prefix_origins: RpkiPrefixOrigin[];
+    };
+  };
+  if (!data.success) {
+    throw new Error('Radar RPKI lookup failed');
+  }
+  return {
+    prefix_origins: data.result.prefix_origins || [],
+    data_time: data.result.meta?.data_time || '',
+    total_peers: data.result.meta?.total_peers || 0,
+  };
 }
 
 // --- RDAP / Whois Lookup ---

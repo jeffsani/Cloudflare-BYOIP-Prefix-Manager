@@ -14,6 +14,7 @@ import {
   validatePrefix,
   verifyTokenPermissions,
   lookupBgpRoutes,
+  lookupRpki,
   lookupRdap,
 } from './api';
 
@@ -730,6 +731,27 @@ app.get('/api/rdap', async (c) => {
   } catch (e) {
     console.error('RDAP lookup error:', e);
     return c.json({ error: 'RDAP lookup failed' }, 502);
+  }
+});
+
+// ─── RPKI ROA Lookup ────────────────────────────────────────────────
+
+app.get('/api/rpki', async (c) => {
+  const email = c.get('userEmail');
+  const prefix = c.req.query('prefix');
+  const accountId = c.req.query('account_id');
+  if (!prefix) return c.json({ error: 'prefix is required' }, 400);
+
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const result = await lookupRpki(prefix, token);
+    return c.json({ result });
+  } catch (e) {
+    console.error('RPKI lookup error:', e);
+    return c.json({ error: 'RPKI lookup failed' }, 502);
   }
 });
 

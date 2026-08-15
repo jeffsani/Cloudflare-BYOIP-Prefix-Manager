@@ -80,8 +80,9 @@ export function renderDashboard(userEmail: string): string {
     .rdap-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 8px); left: 0; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
     .validation-hover { position: relative; display: inline-block; cursor: help; }
-    .validation-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: none; }
+    .validation-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; }
     .validation-hover:hover .validation-tip { display: block; }
+    .validation-tip a { pointer-events: auto; }
     .rdap-row { display: flex; gap: 6px; }
     .rdap-label { color: var(--muted); min-width: 70px; }
     .rdap-val { color: var(--text-strong); font-weight: 500; }
@@ -479,6 +480,7 @@ export function renderDashboard(userEmail: string): string {
     var pendingToggle = null;
     var expandedAccountTokens = {};
     var rdapCache = {};
+    var rpkiCache = {};
     var selectedPrefixes = new Set();
     var pendingBulkToggle = null;
     var servicesCache = {};
@@ -816,7 +818,7 @@ export function renderDashboard(userEmail: string): string {
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
       var statusBadge = statusBadgeHtml(p.advertised);
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
-      var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki');
+      var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
       var isChecked = selectedPrefixes.has(p.id);
 
       // Parent-level toggle button
@@ -1787,6 +1789,62 @@ export function renderDashboard(userEmail: string): string {
       return rows.length > 0 ? rows.join('') : '<div class="rdap-row"><span class="rdap-val">No data</span></div>';
     }
 
+    // ─── RPKI Details Hover ──────────────────────────────────────
+    async function showRpkiDetails(cidr, state, el) {
+      var tipEl = el.querySelector('.validation-tip');
+      if (!tipEl) return;
+      if (rpkiCache[cidr]) {
+        tipEl.innerHTML = formatRpkiDetails(rpkiCache[cidr], state, cidr);
+        return;
+      }
+      tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-label">Loading ROA data...</span></div>';
+      try {
+        var resp = await fetch('/api/rpki?prefix=' + encodeURIComponent(cidr) + '&account_id=' + encodeURIComponent(activeAccountId));
+        var data = await resp.json();
+        if (data.result) {
+          rpkiCache[cidr] = data.result;
+          tipEl.innerHTML = formatRpkiDetails(data.result, state, cidr);
+        } else {
+          tipEl.innerHTML = formatRpkiDetails(null, state, cidr);
+        }
+      } catch (e) {
+        tipEl.innerHTML = formatRpkiDetails(null, state, cidr);
+      }
+    }
+
+    function formatRpkiDetails(result, state, cidr) {
+      var rows = [];
+      // Static explanation of validation state
+      var stateText = validationTooltipText(state, 'rpki');
+      rows.push('<div style="margin-bottom:6px">' + stateText + '</div>');
+
+      if (result && result.prefix_origins && result.prefix_origins.length > 0) {
+        rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px">');
+        rows.push('<div style="font-weight:600;margin-bottom:4px;color:var(--text-strong)">Live ROA Data</div>');
+        for (var i = 0; i < result.prefix_origins.length; i++) {
+          var po = result.prefix_origins[i];
+          var rpkiBadgeClass = po.rpki_validation === 'VALID' || po.rpki_validation === 'valid' ? 'badge-valid' :
+            po.rpki_validation === 'INVALID' || po.rpki_validation === 'invalid' ? 'badge-invalid' : 'badge-unknown';
+          var rpkiLabel = po.rpki_validation || 'unknown';
+          rows.push('<div class="rdap-row" style="margin-bottom:2px"><span class="rdap-label">Origin</span><span class="rdap-val">AS' + po.origin + '</span></div>');
+          rows.push('<div class="rdap-row" style="margin-bottom:2px"><span class="rdap-label">Prefix</span><span class="rdap-val font-mono" style="font-size:10px">' + escHtml(po.prefix) + '</span></div>');
+          rows.push('<div class="rdap-row" style="margin-bottom:2px"><span class="rdap-label">RPKI</span><span class="' + rpkiBadgeClass + '" style="font-size:10px">' + escHtml(rpkiLabel) + '</span></div>');
+          rows.push('<div class="rdap-row" style="margin-bottom:4px"><span class="rdap-label">Peers</span><span class="rdap-val">' + po.peer_count + (result.total_peers ? ' / ' + result.total_peers : '') + '</span></div>');
+          if (i < result.prefix_origins.length - 1) {
+            rows.push('<div style="border-top:1px solid var(--border);margin:4px 0"></div>');
+          }
+        }
+        rows.push('</div>');
+      } else if (result) {
+        rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px;color:var(--muted)">No ROA entries found in global routing tables.</div>');
+      }
+
+      // Link to RPKI Portal
+      rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><a href="https://rpki.cloudflare.com/" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>');
+
+      return rows.join('');
+    }
+
     // ─── Prefix Re-validation ─────────────────────────────────────
     async function revalidatePrefix(prefixId) {
       if (!activeAccountId) return;
@@ -2572,7 +2630,7 @@ export function renderDashboard(userEmail: string): string {
       return '';
     }
 
-    function validationBadge(state, type) {
+    function validationBadge(state, type, cidr) {
       var badge;
       if (!state) {
         badge = '<span class="badge-unknown">—</span>';
@@ -2582,6 +2640,9 @@ export function renderDashboard(userEmail: string): string {
         else if (s === 'invalid') badge = '<span class="badge-invalid">Invalid</span>';
         else if (s === 'pending') badge = '<span class="badge-pending">Pending</span>';
         else badge = '<span class="badge-unknown">' + escHtml(state) + '</span>';
+      }
+      if (type === 'rpki' && cidr) {
+        return '<span class="validation-hover" onmouseenter="showRpkiDetails(\\'' + escAttr(cidr) + '\\',\\'' + escAttr(state || '') + '\\',this)">' + badge + '<span class="validation-tip">' + validationTooltipText(state, type) + '</span></span>';
       }
       if (type) {
         var tip = validationTooltipText(state, type);
