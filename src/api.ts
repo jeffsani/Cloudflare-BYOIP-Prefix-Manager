@@ -291,26 +291,21 @@ export async function lookupRpki(prefix: string, token: string): Promise<RpkiLoo
 
 interface RipestatVisibilityResponse {
   status: string;
+  status_code: number;
   data: {
     visibilities: Array<{
       probe: {
         city: string;
         country: string;
         name: string;
+        ipv4_peer_count: number;
+        ipv6_peer_count: number;
+        ixp: string;
       };
-      rrcs: Array<{
-        rrc: string;
-        location: string;
-        peers: Array<{
-          asn_origin: number;
-          as_path: string;
-          community: string;
-          last_updated: string;
-          prefix: string;
-          peer: string;
-          next_hop: string;
-        }>;
-      }>;
+      ipv4_full_table_peer_count: number;
+      ipv6_full_table_peer_count: number;
+      ipv4_full_table_peers_not_seeing: Array<{ asn: number; ip: string }>;
+      ipv6_full_table_peers_not_seeing: Array<{ asn: number; ip: string }>;
     }>;
     query_time: string;
     resource: string;
@@ -334,27 +329,33 @@ export async function lookupRipestatVisibility(prefix: string): Promise<Ripestat
     throw new Error('RIPEstat visibility data unavailable');
   }
 
+  const isIPv6 = prefix.includes(':');
   const rrcs: RipestatVisibilityResult['rrcs'] = [];
   let totalSeeing = 0;
   let totalPeers = 0;
 
   for (const vis of data.data.visibilities) {
-    for (const rrc of vis.rrcs) {
-      const seeing = rrc.peers?.length || 0;
-      // RIPEstat doesn't directly give total_peers per RRC in visibility endpoint,
-      // but the peers array contains those seeing the prefix
+    const peerCount = isIPv6
+      ? vis.ipv6_full_table_peer_count
+      : vis.ipv4_full_table_peer_count;
+    const notSeeing = isIPv6
+      ? (vis.ipv6_full_table_peers_not_seeing?.length || 0)
+      : (vis.ipv4_full_table_peers_not_seeing?.length || 0);
+    const seeing = Math.max(0, peerCount - notSeeing);
+
+    if (peerCount > 0) {
       rrcs.push({
-        rrc: rrc.rrc,
+        rrc: vis.probe.name,
         peers_seeing: seeing,
-        total_peers: seeing, // Will be updated if we get more data
-        location: rrc.location || '',
+        total_peers: peerCount,
+        location: vis.probe.city
+          ? `${vis.probe.city}, ${vis.probe.country}`
+          : vis.probe.country || '',
       });
       totalSeeing += seeing;
+      totalPeers += peerCount;
     }
   }
-
-  // Total peers is approximated from seeing peers across all RRCs
-  totalPeers = totalSeeing > 0 ? totalSeeing : 1;
 
   return {
     rrcs,

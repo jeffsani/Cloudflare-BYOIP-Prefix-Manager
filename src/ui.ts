@@ -1968,6 +1968,7 @@ export function renderDashboard(userEmail: string): string {
       showRpkiInvalid: true,
       filterCollector: '',
       showVisibility: false,
+      ripestatVisibility: null,
       showRoutes: false,
       expandedCollectors: {},
       refreshInterval: null,
@@ -2284,13 +2285,53 @@ export function renderDashboard(userEmail: string): string {
       var visPct = Math.round(po.visibility * 100 * 10) / 10;
       var visBadgeClass = visPct >= 95 ? 'lg-vis-badge-green' : visPct >= 50 ? 'lg-vis-badge-yellow' : 'lg-vis-badge-red';
 
+      // Info icon tooltip text
+      var infoTip = 'Prefix Visibility shows the percentage of global BGP route collectors that can see your prefix. '
+        + 'Data is sourced from RouteViews and RIPE RIS collectors via Cloudflare Radar, with an independent cross-reference from RIPEstat.\\n\\n'
+        + '100% visibility \\u2014 Your prefix is fully propagated and visible to all monitored peers.\\n\\n'
+        + '< 100% visibility \\u2014 Some peers cannot see your prefix. This could indicate:\\n'
+        + '\\u2022 Recent announcement still propagating (allow 5\\u201315 minutes)\\n'
+        + '\\u2022 BGP convergence in progress\\n'
+        + '\\u2022 Routing filtering by upstream providers\\n'
+        + '\\u2022 Missing or incorrect IRR/RPKI records causing route rejection\\n'
+        + '\\u2022 Potential routing issues or route leaks\\n\\n'
+        + 'If visibility remains below 95% for an extended period, investigate your upstream BGP sessions and route authorization records.';
+
       var html = '<div class="lg-vis-section">';
       html += '<div class="lg-vis-header">';
       html += '<span style="font-weight:600;font-size:13px;color:var(--text-strong)">Prefix Visibility</span>';
+      html += '<span class="lg-info-icon">i<span class="lg-info-tip" style="width:360px;white-space:pre-line">' + escHtml(infoTip) + '</span></span>';
       html += '<span class="lg-vis-badge ' + visBadgeClass + '">' + visPct + '% visible</span>';
       html += '<span style="font-size:12px;color:var(--muted)">' + po.total_visible + ' / ' + po.total_peers + ' peers see ' + escHtml(lgState.prefix) + '</span>';
       html += '<button onclick="lgState.showVisibility=!lgState.showVisibility;lgRefresh()" style="margin-left:auto;font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">' + (lgState.showVisibility ? 'Hide' : 'Show') + ' visibility</button>';
       html += '</div>';
+
+      // Side-by-side comparison with RIPEstat
+      var ripestat = lgState.ripestatVisibility;
+      if (ripestat && ripestat.total_peers > 0) {
+        var ripeVisPct = Math.round(ripestat.visibility * 100 * 10) / 10;
+        var ripeBadgeClass = ripeVisPct >= 95 ? 'lg-vis-badge-green' : ripeVisPct >= 50 ? 'lg-vis-badge-yellow' : 'lg-vis-badge-red';
+        var discrepancy = Math.abs(visPct - ripeVisPct);
+
+        html += '<div style="display:flex;align-items:center;gap:12px;margin:6px 0 4px;flex-wrap:wrap">';
+        html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px">';
+        html += '<span style="color:var(--muted)">Cloudflare Radar:</span>';
+        html += '<span class="lg-vis-badge ' + visBadgeClass + '" style="font-size:10px">' + visPct + '%</span>';
+        html += '<span style="color:var(--muted)">(' + po.total_visible + '/' + po.total_peers + ' peers)</span>';
+        html += '</div>';
+        html += '<div style="display:flex;align-items:center;gap:6px;font-size:11px">';
+        html += '<span style="color:var(--muted)">RIPE RIS:</span>';
+        html += '<span class="lg-vis-badge ' + ripeBadgeClass + '" style="font-size:10px">' + ripeVisPct + '%</span>';
+        html += '<span style="color:var(--muted)">(' + ripestat.total_seeing + '/' + ripestat.total_peers + ' peers)</span>';
+        html += '</div>';
+        if (discrepancy > 10) {
+          html += '<span class="lg-vis-badge lg-vis-badge-yellow" style="font-size:10px">&#9888; ' + Math.round(discrepancy) + '% discrepancy</span>';
+        }
+        html += '</div>';
+        if (ripestat.query_time) {
+          html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">RIPE RIS data as of ' + escHtml(ripestat.query_time) + ' (snapshots at 00:00, 08:00, 16:00 UTC)</div>';
+        }
+      }
 
       if (lgState.showVisibility) {
         // Compute per-collector visibility with peer details
@@ -2473,11 +2514,18 @@ export function renderDashboard(userEmail: string): string {
       // Reset countdown
       lgState.refreshCountdown = lgState.refreshSeconds;
       try {
-        var resp = await fetch('/api/looking-glass', {
+        // Fetch Radar routes and RIPEstat visibility in parallel
+        var lgPromise = fetch('/api/looking-glass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prefix: lgState.prefix, account_id: activeAccountId })
         });
+        var ripestatPromise = fetch('/api/ripestat-visibility?prefix=' + encodeURIComponent(lgState.prefix))
+          .then(function(r) { return r.json(); })
+          .then(function(d) { if (d.result) lgState.ripestatVisibility = d.result; })
+          .catch(function() { /* RIPEstat is optional */ });
+
+        var resp = await lgPromise;
         var data = await resp.json();
         if (data.error || !data.result || !data.result.routes) return;
         lgState.result = data.result;
@@ -2503,6 +2551,7 @@ export function renderDashboard(userEmail: string): string {
             }
           }
         });
+        await ripestatPromise;
         lgRefresh();
       } catch (e) {
         // Silently ignore refresh errors
@@ -2707,14 +2756,22 @@ export function renderDashboard(userEmail: string): string {
       lgState.showVisibility = false;
       lgState.showRoutes = false;
       lgState.expandedCollectors = {};
+      lgState.ripestatVisibility = null;
       lgStopRefresh();
 
       try {
-        var resp = await fetch('/api/looking-glass', {
+        // Fetch Radar routes and RIPEstat visibility in parallel
+        var lgPromise = fetch('/api/looking-glass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ prefix: prefix, account_id: activeAccountId })
         });
+        var ripestatPromise = fetch('/api/ripestat-visibility?prefix=' + encodeURIComponent(prefix))
+          .then(function(r) { return r.json(); })
+          .then(function(d) { if (d.result) lgState.ripestatVisibility = d.result; })
+          .catch(function() { /* RIPEstat is optional - ignore errors */ });
+
+        var resp = await lgPromise;
         var data = await resp.json();
         if (data.error) {
           document.getElementById('lg-content').innerHTML =
@@ -2764,6 +2821,8 @@ export function renderDashboard(userEmail: string): string {
           lgState.showRpkiInvalid = true;
         }
 
+        // Wait for RIPEstat to complete before rendering
+        await ripestatPromise;
         lgRefresh();
       } catch (e) {
         document.getElementById('lg-content').innerHTML =
@@ -2775,6 +2834,7 @@ export function renderDashboard(userEmail: string): string {
       lgStopRefresh();
       document.getElementById('lg-modal').classList.add('hidden');
       lgState.result = null;
+      lgState.ripestatVisibility = null;
     }
 
     // ─── Helpers ──────────────────────────────────────────────────

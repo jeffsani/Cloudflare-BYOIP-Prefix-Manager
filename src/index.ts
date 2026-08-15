@@ -16,6 +16,7 @@ import {
   lookupBgpRoutes,
   lookupRpki,
   lookupRdap,
+  lookupRipestatVisibility,
 } from './api';
 
 type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
@@ -673,6 +674,21 @@ app.get('/api/rpki', async (c) => {
   } catch (e) {
     console.error('RPKI lookup error:', e);
     return c.json({ error: 'RPKI lookup failed' }, 502);
+  }
+});
+
+// ─── RIPEstat Visibility ─────────────────────────────────────────────
+
+app.get('/api/ripestat-visibility', async (c) => {
+  const prefix = c.req.query('prefix');
+  if (!prefix) return c.json({ error: 'prefix is required' }, 400);
+
+  try {
+    const result = await lookupRipestatVisibility(prefix);
+    return c.json({ result });
+  } catch (e) {
+    console.error('RIPEstat visibility error:', e);
+    return c.json({ error: 'RIPEstat visibility lookup failed' }, 502);
   }
 });
 
