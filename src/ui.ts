@@ -137,6 +137,13 @@ export function renderDashboard(userEmail: string): string {
     .lg-vis-bar-gray { background: var(--muted); }
     .lg-vis-pct { min-width: 40px; text-align: right; color: var(--text-primary); }
     .lg-vis-peers { min-width: 80px; text-align: right; color: var(--muted); }
+    .lg-vis-row { cursor: pointer; }
+    .lg-vis-row:hover { background: rgba(99,102,241,0.04); }
+    .lg-vis-chevron { display: inline-flex; transition: transform 0.2s; font-size: 10px; color: var(--muted); margin-right: 4px; }
+    .lg-vis-chevron.open { transform: rotate(90deg); }
+    .lg-vis-detail { padding: 8px 0 8px 24px; border-bottom: 1px solid var(--border); }
+    .lg-vis-detail-label { font-size: 11px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
+    .lg-vis-peer-grid { display: flex; flex-wrap: wrap; gap: 4px; }
     .lg-asn-chip { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: 'Inter', monospace; background: var(--input-bg); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
     .lg-asn-chip:hover { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.4); }
     .lg-asn-chip-invalid { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
@@ -1667,6 +1674,7 @@ export function renderDashboard(userEmail: string): string {
       showRpkiInvalid: true,
       filterCollector: '',
       showVisibility: true,
+      expandedCollectors: {},
       // SVG pan/zoom state
       viewBox: { x: 0, y: 0, w: 800, h: 400 },
       baseViewBox: { x: 0, y: 0, w: 800, h: 400 },
@@ -1975,25 +1983,32 @@ export function renderDashboard(userEmail: string): string {
       html += '</div>';
 
       if (lgState.showVisibility) {
-        // Compute per-collector visibility
-        var collectorRoutes = {};
-        var collectorPeers = {};
+        // Compute per-collector visibility with peer details
+        var collectorPeerAsns = {};
         routes.forEach(function(r) {
-          if (!collectorRoutes[r.collector]) collectorRoutes[r.collector] = new Set();
-          collectorRoutes[r.collector].add(r.peer_ip || r.peer_asn);
+          if (!collectorPeerAsns[r.collector]) collectorPeerAsns[r.collector] = {};
+          var key = r.peer_asn || r.peer_ip;
+          if (key) collectorPeerAsns[r.collector][key] = r.peer_asn;
         });
-        collectors.forEach(function(c) { collectorPeers[c.collector] = c.peers_count; });
 
         collectors.forEach(function(c) {
-          var seen = collectorRoutes[c.collector] ? collectorRoutes[c.collector].size : 0;
+          var peerMap = collectorPeerAsns[c.collector] || {};
+          var peerAsnList = Object.values(peerMap).filter(Boolean);
+          var uniquePeerAsns = [];
+          var seenAsn = {};
+          peerAsnList.forEach(function(a) { if (!seenAsn[a]) { seenAsn[a] = true; uniquePeerAsns.push(a); } });
+          uniquePeerAsns.sort(function(a, b) { return a - b; });
+          var seen = Object.keys(peerMap).length;
           var total = c.peers_count || 1;
           var pct = Math.round(seen / total * 100);
           var barClass = pct >= 100 ? 'lg-vis-bar-green' : pct > 0 ? 'lg-vis-bar-yellow' : 'lg-vis-bar-gray';
           var isPartial = pct > 0 && pct < 100;
           var missing = total - seen;
           var isIPv6Only = c.peers_v4_count === 0 && c.peers_v6_count > 0;
+          var isExpanded = !!lgState.expandedCollectors[c.collector];
 
-          html += '<div class="lg-vis-row' + (isPartial ? ' lg-vis-partial' : '') + '">';
+          html += '<div class="lg-vis-row' + (isPartial ? ' lg-vis-partial' : '') + '" onclick="lgToggleCollector(\'' + escAttr(c.collector) + '\')">';
+          html += '<span class="lg-vis-chevron' + (isExpanded ? ' open' : '') + '">&#9654;</span>';
           html += '<span class="lg-vis-name">' + escHtml(c.collector) + '</span>';
           html += '<div class="lg-vis-bar-wrap"><div class="lg-vis-bar ' + barClass + '" style="width:' + Math.min(pct, 100) + '%"></div></div>';
           html += '<span class="lg-vis-pct">' + pct + '%</span>';
@@ -2001,6 +2016,26 @@ export function renderDashboard(userEmail: string): string {
           if (missing > 0 && pct < 100) html += '<span class="lg-vis-badge lg-vis-badge-red" style="font-size:10px">' + missing + ' missing</span>';
           html += '<span class="lg-vis-peers">' + seen + ' / ' + total + ' peers</span>';
           html += '</div>';
+
+          if (isExpanded && uniquePeerAsns.length > 0) {
+            html += '<div class="lg-vis-detail">';
+            html += '<div class="lg-vis-detail-label">Visible peers (' + uniquePeerAsns.length + ')</div>';
+            html += '<div class="lg-vis-peer-grid">';
+            uniquePeerAsns.forEach(function(asn) {
+              var info = lgState.asnInfoMap[asn] || {};
+              var flag = lgCountryFlag(info.country_code || '');
+              var name = info.org_name || info.as_name || '';
+              if (name.length > 20) name = name.substring(0, 18) + '\\u2026';
+              var chipClass = 'lg-asn-chip lg-chip-tip';
+              if (lgState.filterAsn && String(asn) === lgState.filterAsn) chipClass += ' lg-asn-chip-filtered';
+              html += '<span class="' + chipClass + '" onclick="event.stopPropagation();lgToggleAsnFilter(' + asn + ')">';
+              html += (flag ? flag + ' ' : '') + 'AS' + asn;
+              html += '<span class="lg-chip-tiptext">' + (flag ? flag + ' ' : '') + escHtml(name || 'AS' + asn) + '</span>';
+              html += '</span>';
+            });
+            html += '</div>';
+            html += '</div>';
+          }
         });
       }
 
@@ -2227,6 +2262,11 @@ export function renderDashboard(userEmail: string): string {
       lgUpdateViewBox();
     }
 
+    function lgToggleCollector(collector) {
+      lgState.expandedCollectors[collector] = !lgState.expandedCollectors[collector];
+      lgRefresh();
+    }
+
     function lgToggleAsnFilter(asn) {
       lgState.filterAsn = lgState.filterAsn === String(asn) ? '' : String(asn);
       lgRefresh();
@@ -2283,6 +2323,7 @@ export function renderDashboard(userEmail: string): string {
       lgState.showRpkiInvalid = true;
       lgState.filterCollector = '';
       lgState.showVisibility = true;
+      lgState.expandedCollectors = {};
 
       try {
         var resp = await fetch('/api/looking-glass', {
