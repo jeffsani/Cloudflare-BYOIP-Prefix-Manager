@@ -1026,9 +1026,14 @@ export function renderDashboard(userEmail: string): string {
       var parentToggleHtml = '';
       if (p.on_demand_enabled) {
         var isAdv = p.advertised === true;
-        parentToggleHtml = '<button class="toggle-btn' + (isAdv ? ' active' : '') + '"' +
-          (p.on_demand_locked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + (isAdv ? 'false' : 'true') + ',\\'' + escAttr(p.cidr) + '\\')"' + ' title="' + (isAdv ? 'Withdraw' : 'Advertise') + ' prefix"') +
-          '><span class="toggle-knob"></span></button>';
+        var toggleTip = p.on_demand_locked
+          ? 'This prefix is locked and cannot be toggled. Contact your Cloudflare account team to unlock.'
+          : isAdv
+            ? 'Currently advertised. Click to withdraw this prefix and stop announcing it via BGP to the Internet.'
+            : 'Currently withdrawn. Click to advertise this prefix and begin announcing it via BGP to the Internet.';
+        parentToggleHtml = '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (isAdv ? ' active' : '') + '"' +
+          (p.on_demand_locked ? ' disabled' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + (isAdv ? 'false' : 'true') + ',\\'' + escAttr(p.cidr) + '\\')"') +
+          '><span class="toggle-knob"></span></button><span class="validation-tip">' + toggleTip + '</span></span>';
       }
 
       // Description with inline edit
@@ -1105,9 +1110,14 @@ export function renderDashboard(userEmail: string): string {
           var bgpAdv = bp.on_demand && bp.on_demand.advertised;
           var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
           var bgpDelegationIcon = bgpHasDelegation(prefixId, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
-          var toggleHtml = '<button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
-            (bgpLocked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
-            '><span class="toggle-knob"></span></button>';
+          var bgpToggleTip = bgpLocked
+            ? 'This sub-prefix is locked and cannot be toggled. Contact your Cloudflare account team to unlock.'
+            : bgpAdv
+              ? 'Currently advertised. Click to withdraw this sub-prefix and stop announcing it via BGP.'
+              : 'Currently withdrawn. Click to advertise this sub-prefix and begin announcing it via BGP.';
+          var toggleHtml = '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
+            (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
+            '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
           var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
 
           html += '<tr class="child-row border-b border-cf-border">' +
