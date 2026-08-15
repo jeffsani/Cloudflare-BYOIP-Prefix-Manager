@@ -145,6 +145,10 @@ export function renderDashboard(userEmail: string): string {
     .lg-vis-detail { padding: 8px 0 8px 24px; border-bottom: 1px solid var(--border); }
     .lg-vis-detail-label { font-size: 11px; font-weight: 500; color: var(--muted); margin-bottom: 6px; }
     .lg-vis-peer-grid { display: flex; flex-wrap: wrap; gap: 4px; }
+    .lg-refresh-bar { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--muted); }
+    .lg-refresh-dot { width: 6px; height: 6px; border-radius: 50%; background: #22c55e; }
+    .lg-refresh-dot.active { animation: lgPulse 1s infinite; }
+    @keyframes lgPulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
     .lg-asn-chip { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-family: 'Inter', monospace; background: var(--input-bg); border: 1px solid var(--border); cursor: pointer; transition: all 0.15s; white-space: nowrap; }
     .lg-asn-chip:hover { background: rgba(99,102,241,0.15); border-color: rgba(99,102,241,0.4); }
     .lg-asn-chip-invalid { background: rgba(239,68,68,0.1); border-color: rgba(239,68,68,0.3); }
@@ -1884,7 +1888,11 @@ export function renderDashboard(userEmail: string): string {
       showRpkiInvalid: true,
       filterCollector: '',
       showVisibility: true,
+      showRoutes: true,
       expandedCollectors: {},
+      refreshInterval: null,
+      refreshCountdown: 0,
+      refreshSeconds: 30,
       // SVG pan/zoom state
       viewBox: { x: 0, y: 0, w: 800, h: 400 },
       baseViewBox: { x: 0, y: 0, w: 800, h: 400 },
@@ -2217,7 +2225,7 @@ export function renderDashboard(userEmail: string): string {
           var isIPv6Only = c.peers_v4_count === 0 && c.peers_v6_count > 0;
           var isExpanded = !!lgState.expandedCollectors[c.collector];
 
-          html += '<div class="lg-vis-row' + (isPartial ? ' lg-vis-partial' : '') + '" onclick="lgToggleCollector(\'' + escAttr(c.collector) + '\')">';
+          html += '<div class="lg-vis-row' + (isPartial ? ' lg-vis-partial' : '') + '" onclick="lgToggleCollector(\\'' + escAttr(c.collector) + '\\')">';
           html += '<span class="lg-vis-chevron' + (isExpanded ? ' open' : '') + '">&#9654;</span>';
           html += '<span class="lg-vis-name">' + escHtml(c.collector) + '</span>';
           html += '<div class="lg-vis-bar-wrap"><div class="lg-vis-bar ' + barClass + '" style="width:' + Math.min(pct, 100) + '%"></div></div>';
@@ -2258,9 +2266,17 @@ export function renderDashboard(userEmail: string): string {
 
       var html = '<div class="overflow-x-auto mt-4 border-t border-cf-border pt-4">';
       html += '<div class="flex items-center justify-between mb-2 flex-wrap gap-2">';
+      html += '<div class="flex items-center gap-2">';
       html += '<h3 style="font-size:13px;font-weight:600;color:var(--text-strong)">Routes to <span class="font-mono" style="color:#6366f1">' + escHtml(lgState.prefix) + '</span></h3>';
       html += '<span style="font-size:11px;color:var(--muted)">' + filtered.length + ' routes</span>';
       html += '</div>';
+      html += '<button onclick="lgState.showRoutes=!lgState.showRoutes;lgRefresh()" style="font-size:11px;padding:3px 10px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">' + (lgState.showRoutes ? 'Hide' : 'Show') + ' routes</button>';
+      html += '</div>';
+
+      if (!lgState.showRoutes) {
+        html += '</div>';
+        return html;
+      }
 
       html += '<table class="w-full text-xs"><thead><tr class="border-b border-cf-border">';
       html += '<th class="px-1 py-2 text-cf-gray font-medium w-8">JSON</th>';
@@ -2337,6 +2353,88 @@ export function renderDashboard(userEmail: string): string {
       return html;
     }
 
+    function lgRenderRefreshBar() {
+      var isRunning = !!lgState.refreshInterval;
+      var html = '<div class="lg-refresh-bar" style="margin:4px 0">';
+      if (isRunning) {
+        html += '<span class="lg-refresh-dot active"></span>';
+        html += '<span>Auto-refresh in <strong>' + lgState.refreshCountdown + 's</strong></span>';
+        html += '<button onclick="lgStopRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Stop</button>';
+      } else {
+        html += '<span class="lg-refresh-dot"></span>';
+        html += '<span>Auto-refresh off</span>';
+        html += '<button onclick="lgStartRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Start (30s)</button>';
+      }
+      html += '<button onclick="lgManualRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer" title="Refresh now">&#x21bb; Refresh</button>';
+      html += '</div>';
+      return html;
+    }
+
+    function lgStartRefresh() {
+      lgStopRefresh();
+      lgState.refreshCountdown = lgState.refreshSeconds;
+      lgState.refreshInterval = setInterval(function() {
+        lgState.refreshCountdown--;
+        // Update just the countdown display without full re-render
+        var dotEl = document.querySelector('.lg-refresh-dot');
+        var countEl = document.querySelector('.lg-refresh-bar strong');
+        if (countEl) countEl.textContent = lgState.refreshCountdown + 's';
+        if (lgState.refreshCountdown <= 0) {
+          lgManualRefresh();
+        }
+      }, 1000);
+      lgRefresh();
+    }
+
+    function lgStopRefresh() {
+      if (lgState.refreshInterval) {
+        clearInterval(lgState.refreshInterval);
+        lgState.refreshInterval = null;
+      }
+      lgState.refreshCountdown = 0;
+    }
+
+    async function lgManualRefresh() {
+      if (!lgState.prefix) return;
+      // Reset countdown
+      lgState.refreshCountdown = lgState.refreshSeconds;
+      try {
+        var resp = await fetch('/api/looking-glass', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix: lgState.prefix, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.error || !data.result || !data.result.routes) return;
+        lgState.result = data.result;
+
+        // Rebuild lookup maps
+        lgState.asnInfoMap = {};
+        lgState.rpkiMap = {};
+        lgState.originAsns = new Set();
+        lgState.taintedAsns = new Set();
+        var meta = data.result.meta || {};
+        if (meta.asn_info) {
+          meta.asn_info.forEach(function(info) { lgState.asnInfoMap[info.asn] = info; });
+        }
+        if (meta.prefix_origins) {
+          meta.prefix_origins.forEach(function(po) { lgState.rpkiMap[po.origin] = po.rpki_validation; });
+        }
+        data.result.routes.forEach(function(r) {
+          if (r.as_path && r.as_path.length > 0) {
+            var origin = r.as_path[r.as_path.length - 1];
+            lgState.originAsns.add(origin);
+            if (lgState.rpkiMap[origin] === 'invalid') {
+              r.as_path.forEach(function(asn) { lgState.taintedAsns.add(asn); });
+            }
+          }
+        });
+        lgRefresh();
+      } catch (e) {
+        // Silently ignore refresh errors
+      }
+    }
+
     function lgRefresh() {
       if (!lgState.result) return;
       var container = document.getElementById('lg-content');
@@ -2361,6 +2459,7 @@ export function renderDashboard(userEmail: string): string {
 
       var html = '';
       html += lgRenderFilters();
+      html += lgRenderRefreshBar();
       html += lgRenderPathToggle(filtered, forceFullMsg);
 
       // Graph
@@ -2533,7 +2632,9 @@ export function renderDashboard(userEmail: string): string {
       lgState.showRpkiInvalid = true;
       lgState.filterCollector = '';
       lgState.showVisibility = true;
+      lgState.showRoutes = true;
       lgState.expandedCollectors = {};
+      lgStopRefresh();
 
       try {
         var resp = await fetch('/api/looking-glass', {
@@ -2598,6 +2699,7 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function closeLgModal() {
+      lgStopRefresh();
       document.getElementById('lg-modal').classList.add('hidden');
       lgState.result = null;
     }
