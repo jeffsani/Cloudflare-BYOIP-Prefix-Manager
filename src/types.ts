@@ -67,6 +67,15 @@ export interface CfService {
   name: string;
 }
 
+export interface CfDelegation {
+  id: string;
+  cidr: string;
+  created_at: string;
+  delegated_account_id: string;
+  modified_at: string;
+  parent_prefix_id: string;
+}
+
 export interface CfApiResponse<T> {
   success: boolean;
   errors: Array<{ code: number; message: string }>;

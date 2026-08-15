@@ -18,6 +18,9 @@ import {
   lookupRpki,
   lookupRdap,
   lookupRipestatVisibility,
+  listDelegations,
+  createDelegation,
+  deleteDelegation,
 } from './api';
 
 type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
@@ -425,6 +428,89 @@ app.delete('/api/prefixes/:prefixId/bindings/:bindingId', async (c) => {
       email,
       'delete_binding',
       `Deleted service binding ${bindingId} on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// ─── Prefix Delegations ─────────────────────────────────────────────
+
+// List delegations for a specific prefix
+app.get('/api/prefixes/:prefixId/delegations', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id');
+  const prefixId = c.req.param('prefixId');
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await listDelegations(acct.account_id, prefixId, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+    return c.json({ delegations: data.result || [] });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Create a delegation for a prefix
+app.post('/api/prefixes/:prefixId/delegations', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ cidr: string; delegated_account_id: string; account_id?: string }>();
+  const prefixId = c.req.param('prefixId');
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  if (!body.cidr || !body.delegated_account_id) {
+    return c.json({ error: 'cidr and delegated_account_id are required' }, 400);
+  }
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await createDelegation(acct.account_id, prefixId, body.cidr, body.delegated_account_id, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'create_delegation',
+      `Delegated ${body.cidr} to account ${body.delegated_account_id} on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, delegation: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Delete a delegation for a prefix
+app.delete('/api/prefixes/:prefixId/delegations/:delegationId', async (c) => {
+  const email = c.get('userEmail');
+  const prefixId = c.req.param('prefixId');
+  const delegationId = c.req.param('delegationId');
+  const accountId = c.req.query('account_id');
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await deleteDelegation(acct.account_id, prefixId, delegationId, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'delete_delegation',
+      `Deleted delegation ${delegationId} on prefix ${prefixId} in account ${acct.account_id}`,
     );
 
     return c.json({ ok: true });

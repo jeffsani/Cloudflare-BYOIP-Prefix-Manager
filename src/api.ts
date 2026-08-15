@@ -4,6 +4,7 @@ import type {
   CfBgpPrefix,
   CfServiceBinding,
   CfService,
+  CfDelegation,
   LgResult,
   RdapResult,
   RpkiLookupResult,
@@ -132,6 +133,54 @@ export async function deleteServiceBinding(
 ): Promise<CfApiResponse<null>> {
   const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings/${bindingId}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    },
+  );
+  return r.json();
+}
+
+// --- Prefix Delegations ---
+
+export async function listDelegations(
+  accountId: string,
+  prefixId: string,
+  token: string,
+): Promise<CfApiResponse<CfDelegation[]>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations`,
+    { headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function createDelegation(
+  accountId: string,
+  prefixId: string,
+  cidr: string,
+  delegatedAccountId: string,
+  token: string,
+): Promise<CfApiResponse<CfDelegation>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ cidr, delegated_account_id: delegatedAccountId }),
+    },
+  );
+  return r.json();
+}
+
+export async function deleteDelegation(
+  accountId: string,
+  prefixId: string,
+  delegationId: string,
+  token: string,
+): Promise<CfApiResponse<{ id: string }>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations/${delegationId}`,
     {
       method: 'DELETE',
       headers: authHeaders(token),

@@ -71,6 +71,7 @@ export function renderDashboard(userEmail: string): string {
     .badge-unknown { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-active { background: rgba(59,130,246,0.15); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-service { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
+    .badge-delegation { background: rgba(20,184,166,0.15); color: #14b8a6; border: 1px solid rgba(20,184,166,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; outline: none; }
     .info-ico { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: normal; line-height: 1; cursor: help; transition: all 0.15s; }
     .info-tip:hover .info-ico, .info-tip:focus .info-ico { color: #F6821F; border-color: #F6821F; }
@@ -493,6 +494,53 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Delegate Prefix Modal -->
+  <div id="delegation-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDelegationModal()">
+    <div class="modal-content" style="max-width:480px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delegate Prefix</h3>
+        <p id="delegation-modal-prefix" class="text-xs text-cf-gray mt-0.5 font-mono"></p>
+      </div>
+      <div class="p-4">
+        <p class="text-[10px] text-cf-gray mb-3">Delegate a CIDR range within this prefix to another Cloudflare account. The delegated account will be able to use the prefix for their own services.</p>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">CIDR</label>
+          <div class="flex gap-2">
+            <input id="delegation-ip" type="text" placeholder="IP address" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+            <span class="text-cf-gray self-center">/</span>
+            <select id="delegation-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+          </div>
+        </div>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Delegated Account ID</label>
+          <input id="delegation-account-id" type="text" placeholder="Target Cloudflare Account ID" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+        </div>
+        <div id="delegation-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="delegation-submit-btn" onclick="submitDelegation()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Delegation</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete Delegation Confirm Modal -->
+  <div id="delete-delegation-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteDelegationModal()">
+    <div class="modal-content" style="max-width:420px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delete Delegation</h3>
+      </div>
+      <div class="p-4">
+        <p id="delete-delegation-message" class="text-xs text-cf-gray mb-3"></p>
+        <p class="text-[10px] text-yellow-400 mb-4">The delegated account will lose access to this prefix range. This action cannot be undone.</p>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeDeleteDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="delete-delegation-btn" onclick="executeDeleteDelegation()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Bulk Toggle Confirmation Modal -->
   <div id="bulk-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBulkConfirmModal()">
     <div class="modal-content" style="max-width:520px">
@@ -530,6 +578,8 @@ export function renderDashboard(userEmail: string): string {
     var servicesCache = {};
     var bindingModalContext = null;
     var childPrefixModalContext = null;
+    var delegationModalContext = null;
+    var pendingDeleteDelegation = null;
     var currentPage = 1;
     var pageSize = 25;
 
@@ -914,6 +964,26 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // Check if a prefix has delegations (only known after first expansion)
+    function hasDelegations(prefixId) {
+      var cd = childData[prefixId];
+      return cd && cd.delegations && cd.delegations.length > 0;
+    }
+
+    // Check if a BGP child prefix has a matching delegation
+    function bgpHasDelegation(prefixId, bgpCidr) {
+      var cd = childData[prefixId];
+      if (!cd || !cd.delegations || cd.delegations.length === 0) return false;
+      var bgpParsed = parseCIDR(bgpCidr);
+      if (!bgpParsed) return false;
+      for (var i = 0; i < cd.delegations.length; i++) {
+        var delParsed = parseCIDR(cd.delegations[i].cidr);
+        if (!delParsed) continue;
+        if (cidrOverlaps(bgpParsed, delParsed)) return true;
+      }
+      return false;
+    }
+
     // Check if a prefix has actual child BGP sub-prefixes (more specific than the parent itself)
     function hasChildBgpPrefixes(prefixId, parentCidr) {
       var cd = childData[prefixId];
@@ -930,6 +1000,7 @@ export function renderDashboard(userEmail: string): string {
     function renderPrefixRow(p, isExpanded) {
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
+      var delegationIcon = hasDelegations(p.id) ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg><span class="info-bubble" style="width:220px">This prefix has ' + childData[p.id].delegations.length + ' delegation(s) to other accounts.</span></span>' : '';
       var statusBadge = statusBadgeHtml(p.advertised);
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
       var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
@@ -957,7 +1028,7 @@ export function renderDashboard(userEmail: string): string {
       return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + p.id + '\\')">' +
         '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked ? 'checked' : '') + ' onchange="updateBulkSelection()" style="cursor:pointer;accent-color:#F6821F"></td>' +
         '<td class="px-3 py-2.5"><span class="' + chevClass + '" style="font-size:16px">&#9656;</span></td>' +
-        '<td class="px-2 py-2.5">' + lockIcon + '</td>' +
+        '<td class="px-2 py-2.5">' + lockIcon + delegationIcon + '</td>' +
         '<td class="px-3 py-2.5 font-mono font-medium" style="color:var(--text-strong)"><span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(p.cidr) + '\\',this)">' + escHtml(p.cidr) + '<span class="rdap-tip"></span></span></td>' +
         '<td class="px-3 py-2.5 text-cf-gray">' + (p.asn != null ? p.asn : '—') + '</td>' +
         '<td class="px-3 py-2.5">' + statusBadge + '</td>' +
@@ -970,6 +1041,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
           (!hasChildBgpPrefixes(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
+          (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -992,6 +1064,22 @@ export function renderDashboard(userEmail: string): string {
           '</tr>';
         }
       }
+      // Delegations on parent prefix
+      if (data.delegations && data.delegations.length > 0) {
+        for (var d = 0; d < data.delegations.length; d++) {
+          var del = data.delegations[d];
+          html += '<tr class="child-row border-b border-cf-border">' +
+            '<td class="px-2"></td>' +
+            '<td class="px-3"></td>' +
+            '<td class="px-2"><svg class="w-3 h-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></td>' +
+            '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-teal-400 mr-1">&#9500;&#9472;</span> <span class="badge-delegation">Delegation</span> <span class="text-cf-gray ml-1">' + escHtml(del.cidr) + '</span></td>' +
+            '<td class="px-3"></td>' +
+            '<td class="px-3 text-cf-gray text-[10px] font-mono" title="Delegated Account ID">' + escHtml(del.delegated_account_id) + '</td>' +
+            '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
+            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
+          '</tr>';
+        }
+      }
       // BGP sub-prefixes
       if (data.bgp_prefixes && data.bgp_prefixes.length > 0) {
         for (var j = 0; j < data.bgp_prefixes.length; j++) {
@@ -1000,26 +1088,28 @@ export function renderDashboard(userEmail: string): string {
           var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
           var bgpAdv = bp.on_demand && bp.on_demand.advertised;
           var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
+          var bgpDelegationIcon = bgpHasDelegation(prefixId, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
           var toggleHtml = '<button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
             (bgpLocked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
             '><span class="toggle-knob"></span></button>';
+          var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
 
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
-            '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + '</td>' +
+            '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + bgpDelegationIcon + '</td>' +
             '<td class="px-3 pl-8 font-mono" style="color:var(--text-strong)"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
             '<td class="px-3 text-cf-gray">' + (bp.asn != null ? bp.asn : '—') + '</td>' +
             '<td class="px-3">' + statusBadgeHtml(bgpAdv) + '</td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
-            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button></td>' +
+            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + '</td>' +
           '</tr>';
         }
       }
-      if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
-        html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
+      if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0) && (!data.delegations || data.delegations.length === 0)) {
+        html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
       }
       return html;
     }
@@ -1035,22 +1125,25 @@ export function renderDashboard(userEmail: string): string {
       expandedRows[prefixId] = true;
 
       if (!childData[prefixId]) {
-        childData[prefixId] = { bgp_prefixes: [], bindings: [], loading: true };
+        childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: true };
         renderPrefixTable();
 
         try {
           var bgpResp = fetch('/api/prefixes/' + prefixId + '/bgp?account_id=' + activeAccountId);
           var bindResp = fetch('/api/prefixes/' + prefixId + '/bindings?account_id=' + activeAccountId);
-          var results = await Promise.all([bgpResp, bindResp]);
+          var delResp = fetch('/api/prefixes/' + prefixId + '/delegations?account_id=' + activeAccountId);
+          var results = await Promise.all([bgpResp, bindResp, delResp]);
           var bgpData = await results[0].json();
           var bindData = await results[1].json();
+          var delData = await results[2].json();
           childData[prefixId] = {
             bgp_prefixes: bgpData.bgp_prefixes || [],
             bindings: bindData.bindings || [],
+            delegations: delData.delegations || [],
             loading: false
           };
         } catch (e) {
-          childData[prefixId] = { bgp_prefixes: [], bindings: [], loading: false, error: String(e) };
+          childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
         }
       }
 
@@ -1995,6 +2088,165 @@ export function renderDashboard(userEmail: string): string {
         var data = await resp.json();
         if (data.ok) {
           closeDeleteBindingModal();
+          delete childData[d.prefixId];
+          expandedRows[d.prefixId] = false;
+          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+        } else {
+          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+        }
+      } catch (e) {
+        alert('Delete failed: ' + e);
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
+    }
+
+    // ─── Delegation Modal ──────────────────────────────────────────
+
+    function openDelegationModal(prefixId, parentCidr) {
+      delegationModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+      var parsed = parseCIDR(parentCidr);
+      if (!parsed) return;
+
+      // Set prefix label
+      document.getElementById('delegation-modal-prefix').textContent = 'Prefix: ' + parentCidr;
+
+      // Pre-fill IP with parent network address
+      document.getElementById('delegation-ip').value = ipToString(parsed.network, parsed.v6);
+
+      // Populate mask dropdown (parent mask through /24 for IPv4, /48 for IPv6)
+      var maskSel = document.getElementById('delegation-mask');
+      var minMask = parsed.maskLen;
+      var maxMask = parsed.v6 ? 48 : 24;
+      var html = '';
+      for (var m = minMask; m <= maxMask; m++) {
+        html += '<option value="' + m + '"' + (m === parsed.maskLen ? ' selected' : '') + '>/' + m + '</option>';
+      }
+      maskSel.innerHTML = html;
+
+      // Clear fields
+      document.getElementById('delegation-account-id').value = '';
+      document.getElementById('delegation-error').classList.add('hidden');
+      document.getElementById('delegation-submit-btn').disabled = false;
+      document.getElementById('delegation-submit-btn').textContent = 'Create Delegation';
+
+      document.getElementById('delegation-modal').classList.remove('hidden');
+    }
+
+    function closeDelegationModal() {
+      document.getElementById('delegation-modal').classList.add('hidden');
+      delegationModalContext = null;
+    }
+
+    function validateDelegation() {
+      if (!delegationModalContext) return 'No context';
+      var parentCidr = delegationModalContext.parentCidr;
+      var parentParsed = parseCIDR(parentCidr);
+      if (!parentParsed) return 'Invalid parent prefix';
+
+      var ip = document.getElementById('delegation-ip').value.trim();
+      var mask = document.getElementById('delegation-mask').value;
+      if (!ip) return 'IP address is required';
+
+      var delegatedAccountId = document.getElementById('delegation-account-id').value.trim();
+      if (!delegatedAccountId) return 'Delegated Account ID is required';
+
+      var childCidr = ip + '/' + mask;
+      var childParsed = parseCIDR(childCidr);
+      if (!childParsed) return 'Invalid IP address';
+
+      // Check address family matches
+      if (childParsed.v6 !== parentParsed.v6) return 'Address family mismatch (IPv4 vs IPv6)';
+
+      // Check containment within parent prefix
+      if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
+
+      return null; // valid
+    }
+
+    async function submitDelegation() {
+      if (!delegationModalContext) return;
+
+      var validationError = validateDelegation();
+      if (validationError) {
+        var errEl = document.getElementById('delegation-error');
+        errEl.textContent = validationError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var ip = document.getElementById('delegation-ip').value.trim();
+      var mask = document.getElementById('delegation-mask').value;
+      var cidr = ip + '/' + mask;
+      var delegatedAccountId = document.getElementById('delegation-account-id').value.trim();
+      var prefixId = delegationModalContext.prefixId;
+
+      // Disable button and show loading
+      var btn = document.getElementById('delegation-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+      document.getElementById('delegation-error').classList.add('hidden');
+
+      try {
+        var resp = await fetch('/api/prefixes/' + prefixId + '/delegations', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cidr: cidr, delegated_account_id: delegatedAccountId, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeDelegationModal();
+          // Refresh the child data for this prefix
+          delete childData[prefixId];
+          expandedRows[prefixId] = false;
+          setTimeout(function() { toggleRow(prefixId); }, 100);
+        } else {
+          var errEl = document.getElementById('delegation-error');
+          errEl.textContent = data.error || 'Failed to create delegation';
+          errEl.classList.remove('hidden');
+        }
+      } catch (e) {
+        var errEl = document.getElementById('delegation-error');
+        errEl.textContent = 'Request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Create Delegation';
+      }
+    }
+
+    // ─── Delete Delegation ───────────────────────────────────────
+
+    function confirmDeleteDelegation(prefixId, delegationId, cidr, delegatedAccountId) {
+      pendingDeleteDelegation = { prefixId: prefixId, delegationId: delegationId, cidr: cidr, delegatedAccountId: delegatedAccountId };
+      document.getElementById('delete-delegation-message').innerHTML =
+        'Are you sure you want to delete the delegation of <strong class="font-mono">' + escHtml(cidr) + '</strong> to account <strong class="font-mono">' + escHtml(delegatedAccountId) + '</strong>?';
+      document.getElementById('delete-delegation-btn').disabled = false;
+      document.getElementById('delete-delegation-btn').textContent = 'Delete';
+      document.getElementById('delete-delegation-modal').classList.remove('hidden');
+    }
+
+    function closeDeleteDelegationModal() {
+      document.getElementById('delete-delegation-modal').classList.add('hidden');
+      pendingDeleteDelegation = null;
+    }
+
+    async function executeDeleteDelegation() {
+      if (!pendingDeleteDelegation) return;
+      var d = pendingDeleteDelegation;
+      var btn = document.getElementById('delete-delegation-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+
+      try {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/delegations/' + d.delegationId + '?account_id=' + activeAccountId, {
+          method: 'DELETE'
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeDeleteDelegationModal();
           delete childData[d.prefixId];
           expandedRows[d.prefixId] = false;
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
