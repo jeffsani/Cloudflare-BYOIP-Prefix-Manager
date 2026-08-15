@@ -231,6 +231,20 @@ export function renderDashboard(userEmail: string): string {
       </div>
     </div>
 
+    <!-- Bulk Action Bar -->
+    <div id="bulk-action-bar" class="hidden panel p-3 mb-4 flex items-center gap-3 fade-in" style="border-color:#F6821F;border-width:1px">
+      <span id="bulk-count" class="text-xs font-medium" style="color:var(--text-strong)">0 prefixes selected</span>
+      <button onclick="bulkToggle(true)" class="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+        Advertise Selected
+      </button>
+      <button onclick="bulkToggle(false)" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition flex items-center gap-1">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
+        Withdraw Selected
+      </button>
+      <button onclick="clearSelection()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Clear Selection</button>
+    </div>
+
     <!-- Prefix Table -->
     <div class="panel overflow-hidden">
       <div class="overflow-x-auto">
@@ -332,6 +346,25 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Bulk Toggle Confirmation Modal -->
+  <div id="bulk-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBulkConfirmModal()">
+    <div class="modal-content" style="max-width:520px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 id="bulk-confirm-title" class="text-sm font-semibold" style="color:var(--text-strong)">Confirm Bulk Advertisement Change</h3>
+      </div>
+      <div class="p-4">
+        <p id="bulk-confirm-message" class="text-xs text-cf-gray mb-3"></p>
+        <div id="bulk-confirm-list" class="max-h-48 overflow-y-auto mb-3 border border-cf-border rounded-lg p-2 text-xs font-mono"></div>
+        <div id="bulk-confirm-warning" class="text-[10px] text-yellow-400 mb-3 hidden"></div>
+        <div id="bulk-confirm-results" class="hidden mb-3 text-xs"></div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeBulkConfirmModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="bulk-confirm-btn" onclick="executeBulkToggle()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     // ─── State ────────────────────────────────────────────────────
     var savedAccounts = [];
@@ -343,6 +376,8 @@ export function renderDashboard(userEmail: string): string {
     var pendingToggle = null;
     var expandedAccountTokens = {};
     var rdapCache = {};
+    var selectedPrefixes = new Set();
+    var pendingBulkToggle = null;
     var servicesCache = {};
     var bindingModalContext = null;
 
@@ -602,6 +637,10 @@ export function renderDashboard(userEmail: string): string {
       tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
       expandedRows = {};
       childData = {};
+      selectedPrefixes.clear();
+      updateBulkBar();
+      var selectAllCb = document.getElementById('select-all-checkbox');
+      if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
       try {
         var resp = await fetch('/api/prefixes?account_id=' + activeAccountId);
         var data = await resp.json();
@@ -721,6 +760,7 @@ export function renderDashboard(userEmail: string): string {
         for (var i = 0; i < data.bindings.length; i++) {
           var b = data.bindings[i];
           html += '<tr class="child-row border-b border-cf-border">' +
+            '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-2"></td>' +
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-purple-400 mr-1">&#9500;&#9472;</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
@@ -747,6 +787,7 @@ export function renderDashboard(userEmail: string): string {
           }
 
           html += '<tr class="child-row border-b border-cf-border">' +
+            '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + '</td>' +
             '<td class="px-3 pl-8 font-mono" style="color:var(--text-strong)"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
@@ -766,7 +807,7 @@ export function renderDashboard(userEmail: string): string {
       var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
       var parentCidr = parentPrefix ? parentPrefix.cidr : '';
       html += '<tr class="child-row border-b border-cf-border">' +
-        '<td class="px-3"></td><td class="px-2"></td>' +
+        '<td class="px-2"></td><td class="px-3"></td><td class="px-2"></td>' +
         '<td class="px-3 pl-8" colspan="7">' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
             '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
@@ -830,6 +871,12 @@ export function renderDashboard(userEmail: string): string {
       var t = pendingToggle;
       closeConfirmModal();
 
+      // Handle parent-level toggle
+      if (t.isParent) {
+        await executeParentToggle(t);
+        return;
+      }
+
       try {
         var resp = await fetch('/api/prefixes/' + t.prefixId + '/bgp/' + t.bgpPrefixId + '/toggle', {
           method: 'POST',
@@ -849,6 +896,261 @@ export function renderDashboard(userEmail: string): string {
         }
       } catch (e) {
         alert('Toggle failed: ' + e);
+      }
+    }
+
+    // ─── Parent Prefix Toggle ─────────────────────────────────────
+    async function confirmParentToggle(prefixId, newState, cidr) {
+      var action = newState ? 'ADVERTISE' : 'WITHDRAW';
+      document.getElementById('confirm-message').innerHTML =
+        'Are you sure you want to <strong>' + action + '</strong> prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
+        '<span class="text-yellow-400">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>';
+
+      // We need to fetch BGP sub-prefixes to toggle them
+      pendingToggle = { prefixId: prefixId, advertised: newState, cidr: cidr, isParent: true };
+      document.getElementById('confirm-modal').classList.remove('hidden');
+    }
+
+    async function executeParentToggle(t) {
+      try {
+        // Fetch BGP sub-prefixes if not cached
+        var bgpPrefixes;
+        if (childData[t.prefixId] && childData[t.prefixId].bgp_prefixes) {
+          bgpPrefixes = childData[t.prefixId].bgp_prefixes;
+        } else {
+          var resp = await fetch('/api/prefixes/' + t.prefixId + '/bgp?account_id=' + activeAccountId);
+          var data = await resp.json();
+          bgpPrefixes = data.bgp_prefixes || [];
+        }
+
+        var errors = [];
+        var toggled = 0;
+        for (var i = 0; i < bgpPrefixes.length; i++) {
+          var bp = bgpPrefixes[i];
+          if (!bp.on_demand || !bp.on_demand.on_demand_enabled || bp.on_demand.on_demand_locked) continue;
+          if (bp.on_demand.advertised === t.advertised) continue;
+          try {
+            var toggleResp = await fetch('/api/prefixes/' + t.prefixId + '/bgp/' + bp.id + '/toggle', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ advertised: t.advertised, account_id: activeAccountId })
+            });
+            var toggleData = await toggleResp.json();
+            if (toggleData.ok) {
+              toggled++;
+            } else {
+              errors.push(bp.cidr + ': ' + (toggleData.error || 'Failed'));
+            }
+          } catch (err) {
+            errors.push(bp.cidr + ': ' + err);
+          }
+        }
+
+        if (errors.length > 0) {
+          alert('Toggled ' + toggled + ' sub-prefix(es), but ' + errors.length + ' failed:\\n' + errors.join('\\n'));
+        }
+
+        // Refresh
+        delete childData[t.prefixId];
+        loadPrefixes();
+      } catch (e) {
+        alert('Toggle failed: ' + e);
+      }
+    }
+
+    // ─── Description Editing ──────────────────────────────────────
+    function startEditDescription(prefixId, currentDesc) {
+      var display = document.getElementById('desc-display-' + prefixId);
+      var edit = document.getElementById('desc-edit-' + prefixId);
+      if (display) display.classList.add('hidden');
+      if (edit) {
+        edit.classList.remove('hidden');
+        var input = edit.querySelector('input');
+        if (input) {
+          input.value = currentDesc || '';
+          input.focus();
+          input.select();
+        }
+      }
+    }
+
+    function cancelEditDescription(prefixId) {
+      var display = document.getElementById('desc-display-' + prefixId);
+      var edit = document.getElementById('desc-edit-' + prefixId);
+      if (display) display.classList.remove('hidden');
+      if (edit) edit.classList.add('hidden');
+    }
+
+    async function saveDescription(prefixId, newDesc) {
+      var display = document.getElementById('desc-display-' + prefixId);
+      var edit = document.getElementById('desc-edit-' + prefixId);
+      var spinner = document.getElementById('desc-spinner-' + prefixId);
+
+      // Find current description to compare
+      var prefix = allPrefixes.find(function(p) { return p.id === prefixId; });
+      if (prefix && newDesc === (prefix.description || '')) {
+        cancelEditDescription(prefixId);
+        return;
+      }
+
+      if (spinner) spinner.classList.remove('hidden');
+      var input = edit ? edit.querySelector('input') : null;
+      if (input) input.disabled = true;
+
+      try {
+        var resp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/description', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: newDesc, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          // Update local data
+          if (prefix) prefix.description = newDesc;
+          renderPrefixTable();
+        } else {
+          alert('Failed to update description: ' + (data.error || 'Unknown error'));
+          cancelEditDescription(prefixId);
+        }
+      } catch (e) {
+        alert('Failed to update description: ' + e);
+        cancelEditDescription(prefixId);
+      } finally {
+        if (spinner) spinner.classList.add('hidden');
+        if (input) input.disabled = false;
+      }
+    }
+
+    // ─── Bulk Selection ───────────────────────────────────────────
+    function toggleSelectAll(checkbox) {
+      var checkboxes = document.querySelectorAll('.prefix-checkbox');
+      if (checkbox.checked) {
+        checkboxes.forEach(function(cb) { cb.checked = true; selectedPrefixes.add(cb.value); });
+      } else {
+        checkboxes.forEach(function(cb) { cb.checked = false; });
+        selectedPrefixes.clear();
+      }
+      updateBulkBar();
+    }
+
+    function updateBulkSelection() {
+      selectedPrefixes.clear();
+      var checkboxes = document.querySelectorAll('.prefix-checkbox:checked');
+      checkboxes.forEach(function(cb) { selectedPrefixes.add(cb.value); });
+      updateBulkBar();
+      // Update select-all checkbox state
+      var allCbs = document.querySelectorAll('.prefix-checkbox');
+      var selectAllCb = document.getElementById('select-all-checkbox');
+      if (selectAllCb) {
+        selectAllCb.checked = allCbs.length > 0 && checkboxes.length === allCbs.length;
+        selectAllCb.indeterminate = checkboxes.length > 0 && checkboxes.length < allCbs.length;
+      }
+    }
+
+    function updateBulkBar() {
+      var bar = document.getElementById('bulk-action-bar');
+      var count = selectedPrefixes.size;
+      if (count === 0) {
+        bar.classList.add('hidden');
+      } else {
+        bar.classList.remove('hidden');
+        document.getElementById('bulk-count').textContent = count + ' prefix' + (count === 1 ? '' : 'es') + ' selected';
+      }
+    }
+
+    function clearSelection() {
+      selectedPrefixes.clear();
+      var checkboxes = document.querySelectorAll('.prefix-checkbox');
+      checkboxes.forEach(function(cb) { cb.checked = false; });
+      var selectAllCb = document.getElementById('select-all-checkbox');
+      if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
+      updateBulkBar();
+    }
+
+    function bulkToggle(advertised) {
+      if (selectedPrefixes.size === 0) return;
+      var action = advertised ? 'ADVERTISE' : 'WITHDRAW';
+      var prefixIds = Array.from(selectedPrefixes);
+      var selected = prefixIds.map(function(id) {
+        return allPrefixes.find(function(p) { return p.id === id; });
+      }).filter(Boolean);
+
+      var listHtml = selected.map(function(p) {
+        var badge = statusBadgeHtml(p.advertised);
+        var lockNote = p.on_demand_locked ? ' <span class="text-yellow-400">(locked - will be skipped)</span>' : '';
+        return '<div class="flex items-center gap-2 py-1">' + badge + ' <span>' + escHtml(p.cidr) + '</span>' + lockNote + '</div>';
+      }).join('');
+
+      var lockedCount = selected.filter(function(p) { return p.on_demand_locked; }).length;
+
+      document.getElementById('bulk-confirm-title').textContent = 'Confirm Bulk ' + (advertised ? 'Advertise' : 'Withdraw');
+      document.getElementById('bulk-confirm-message').innerHTML =
+        'Are you sure you want to <strong>' + action + '</strong> the following ' + selected.length + ' prefix' + (selected.length === 1 ? '' : 'es') + '?';
+      document.getElementById('bulk-confirm-list').innerHTML = listHtml;
+
+      var warningEl = document.getElementById('bulk-confirm-warning');
+      if (lockedCount > 0) {
+        warningEl.textContent = lockedCount + ' locked prefix' + (lockedCount === 1 ? '' : 'es') + ' will be skipped.';
+        warningEl.classList.remove('hidden');
+      } else {
+        warningEl.classList.add('hidden');
+      }
+
+      document.getElementById('bulk-confirm-results').classList.add('hidden');
+      document.getElementById('bulk-confirm-btn').disabled = false;
+      document.getElementById('bulk-confirm-btn').textContent = 'Confirm';
+      pendingBulkToggle = { prefix_ids: prefixIds, advertised: advertised };
+      document.getElementById('bulk-confirm-modal').classList.remove('hidden');
+    }
+
+    function closeBulkConfirmModal() {
+      document.getElementById('bulk-confirm-modal').classList.add('hidden');
+      pendingBulkToggle = null;
+    }
+
+    async function executeBulkToggle() {
+      if (!pendingBulkToggle) return;
+      var t = pendingBulkToggle;
+      var btn = document.getElementById('bulk-confirm-btn');
+      btn.disabled = true;
+      btn.textContent = 'Processing...';
+
+      try {
+        var resp = await fetch('/api/prefixes/bulk-toggle', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prefix_ids: t.prefix_ids, advertised: t.advertised, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok && data.results) {
+          var totalToggled = 0, totalSkipped = 0, totalErrors = 0;
+          var resultLines = data.results.map(function(r) {
+            totalToggled += r.toggled;
+            totalSkipped += r.skipped;
+            totalErrors += r.errors.length;
+            var status = r.toggled > 0 ? '<span class="badge-valid">OK</span>' : (r.errors.length > 0 ? '<span class="badge-invalid">Error</span>' : '<span class="badge-unknown">Skipped</span>');
+            return '<div class="py-1">' + status + ' <span class="font-mono">' + escHtml(r.cidr || r.prefix_id) + '</span> — ' + r.toggled + ' toggled, ' + r.skipped + ' skipped' + (r.errors.length > 0 ? ', ' + r.errors.length + ' error(s)' : '') + '</div>';
+          });
+
+          var resultsEl = document.getElementById('bulk-confirm-results');
+          resultsEl.innerHTML =
+            '<div class="border border-cf-border rounded-lg p-2 mb-2">' +
+              '<div class="font-medium mb-1" style="color:var(--text-strong)">Results: ' + totalToggled + ' toggled, ' + totalSkipped + ' skipped, ' + totalErrors + ' error(s)</div>' +
+              resultLines.join('') +
+            '</div>';
+          resultsEl.classList.remove('hidden');
+
+          btn.textContent = 'Done';
+          // Refresh data
+          clearSelection();
+          loadPrefixes();
+        } else {
+          alert('Bulk toggle failed: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Bulk toggle failed: ' + e);
+      } finally {
+        btn.disabled = false;
       }
     }
 
