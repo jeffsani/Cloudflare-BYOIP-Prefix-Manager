@@ -1,93 +1,169 @@
-# Network Tools
+# Network Tools — BYOIP Prefix Manager
 
+A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts. Built with Hono, server-rendered HTML, and vanilla JavaScript.
 
+**Live:** [network-tools.example.com](https://network-tools.example.com) (Cloudflare Access — Google IdP)
 
-## Getting started
+## Features
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+### Prefix Management
+- **Prefix Table** — View all BYOIP prefixes with CIDR, ASN, advertisement status, IRR/RPKI validation state, lock status, and description
+- **Expandable Rows** — Click any prefix to drill into its BGP sub-prefixes and service bindings in a tree view
+- **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, and ASN
+- **Advertisement Toggle** — Advertise or withdraw individual BGP sub-prefixes with a toggle switch and confirmation dialog; all changes are logged to an activity feed
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
+### Looking Glass
+- **BGP Route Visualization** — Click the search icon on any prefix or sub-prefix to open the looking glass modal
+- **AS-Path Graph** — SVG-rendered graph showing BGP routing paths from origin to collectors, with RPKI validation coloring and ASN metadata (org name, country flag)
+- **Route Table** — Tabular view of raw BGP routes including collector, AS path, next hop, and peer ASN
 
-## Add your files
+### Multi-Account & Multi-Token
+- **Per-User Accounts** — Each user (identified via Cloudflare Access JWT with Google IdP) can configure multiple Cloudflare accounts, each with its own label and account ID
+- **Multi-Token Load Balancing** — Add multiple API tokens per account to distribute API requests via round-robin and avoid the Cloudflare API rate limit (1200 requests per endpoint per 5-minute window per token). Write operations (advertisement toggle) always use the first token for consistency.
+- **Token Testing** — Test any token's permissions before saving, with inline badge feedback for IP Prefixes Read and Addressing Services Read
 
-* [Create](https://docs.gitlab.com/user/project/repository/web_editor/#create-a-file) or [upload](https://docs.gitlab.com/user/project/repository/web_editor/#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
+### UI
+- **Dark/Light Theme** — Toggle between dark and light mode (persisted in localStorage)
+- **Responsive** — Works on desktop and mobile; stats row collapses to 2-column grid on small screens
+- **User Display** — Logged-in user email displayed in the header toolbar
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Runtime | Cloudflare Workers |
+| Framework | [Hono](https://hono.dev/) v4.6+ |
+| Frontend | Server-rendered HTML + vanilla JS |
+| CSS | Tailwind CSS (CDN) + CSS custom properties |
+| Database | Cloudflare D1 (SQLite) |
+| Auth | Cloudflare Access (Zero Trust) with Google IdP |
+| Build | Wrangler v4 |
+| Language | TypeScript 5.9+ |
+
+## Setup
+
+### Prerequisites
+
+- Node.js 18+
+- Wrangler CLI (`npm install -g wrangler`)
+- A Cloudflare account with BYOIP prefixes
+
+### 1. Clone and install
+
+```bash
+git clone https://github.com/YOUR_ORG/prefix-mgr.git
+cd network-tools
+npm install
+```
+
+### 2. Configure Wrangler
+
+```bash
+cp wrangler.toml.example wrangler.toml
+# Edit wrangler.toml:
+#   - Set database_id to your D1 database ID
+#   - Set CF_ACCESS_TEAM_DOMAIN to your Access team name
+#   - Set ENVIRONMENT to "production" for deployment
+```
+
+### 3. Create and initialize D1 database
+
+```bash
+npm run db:create
+# Copy the database_id into wrangler.toml
+npm run db:init          # local
+npm run db:init:remote   # production
+```
+
+If upgrading from an earlier version (before multi-token support):
+```bash
+npx wrangler d1 execute network-tools-db --remote --file=migrate-multi-token.sql
+```
+
+### 4. Local development
+
+```bash
+npm run dev
+```
+
+Set `ENVIRONMENT = "development"` in `wrangler.toml` to bypass Cloudflare Access auth during local dev (uses `dev@localhost` as the user).
+
+### 5. Deploy
+
+```bash
+npm run deploy
+```
+
+## API Token Permissions
+
+Each user creates their own Cloudflare API tokens in the Settings panel. Tokens need these permissions:
+
+| Permission | Access | Scope | Required For |
+|-----------|--------|-------|-------------|
+| **IP Prefixes** | Read | Account | Viewing prefixes, service bindings |
+| **IP Prefixes** | Edit | Account | (future: prefix management) |
+| **IP Prefixes: BGP On Demand** | Read | Account | Viewing BGP sub-prefixes |
+| **IP Prefixes: BGP On Demand** | Edit | Account | Toggling advertisement state |
+
+### Rate Limit & Multi-Token Strategy
+
+The Cloudflare API enforces a rate limit of **1200 requests per endpoint per 5-minute window per API token**. When managing accounts with many prefixes, a single token can be exhausted quickly — especially when expanding rows (which triggers parallel BGP + binding fetches).
+
+To mitigate this, add multiple API tokens per account in the Settings panel (all with the same permissions). The worker distributes read requests across them via round-robin. Write operations (advertisement toggle) always use the first token for consistency.
+
+## Cloudflare Access
+
+The worker is protected by a Cloudflare Access application. In production, the `Cf-Access-Jwt-Assertion` header is decoded to extract the user's email from the JWT payload. All data (accounts, tokens, activity) is scoped to the authenticated user's email.
+
+In development (`ENVIRONMENT != "production"`), auth is bypassed with `dev@localhost`.
+
+## Project Structure
 
 ```
-cd existing_repo
-git remote add origin https://github.com/YOUR_ORG/prefix-mgr.git
-git branch -M main
-git push -uf origin main
+network-tools/
+├── package.json
+├── tsconfig.json
+├── wrangler.toml.example
+├── schema.sql                  — Full schema (user_accounts + account_tokens + activity_log)
+├── migrate-multi-token.sql     — Migration for existing deployments
+└── src/
+    ├── index.ts    — Hono app, API routes, token pool logic
+    ├── ui.ts       — Server-rendered HTML dashboard (925+ lines)
+    ├── auth.ts     — CF Access JWT middleware
+    ├── types.ts    — TypeScript interfaces
+    └── api.ts      — Cloudflare API helpers
 ```
 
-## Integrate with your tools
+## Database Schema
 
-* [Set up project integrations](https://github.com/sani/network-tools/-/settings/integrations)
+### `user_accounts`
+Stores Cloudflare account configurations per user. One row per user + account_id combination.
 
-## Collaborate with your team
+### `account_tokens`
+Stores API tokens per account. Multiple tokens per account enable round-robin load balancing. Legacy tokens from `user_accounts.api_token` are auto-migrated on first access.
 
-* [Invite team members and collaborators](https://docs.gitlab.com/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/user/project/merge_requests/creating_merge_requests/)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/user/project/issues/managing_issues/#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+### `activity_log`
+Tracks advertisement toggle actions (advertise/withdraw) with user email, action, details, and timestamp.
 
-## Test and Deploy
+## API Endpoints
 
-Use the built-in continuous integration in GitLab.
-
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/topics/autodevops/requirements/)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ci/environments/protected_environments/)
-
-***
-
-# Editing this README
-
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
-
-## Suggestions for a good README
-
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
-
-## Name
-Choose a self-explaining name for your project.
-
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
-
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
-
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
-
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
-
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
-
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
-
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
-
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
-
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
-
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
-
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
-
-## License
-For open source projects, say how it is licensed.
-
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Dashboard HTML |
+| `GET` | `/health` | Health check |
+| `GET` | `/api/me` | Current user email |
+| `GET` | `/api/settings` | List accounts (with token counts) |
+| `POST` | `/api/settings` | Add/update account (label + account_id) |
+| `DELETE` | `/api/settings/:id` | Delete account (cascades to tokens) |
+| `PUT` | `/api/settings/:id/default` | Set default account |
+| `GET` | `/api/tokens` | List tokens for an account (masked) |
+| `POST` | `/api/tokens` | Add token to an account |
+| `DELETE` | `/api/tokens/:id` | Delete a token |
+| `POST` | `/api/test-token` | Validate token permissions |
+| `GET` | `/api/prefixes` | List BYOIP prefixes |
+| `GET` | `/api/prefixes/:id/bgp` | List BGP sub-prefixes |
+| `GET` | `/api/prefixes/:id/bindings` | List service bindings |
+| `GET` | `/api/services` | List available services |
+| `POST` | `/api/prefixes/:pid/bgp/:bid/toggle` | Toggle BGP advertisement |
+| `POST` | `/api/looking-glass` | BGP route lookup (Radar API) |
+| `GET` | `/api/activity` | Activity log (last 50 entries) |

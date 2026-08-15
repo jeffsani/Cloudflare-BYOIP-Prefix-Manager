@@ -1,0 +1,33 @@
+name = "network-tools"
+main = "src/index.ts"
+compatibility_date = "2025-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[routes]]
+pattern = "network-tools.example.com/*"
+zone_name = "example.com"
+
+[vars]
+# CF Access — set to your Access team name (e.g. "mycompany" for mycompany.cloudflareaccess.com)
+# Set ENVIRONMENT to "development" to bypass auth during local dev
+ENVIRONMENT = "production"
+CF_ACCESS_TEAM_DOMAIN = "YOUR_ACCESS_TEAM_NAME"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "network-tools-db"
+# Replace with your D1 database ID after running: npx wrangler d1 create network-tools-db
+database_id = "YOUR_D1_DATABASE_ID"
+
+[placement]
+mode = "smart"
+
+[observability]
+enabled = true
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
