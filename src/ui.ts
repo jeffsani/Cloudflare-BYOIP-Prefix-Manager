@@ -827,13 +827,13 @@ export function renderDashboard(userEmail: string): string {
       if (prefixStats) {
         var s = prefixStats;
         document.getElementById('stat-total').textContent = s.parent.total + s.bgp.total;
-        document.getElementById('stat-total-sub').textContent = s.parent.total + ' Parent / ' + s.bgp.total + ' BGP';
+        document.getElementById('stat-total-sub').textContent = s.parent.total + ' Parent / ' + s.bgp.total + ' Child';
         document.getElementById('stat-advertised').textContent = s.parent.advertised + s.bgp.advertised;
-        document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' BGP';
+        document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' Child';
         document.getElementById('stat-withdrawn').textContent = s.parent.withdrawn + s.bgp.withdrawn;
-        document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' Parent / ' + s.bgp.withdrawn + ' BGP';
+        document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' Parent / ' + s.bgp.withdrawn + ' Child';
         document.getElementById('stat-locked').textContent = s.parent.locked + s.bgp.locked;
-        document.getElementById('stat-locked-sub').textContent = s.parent.locked + ' Parent / ' + s.bgp.locked + ' BGP';
+        document.getElementById('stat-locked-sub').textContent = s.parent.locked + ' Parent / ' + s.bgp.locked + ' Child';
       } else {
         var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
         var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
