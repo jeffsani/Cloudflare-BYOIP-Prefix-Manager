@@ -346,6 +346,7 @@ export function renderDashboard(userEmail: string): string {
           </tbody>
         </table>
       </div>
+      <div id="pagination-controls" class="hidden border-t border-cf-border px-4 py-3 flex items-center justify-between"></div>
     </div>
   </main>
 
@@ -500,6 +501,8 @@ export function renderDashboard(userEmail: string): string {
     var servicesCache = {};
     var bindingModalContext = null;
     var childPrefixModalContext = null;
+    var currentPage = 1;
+    var pageSize = 25;
 
     // ─── Tooltip Positioning (fixed, escapes overflow:hidden) ────
     function positionTooltip(triggerEl, tipEl) {
@@ -708,6 +711,7 @@ export function renderDashboard(userEmail: string): string {
     // ─── Prefixes ─────────────────────────────────────────────────
     async function loadPrefixes() {
       if (!activeAccountId) return;
+      currentPage = 1;
       var tbody = document.getElementById('prefix-table-body');
       tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
       expandedRows = {};
@@ -768,6 +772,7 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function applyFilters() {
+      currentPage = 1;
       var statusFilter = document.getElementById('filter-status').value;
       var lockFilter = document.getElementById('filter-lock').value;
       var prefixFilter = document.getElementById('filter-prefix').value.trim().toLowerCase();
@@ -791,12 +796,21 @@ export function renderDashboard(userEmail: string): string {
       var tbody = document.getElementById('prefix-table-body');
       if (filteredPrefixes.length === 0) {
         tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-cf-gray">No prefixes match the current filters</td></tr>';
+        renderPaginationControls();
         return;
       }
 
+      var totalPages = Math.ceil(filteredPrefixes.length / pageSize);
+      if (currentPage > totalPages) currentPage = totalPages;
+      if (currentPage < 1) currentPage = 1;
+
+      var startIdx = (currentPage - 1) * pageSize;
+      var endIdx = Math.min(startIdx + pageSize, filteredPrefixes.length);
+      var pageItems = filteredPrefixes.slice(startIdx, endIdx);
+
       var html = '';
-      for (var i = 0; i < filteredPrefixes.length; i++) {
-        var p = filteredPrefixes[i];
+      for (var i = 0; i < pageItems.length; i++) {
+        var p = pageItems[i];
         var isExpanded = expandedRows[p.id] || false;
         html += renderPrefixRow(p, isExpanded);
         if (isExpanded && childData[p.id]) {
@@ -804,6 +818,71 @@ export function renderDashboard(userEmail: string): string {
         }
       }
       tbody.innerHTML = html;
+      renderPaginationControls();
+    }
+
+    function renderPaginationControls() {
+      var container = document.getElementById('pagination-controls');
+      if (!container) return;
+      if (filteredPrefixes.length <= pageSize) {
+        container.classList.add('hidden');
+        return;
+      }
+      container.classList.remove('hidden');
+      var totalPages = Math.ceil(filteredPrefixes.length / pageSize);
+      var startIdx = (currentPage - 1) * pageSize + 1;
+      var endIdx = Math.min(currentPage * pageSize, filteredPrefixes.length);
+
+      var html = '<span class="text-xs text-cf-gray">Showing ' + startIdx + '–' + endIdx + ' of ' + filteredPrefixes.length + ' prefixes</span>';
+      html += '<div class="flex items-center gap-1">';
+
+      // Previous button
+      html += '<button onclick="goToPage(' + (currentPage - 1) + ')"' + (currentPage === 1 ? ' disabled' : '') + ' class="px-2 py-1 text-xs rounded border border-cf-border ' + (currentPage === 1 ? 'text-cf-gray opacity-40 cursor-not-allowed' : 'text-white hover:border-cf-orange hover:text-cf-orange') + ' transition">' +
+        '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg></button>';
+
+      // Page numbers with ellipsis
+      var pages = [];
+      if (totalPages <= 7) {
+        for (var i = 1; i <= totalPages; i++) pages.push(i);
+      } else {
+        pages.push(1);
+        if (currentPage > 3) pages.push('...');
+        var rangeStart = Math.max(2, currentPage - 1);
+        var rangeEnd = Math.min(totalPages - 1, currentPage + 1);
+        for (var i = rangeStart; i <= rangeEnd; i++) pages.push(i);
+        if (currentPage < totalPages - 2) pages.push('...');
+        pages.push(totalPages);
+      }
+
+      for (var i = 0; i < pages.length; i++) {
+        var pg = pages[i];
+        if (pg === '...') {
+          html += '<span class="px-1 text-xs text-cf-gray">…</span>';
+        } else if (pg === currentPage) {
+          html += '<button class="w-7 h-7 text-xs rounded bg-cf-orange text-white font-medium">' + pg + '</button>';
+        } else {
+          html += '<button onclick="goToPage(' + pg + ')" class="w-7 h-7 text-xs rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange transition">' + pg + '</button>';
+        }
+      }
+
+      // Next button
+      html += '<button onclick="goToPage(' + (currentPage + 1) + ')"' + (currentPage === totalPages ? ' disabled' : '') + ' class="px-2 py-1 text-xs rounded border border-cf-border ' + (currentPage === totalPages ? 'text-cf-gray opacity-40 cursor-not-allowed' : 'text-white hover:border-cf-orange hover:text-cf-orange') + ' transition">' +
+        '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg></button>';
+
+      html += '</div>';
+      container.innerHTML = html;
+    }
+
+    function goToPage(page) {
+      var totalPages = Math.ceil(filteredPrefixes.length / pageSize);
+      if (page < 1 || page > totalPages) return;
+      currentPage = page;
+      renderPrefixTable();
+      var panel = document.getElementById('prefix-table-body');
+      if (panel) {
+        var el = panel.closest('.panel');
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
     }
 
     function renderPrefixRow(p, isExpanded) {
@@ -1110,19 +1189,29 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Bulk Selection ───────────────────────────────────────────
+    function getCurrentPageIds() {
+      var startIdx = (currentPage - 1) * pageSize;
+      var endIdx = Math.min(startIdx + pageSize, filteredPrefixes.length);
+      var ids = new Set();
+      for (var i = startIdx; i < endIdx; i++) ids.add(filteredPrefixes[i].id);
+      return ids;
+    }
+
     function toggleSelectAll(checkbox) {
       var checkboxes = document.querySelectorAll('.prefix-checkbox');
+      var pageIds = getCurrentPageIds();
       if (checkbox.checked) {
         checkboxes.forEach(function(cb) { cb.checked = true; selectedPrefixes.add(cb.value); });
       } else {
         checkboxes.forEach(function(cb) { cb.checked = false; });
-        selectedPrefixes.clear();
+        pageIds.forEach(function(id) { selectedPrefixes.delete(id); });
       }
       updateBulkBar();
     }
 
     function updateBulkSelection() {
-      selectedPrefixes.clear();
+      var pageIds = getCurrentPageIds();
+      pageIds.forEach(function(id) { selectedPrefixes.delete(id); });
       var checkboxes = document.querySelectorAll('.prefix-checkbox:checked');
       checkboxes.forEach(function(cb) { selectedPrefixes.add(cb.value); });
       updateBulkBar();
