@@ -8,6 +8,7 @@ import {
   listServiceBindings,
   listServices,
   createServiceBinding,
+  createBgpPrefix,
   toggleBgpAdvertisement,
   updatePrefixDescription,
   validatePrefix,
@@ -390,6 +391,38 @@ app.get('/api/prefixes/:prefixId/bgp', async (c) => {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
     }
     return c.json({ bgp_prefixes: data.result || [] });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Create a BGP child prefix
+app.post('/api/prefixes/:prefixId/bgp', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ cidr: string; account_id?: string }>();
+  const prefixId = c.req.param('prefixId');
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  if (!body.cidr) {
+    return c.json({ error: 'cidr is required' }, 400);
+  }
+
+  try {
+    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const data = await createBgpPrefix(acct.account_id, prefixId, body.cidr, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'create_bgp_prefix',
+      `Child prefix ${body.cidr} created on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, bgp_prefix: data.result });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }

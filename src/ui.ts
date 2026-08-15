@@ -423,6 +423,32 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Add Child Prefix Modal -->
+  <div id="child-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeChildPrefixModal()">
+    <div class="modal-content" style="max-width:480px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Child Prefix</h3>
+        <p id="child-prefix-modal-parent" class="text-xs text-cf-gray mt-0.5 font-mono"></p>
+      </div>
+      <div class="p-4">
+        <p class="text-[10px] text-cf-gray mb-3">Create a more-specific BGP child prefix within this parent prefix. Child prefixes are created in a <strong>withdrawn</strong> state and must be advertised separately.</p>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">CIDR</label>
+          <div class="flex gap-2">
+            <input id="child-prefix-ip" type="text" placeholder="IP address" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+            <span class="text-cf-gray self-center">/</span>
+            <select id="child-prefix-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+          </div>
+        </div>
+        <div id="child-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="child-prefix-submit-btn" onclick="submitChildPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Child Prefix</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Bulk Toggle Confirmation Modal -->
   <div id="bulk-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBulkConfirmModal()">
     <div class="modal-content" style="max-width:520px">

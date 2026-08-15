@@ -43,6 +43,23 @@ export async function listBgpPrefixes(
   return r.json();
 }
 
+export async function createBgpPrefix(
+  accountId: string,
+  prefixId: string,
+  cidr: string,
+  token: string,
+): Promise<CfApiResponse<CfBgpPrefix>> {
+  const r = await fetch(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ cidr }),
+    },
+  );
+  return r.json();
+}
+
 export async function listServiceBindings(
   accountId: string,
   prefixId: string,
