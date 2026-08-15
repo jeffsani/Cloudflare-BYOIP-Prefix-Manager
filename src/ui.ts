@@ -285,18 +285,22 @@ export function renderDashboard(userEmail: string): string {
       <div class="panel p-3 text-center">
         <div id="stat-total" class="text-xl font-bold" style="color:var(--text-strong)">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Total Prefixes</div>
+        <div id="stat-total-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
       <div class="panel p-3 text-center">
         <div id="stat-advertised" class="text-xl font-bold text-green-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Advertised</div>
+        <div id="stat-advertised-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
       <div class="panel p-3 text-center">
         <div id="stat-withdrawn" class="text-xl font-bold text-red-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Withdrawn</div>
+        <div id="stat-withdrawn-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
       <div class="panel p-3 text-center">
         <div id="stat-locked" class="text-xl font-bold text-yellow-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Locked</div>
+        <div id="stat-locked-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
     </div>
 
@@ -486,6 +490,7 @@ export function renderDashboard(userEmail: string): string {
     var filteredPrefixes = [];
     var expandedRows = {};
     var childData = {};
+    var prefixStats = null;
     var pendingToggle = null;
     
     var rdapCache = {};
@@ -712,13 +717,21 @@ export function renderDashboard(userEmail: string): string {
       var selectAllCb = document.getElementById('select-all-checkbox');
       if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
       try {
-        var resp = await fetch('/api/prefixes?account_id=' + activeAccountId);
-        var data = await resp.json();
+        var prefixResp = fetch('/api/prefixes?account_id=' + activeAccountId);
+        var statsResp = fetch('/api/prefixes/stats?account_id=' + activeAccountId);
+        var results = await Promise.all([prefixResp, statsResp]);
+        var data = await results[0].json();
         if (data.error) {
           tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">' + escHtml(data.error) + '</td></tr>';
           return;
         }
         allPrefixes = data.prefixes || [];
+        try {
+          var statsData = await results[1].json();
+          prefixStats = statsData.stats || null;
+        } catch (_e) {
+          prefixStats = null;
+        }
         updateStats();
         applyFilters();
       } catch (e) {
@@ -728,13 +741,29 @@ export function renderDashboard(userEmail: string): string {
 
     function updateStats() {
       var total = allPrefixes.length;
-      var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
-      var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
-      var locked = allPrefixes.filter(function(p) { return p.on_demand_locked === true; }).length;
-      document.getElementById('stat-total').textContent = total;
-      document.getElementById('stat-advertised').textContent = advertised;
-      document.getElementById('stat-withdrawn').textContent = withdrawn;
-      document.getElementById('stat-locked').textContent = locked;
+      if (prefixStats) {
+        var s = prefixStats;
+        document.getElementById('stat-total').textContent = s.parent.total + s.bgp.total;
+        document.getElementById('stat-total-sub').textContent = s.parent.total + ' parent / ' + s.bgp.total + ' BGP';
+        document.getElementById('stat-advertised').textContent = s.parent.advertised + s.bgp.advertised;
+        document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' parent / ' + s.bgp.advertised + ' BGP';
+        document.getElementById('stat-withdrawn').textContent = s.parent.withdrawn + s.bgp.withdrawn;
+        document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' parent / ' + s.bgp.withdrawn + ' BGP';
+        document.getElementById('stat-locked').textContent = s.parent.locked + s.bgp.locked;
+        document.getElementById('stat-locked-sub').textContent = s.parent.locked + ' parent / ' + s.bgp.locked + ' BGP';
+      } else {
+        var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
+        var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
+        var locked = allPrefixes.filter(function(p) { return p.on_demand_locked === true; }).length;
+        document.getElementById('stat-total').textContent = total;
+        document.getElementById('stat-total-sub').textContent = '';
+        document.getElementById('stat-advertised').textContent = advertised;
+        document.getElementById('stat-advertised-sub').textContent = '';
+        document.getElementById('stat-withdrawn').textContent = withdrawn;
+        document.getElementById('stat-withdrawn-sub').textContent = '';
+        document.getElementById('stat-locked').textContent = locked;
+        document.getElementById('stat-locked-sub').textContent = '';
+      }
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
     }
 

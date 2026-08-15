@@ -248,6 +248,56 @@ app.get('/api/prefixes', async (c) => {
   }
 });
 
+// Aggregated prefix stats (parent + BGP children)
+app.get('/api/prefixes/stats', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id');
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const prefixData = await listPrefixes(acct.account_id, token);
+    if (!prefixData.success) {
+      return c.json({ error: prefixData.errors?.[0]?.message || 'API error' }, 502);
+    }
+    const prefixes = prefixData.result || [];
+
+    // Fetch BGP sub-prefixes for all parents in parallel
+    const bgpResults = await Promise.all(
+      prefixes.map(async (p) => {
+        try {
+          const bgpData = await listBgpPrefixes(acct.account_id, p.id, token);
+          return bgpData.success ? (bgpData.result || []) : [];
+        } catch {
+          return [];
+        }
+      }),
+    );
+
+    const allBgpPrefixes = bgpResults.flat();
+
+    const stats = {
+      parent: {
+        total: prefixes.length,
+        advertised: prefixes.filter((p) => p.advertised === true).length,
+        withdrawn: prefixes.filter((p) => p.advertised === false).length,
+        locked: prefixes.filter((p) => p.on_demand_locked === true).length,
+      },
+      bgp: {
+        total: allBgpPrefixes.length,
+        advertised: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === true).length,
+        withdrawn: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === false).length,
+        locked: allBgpPrefixes.filter((bp) => bp.on_demand?.on_demand_locked === true).length,
+      },
+    };
+
+    return c.json({ stats });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
 // List BGP sub-prefixes for a specific prefix
 app.get('/api/prefixes/:prefixId/bgp', async (c) => {
   const email = c.get('userEmail');
