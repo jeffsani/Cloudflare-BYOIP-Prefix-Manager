@@ -858,7 +858,8 @@ export function renderDashboard(userEmail: string): string {
           parentToggleHtml +
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
-          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg></button>' +
+          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
+          (!(childData[p.id] && childData[p.id].bgp_prefixes && childData[p.id].bgp_prefixes.length > 0) ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -909,24 +910,6 @@ export function renderDashboard(userEmail: string): string {
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
         html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
-      // Add binding / child prefix row
-      var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
-      var parentCidr = parentPrefix ? parentPrefix.cidr : '';
-      html += '<tr class="child-row border-b border-cf-border">' +
-        '<td class="px-2"></td><td class="px-3"></td><td class="px-2"></td>' +
-        '<td class="px-3 pl-8" colspan="7">' +
-          '<div class="flex items-center gap-3">' +
-            '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
-              '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
-              'Add Service Binding' +
-            '</button>' +
-            '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
-              '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
-              'Add Child Prefix' +
-            '</button>' +
-          '</div>' +
-        '</td>' +
-      '</tr>';
       return html;
     }
 
@@ -1356,6 +1339,100 @@ export function renderDashboard(userEmail: string): string {
       return groups.join(':');
     }
 
+    // Find the next available aligned IP for a given mask length within a parent prefix,
+    // skipping over existing bindings. Returns { ip: BigInt|null, error: string|null }.
+    function findNextAvailableIp(parentParsed, maskLen, existingBindings, selectedService) {
+      var totalBits = parentParsed.v6 ? 128 : 32;
+      var blockSize = BigInt(1) << BigInt(totalBits - maskLen);
+      var parentSize = BigInt(1) << BigInt(totalBits - parentParsed.maskLen);
+      var parentEnd = parentParsed.network + parentSize;
+
+      // Filter out bindings we should ignore for overlap purposes
+      // (mirror validateBinding logic: skip parent-level Magic Transit when placing CDN/Spectrum)
+      var relevant = [];
+      for (var i = 0; i < existingBindings.length; i++) {
+        var bp = parseCIDR(existingBindings[i].cidr);
+        if (!bp) continue;
+        if (isMagicTransit(existingBindings[i].service_name) &&
+            bp.maskLen === parentParsed.maskLen &&
+            isCdnOrSpectrum(selectedService)) {
+          continue;
+        }
+        relevant.push(bp);
+      }
+
+      // Sort by network address
+      relevant.sort(function(a, b) {
+        if (a.network < b.network) return -1;
+        if (a.network > b.network) return 1;
+        return 0;
+      });
+
+      var candidate = parentParsed.network;
+
+      for (var r = 0; r < relevant.length; r++) {
+        if (candidate + blockSize > parentEnd) break;
+
+        var bNet = relevant[r].network;
+        var bEnd = bNet + (BigInt(1) << BigInt(totalBits - relevant[r].maskLen));
+
+        // If candidate fits before this binding, we found a gap
+        if (candidate + blockSize <= bNet) {
+          return { ip: candidate, error: null };
+        }
+
+        // If candidate overlaps this binding, jump past it
+        if (candidate < bEnd) {
+          candidate = bEnd;
+          // Align up to the next block boundary
+          var remainder = candidate % blockSize;
+          if (remainder !== BigInt(0)) {
+            candidate = candidate + (blockSize - remainder);
+          }
+        }
+      }
+
+      // Check the last candidate after all bindings
+      if (candidate + blockSize <= parentEnd) {
+        return { ip: candidate, error: null };
+      }
+
+      return { ip: null, error: 'Not enough room for a /' + maskLen + ' binding in this prefix' };
+    }
+
+    // Auto-fill the binding IP field with the next available IP for the selected mask length
+    function autoFillBindingIp() {
+      if (!bindingModalContext) return;
+      var parsed = parseCIDR(bindingModalContext.parentCidr);
+      if (!parsed) return;
+
+      var existingBindings = (childData[bindingModalContext.prefixId] && childData[bindingModalContext.prefixId].bindings) || [];
+      // Skip auto-fill for first binding (CIDR is locked to parent prefix)
+      if (existingBindings.length === 0) return;
+
+      var maskSel = document.getElementById('binding-mask');
+      var maskLen = parseInt(maskSel.value, 10);
+      if (isNaN(maskLen)) return;
+
+      var selectedService = getSelectedServiceName();
+      var result = findNextAvailableIp(parsed, maskLen, existingBindings, selectedService);
+
+      var ipInput = document.getElementById('binding-ip');
+      var errEl = document.getElementById('binding-error');
+      var submitBtn = document.getElementById('binding-submit-btn');
+
+      if (result.ip !== null) {
+        ipInput.value = ipToString(result.ip, parsed.v6);
+        errEl.classList.add('hidden');
+        submitBtn.disabled = false;
+      } else {
+        ipInput.value = '';
+        errEl.textContent = result.error;
+        errEl.classList.remove('hidden');
+        submitBtn.disabled = true;
+      }
+    }
+
     async function loadServices() {
       if (servicesCache[activeAccountId]) return servicesCache[activeAccountId];
       try {
@@ -1562,15 +1639,20 @@ export function renderDashboard(userEmail: string): string {
       }
 
       var prevVal = maskSel.value;
+      // Default to most specific mask (/128 for IPv6, /32 for IPv4) when no previous selection
+      var targetVal = prevVal || String(maxMask);
       var html = '';
       for (var m = minMask; m <= maxMask; m++) {
-        html += '<option value="' + m + '"' + (String(m) === prevVal ? ' selected' : '') + '>/' + m + '</option>';
+        html += '<option value="' + m + '"' + (String(m) === targetVal ? ' selected' : '') + '>/' + m + '</option>';
       }
       maskSel.innerHTML = html;
-      // If previous selection is now out of range, reset to first option
+      // If target selection is out of range, fall back to most specific available
       if (!maskSel.value && maskSel.options.length > 0) {
-        maskSel.selectedIndex = 0;
+        maskSel.value = String(maxMask);
       }
+
+      // Auto-fill next available IP for the selected mask length
+      autoFillBindingIp();
     }
 
     async function openBindingModal(prefixId, parentCidr) {
@@ -1593,6 +1675,7 @@ export function renderDashboard(userEmail: string): string {
       var svcSel = document.getElementById('binding-service');
       svcSel.innerHTML = '<option value="">Loading services...</option>';
       svcSel.onchange = function() { rebuildMaskDropdown(); };
+      document.getElementById('binding-mask').onchange = function() { autoFillBindingIp(); };
       document.getElementById('binding-modal').classList.remove('hidden');
 
       var allServicesList = await loadServices();
