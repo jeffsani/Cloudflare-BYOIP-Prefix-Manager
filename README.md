@@ -4,6 +4,8 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 **Live:** [network-tools.example.com](https://network-tools.example.com) (Cloudflare Access — Google IdP)
 
+![Network Tools Dashboard](src/network-tools.png)
+
 ## Features
 
 ### Prefix Management
@@ -16,6 +18,8 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **BGP Route Visualization** — Click the search icon on any prefix or sub-prefix to open the looking glass modal
 - **AS-Path Graph** — SVG-rendered graph showing BGP routing paths from origin to collectors, with RPKI validation coloring and ASN metadata (org name, country flag)
 - **Route Table** — Tabular view of raw BGP routes including collector, AS path, next hop, and peer ASN
+
+![Looking Glass — AS-Path Graph](src/looking-glass.png)
 
 ### Multi-Account & Multi-Token
 - **Per-User Accounts** — Each user (identified via Cloudflare Access JWT with Google IdP) can configure multiple Cloudflare accounts, each with its own label and account ID
