@@ -482,7 +482,7 @@ export function renderDashboard(userEmail: string): string {
           <div class="flex gap-2">
             <input id="child-prefix-ip" type="text" placeholder="IP address" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
             <span class="text-cf-gray self-center">/</span>
-            <select id="child-prefix-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+            <select id="child-prefix-mask" onchange="autoFillChildPrefixIp()" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
           </div>
         </div>
         <div id="child-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
@@ -1667,6 +1667,58 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Child Prefix Modal ─────────────────────────────────────
 
+    // Auto-fill the child prefix IP field with the next available aligned IP
+    function autoFillChildPrefixIp() {
+      if (!childPrefixModalContext) return;
+      var parsed = parseCIDR(childPrefixModalContext.parentCidr);
+      if (!parsed) return;
+
+      var maskLen = parseInt(document.getElementById('child-prefix-mask').value, 10);
+      if (isNaN(maskLen)) return;
+
+      var totalBits = parsed.v6 ? 128 : 32;
+      var blockSize = BigInt(1) << BigInt(totalBits - maskLen);
+      var parentSize = BigInt(1) << BigInt(totalBits - parsed.maskLen);
+      var parentEnd = parsed.network + parentSize;
+
+      // Collect existing child BGP prefixes (skip the parent-level prefix itself)
+      var existingBgp = (childData[childPrefixModalContext.prefixId] && childData[childPrefixModalContext.prefixId].bgp_prefixes) || [];
+      var children = [];
+      for (var i = 0; i < existingBgp.length; i++) {
+        if (existingBgp[i].cidr === childPrefixModalContext.parentCidr) continue;
+        var bp = parseCIDR(existingBgp[i].cidr);
+        if (bp) children.push(bp);
+      }
+      children.sort(function(a, b) { return a.network < b.network ? -1 : a.network > b.network ? 1 : 0; });
+
+      var candidate = parsed.network;
+      for (var c = 0; c < children.length; c++) {
+        if (candidate + blockSize > parentEnd) break;
+        var cEnd = children[c].network + (BigInt(1) << BigInt(totalBits - children[c].maskLen));
+        if (candidate + blockSize <= children[c].network) break;
+        if (candidate < cEnd) {
+          candidate = cEnd;
+          var remainder = candidate % blockSize;
+          if (remainder !== BigInt(0)) candidate = candidate + (blockSize - remainder);
+        }
+      }
+
+      var ipInput = document.getElementById('child-prefix-ip');
+      var errEl = document.getElementById('child-prefix-error');
+      var submitBtn = document.getElementById('child-prefix-submit-btn');
+
+      if (candidate + blockSize <= parentEnd) {
+        ipInput.value = ipToString(candidate, parsed.v6);
+        errEl.classList.add('hidden');
+        submitBtn.disabled = false;
+      } else {
+        ipInput.value = '';
+        errEl.textContent = 'No space available for a /' + maskLen + ' child prefix';
+        errEl.classList.remove('hidden');
+        submitBtn.disabled = true;
+      }
+    }
+
     function openChildPrefixModal(prefixId, parentCidr) {
       childPrefixModalContext = { prefixId: prefixId, parentCidr: parentCidr };
       var parsed = parseCIDR(parentCidr);
@@ -1685,13 +1737,13 @@ export function renderDashboard(userEmail: string): string {
       }
       maskSel.innerHTML = html;
 
-      // Pre-fill IP with parent network address
-      document.getElementById('child-prefix-ip').value = ipToString(parsed.network, parsed.v6);
-
-      // Clear error
+      // Clear error and reset button
       document.getElementById('child-prefix-error').classList.add('hidden');
       document.getElementById('child-prefix-submit-btn').disabled = false;
       document.getElementById('child-prefix-submit-btn').textContent = 'Create Child Prefix';
+
+      // Auto-fill IP with next available address for the selected mask
+      autoFillChildPrefixIp();
 
       document.getElementById('child-prefix-modal').classList.remove('hidden');
     }
