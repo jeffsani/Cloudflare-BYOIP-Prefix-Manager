@@ -200,12 +200,24 @@ export function renderDashboard(userEmail: string): string {
         <button onclick="toggleAbout()" class="text-cf-gray hover:text-cf-orange text-xs">Close</button>
       </div>
       <p class="text-xs text-cf-gray leading-relaxed">
-        This tool provides a unified view of all BYOIP (Bring Your Own IP) prefixes across your Cloudflare accounts.
-        You can view prefix status, BGP sub-prefixes, service bindings, toggle advertisement state, and perform
-        looking glass queries to visualize BGP routing paths.
+        A unified dashboard for managing BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts.
       </p>
-      <p class="text-xs text-cf-gray leading-relaxed mt-2">
-        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit).
+      <div class="text-xs text-cf-gray leading-relaxed mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+        <div>&bull; Multi-account management with API token verification</div>
+        <div>&bull; Prefix stats &amp; filtering (status, lock, CIDR, ASN)</div>
+        <div>&bull; BGP sub-prefix creation &amp; advertisement toggling</div>
+        <div>&bull; Bulk advertise / withdraw across prefixes</div>
+        <div>&bull; Service binding management (CDN, Spectrum, Magic Transit, etc.)</div>
+        <div>&bull; Inline prefix description editing</div>
+        <div>&bull; Prefix re-validation (RPKI, IRR, ownership)</div>
+        <div>&bull; Looking Glass &mdash; interactive BGP path graph via Cloudflare Radar</div>
+        <div>&bull; Prefix Visibility &mdash; global propagation % (Radar + RIPEstat)</div>
+        <div>&bull; RDAP / Whois hover lookups (org, RIR, country, allocation)</div>
+        <div>&bull; RPKI ROA detail view per origin</div>
+        <div>&bull; Activity log of all actions</div>
+      </div>
+      <p class="text-xs text-cf-gray leading-relaxed mt-3">
+        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read).
       </p>
     </div>
   </div>
@@ -902,6 +914,19 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // Check if a prefix has actual child BGP sub-prefixes (more specific than the parent itself)
+    function hasChildBgpPrefixes(prefixId, parentCidr) {
+      var cd = childData[prefixId];
+      if (!cd || !cd.bgp_prefixes || cd.bgp_prefixes.length === 0) return false;
+      var parentParsed = parseCIDR(parentCidr);
+      if (!parentParsed) return false;
+      for (var i = 0; i < cd.bgp_prefixes.length; i++) {
+        var bp = parseCIDR(cd.bgp_prefixes[i].cidr);
+        if (bp && bp.maskLen > parentParsed.maskLen) return true;
+      }
+      return false;
+    }
+
     function renderPrefixRow(p, isExpanded) {
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
@@ -944,7 +969,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
-          (!(childData[p.id] && childData[p.id].bgp_prefixes && childData[p.id].bgp_prefixes.length > 0) ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
+          (!hasChildBgpPrefixes(p.id, p.cidr) ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -996,6 +1021,18 @@ export function renderDashboard(userEmail: string): string {
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
         html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
+      // Add binding row at bottom of expanded area
+      var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
+      var parentCidr = parentPrefix ? parentPrefix.cidr : '';
+      html += '<tr class="child-row border-b border-cf-border">' +
+        '<td class="px-2"></td><td class="px-3"></td><td class="px-2"></td>' +
+        '<td class="px-3 pl-8" colspan="7">' +
+          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
+            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
+            'Add Service Binding' +
+          '</button>' +
+        '</td>' +
+      '</tr>';
       return html;
     }
 
