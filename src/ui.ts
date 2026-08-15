@@ -984,17 +984,22 @@ export function renderDashboard(userEmail: string): string {
       return false;
     }
 
-    // Check if a prefix has actual child BGP sub-prefixes (more specific than the parent itself)
-    function hasChildBgpPrefixes(prefixId, parentCidr) {
+    // Check if the parent prefix's address space is fully covered by child BGP sub-prefixes
+    function isChildPrefixSpaceFull(prefixId, parentCidr) {
       var cd = childData[prefixId];
       if (!cd || !cd.bgp_prefixes || cd.bgp_prefixes.length === 0) return false;
       var parentParsed = parseCIDR(parentCidr);
       if (!parentParsed) return false;
+      var totalBits = parentParsed.v6 ? 128 : 32;
+      var parentSize = BigInt(1) << BigInt(totalBits - parentParsed.maskLen);
+      var usedSize = BigInt(0);
       for (var i = 0; i < cd.bgp_prefixes.length; i++) {
         var bp = parseCIDR(cd.bgp_prefixes[i].cidr);
-        if (bp && bp.maskLen > parentParsed.maskLen) return true;
+        if (bp && bp.maskLen > parentParsed.maskLen) {
+          usedSize += BigInt(1) << BigInt(totalBits - bp.maskLen);
+        }
       }
-      return false;
+      return usedSize >= parentSize;
     }
 
     function renderPrefixRow(p, isExpanded) {
@@ -1040,7 +1045,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
-          (!hasChildBgpPrefixes(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
+          (!isChildPrefixSpaceFull(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
