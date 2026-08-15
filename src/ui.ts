@@ -81,9 +81,9 @@ export function renderDashboard(userEmail: string): string {
     .rdap-tip { display: none; position: fixed; z-index: 9999; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
     .validation-hover { position: relative; display: inline-block; cursor: help; }
-    .validation-tip { display: none; position: fixed; z-index: 9999; min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; }
+    .validation-tip { display: none; position: absolute; z-index: 70; top: 100%; left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: auto; }
+    .validation-tip::before { content: ''; position: absolute; bottom: 100%; left: 0; right: 0; height: 6px; }
     .validation-hover:hover .validation-tip { display: block; }
-    .validation-tip a { pointer-events: auto; }
     .rdap-row { display: flex; gap: 6px; }
     .rdap-label { color: var(--muted); min-width: 70px; }
     .rdap-val { color: var(--text-strong); font-weight: 500; }
@@ -832,8 +832,8 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' Child';
         document.getElementById('stat-withdrawn').textContent = s.parent.withdrawn + s.bgp.withdrawn;
         document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' Parent / ' + s.bgp.withdrawn + ' Child';
-        document.getElementById('stat-locked').textContent = s.parent.locked + s.bgp.locked;
-        document.getElementById('stat-locked-sub').textContent = s.parent.locked + ' Parent / ' + s.bgp.locked + ' Child';
+        document.getElementById('stat-locked').textContent = s.parent.locked;
+        document.getElementById('stat-locked-sub').textContent = 'Parent only';
       } else {
         var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
         var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;

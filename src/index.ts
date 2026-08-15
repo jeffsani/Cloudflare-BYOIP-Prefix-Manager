@@ -293,7 +293,6 @@ app.get('/api/prefixes/stats', async (c) => {
         total: allBgpPrefixes.length,
         advertised: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === true).length,
         withdrawn: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === false).length,
-        locked: allBgpPrefixes.filter((bp) => bp.on_demand?.on_demand_locked === true).length,
       },
     };
 
