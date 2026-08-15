@@ -405,6 +405,23 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Delete Service Binding Confirm Modal -->
+  <div id="delete-binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteBindingModal()">
+    <div class="modal-content" style="max-width:420px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delete Service Binding</h3>
+      </div>
+      <div class="p-4">
+        <p id="delete-binding-message" class="text-xs text-cf-gray mb-3"></p>
+        <p class="text-[10px] text-yellow-400 mb-4">Changes take 4–6 hours to propagate. This action cannot be undone.</p>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeDeleteBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="delete-binding-btn" onclick="executeDeleteBinding()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Service Binding Modal -->
   <div id="binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBindingModal()">
     <div class="modal-content" style="max-width:480px">
@@ -945,7 +962,8 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-purple-400 mr-1">&#9500;&#9472;</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? b.provisioning.state : 'unknown') + '</span></td>' +
-            '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
+            '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
+            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
           '</tr>';
         }
       }
@@ -1917,6 +1935,52 @@ export function renderDashboard(userEmail: string): string {
       } finally {
         btn.disabled = false;
         btn.textContent = 'Create Binding';
+      }
+    }
+
+    // ─── Delete Service Binding ──────────────────────────────────
+    var pendingDeleteBinding = null;
+
+    function confirmDeleteBinding(prefixId, bindingId, serviceName, cidr) {
+      pendingDeleteBinding = { prefixId: prefixId, bindingId: bindingId, serviceName: serviceName, cidr: cidr };
+      document.getElementById('delete-binding-message').innerHTML =
+        'Are you sure you want to delete the service binding <strong>' + escHtml(serviceName) + '</strong> for <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
+      document.getElementById('delete-binding-btn').disabled = false;
+      document.getElementById('delete-binding-btn').textContent = 'Delete';
+      document.getElementById('delete-binding-modal').classList.remove('hidden');
+    }
+
+    function closeDeleteBindingModal() {
+      document.getElementById('delete-binding-modal').classList.add('hidden');
+      pendingDeleteBinding = null;
+    }
+
+    async function executeDeleteBinding() {
+      if (!pendingDeleteBinding) return;
+      var d = pendingDeleteBinding;
+      var btn = document.getElementById('delete-binding-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+
+      try {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bindings/' + d.bindingId + '?account_id=' + activeAccountId, {
+          method: 'DELETE'
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeDeleteBindingModal();
+          delete childData[d.prefixId];
+          expandedRows[d.prefixId] = false;
+          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+        } else {
+          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+        }
+      } catch (e) {
+        alert('Delete failed: ' + e);
+        btn.disabled = false;
+        btn.textContent = 'Delete';
       }
     }
 

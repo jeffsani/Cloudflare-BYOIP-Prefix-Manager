@@ -8,6 +8,7 @@ import {
   listServiceBindings,
   listServices,
   createServiceBinding,
+  deleteServiceBinding,
   createBgpPrefix,
   toggleBgpAdvertisement,
   updatePrefixDescription,
@@ -398,6 +399,35 @@ app.post('/api/prefixes/:prefixId/bindings', async (c) => {
     );
 
     return c.json({ ok: true, binding: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Delete a service binding for a prefix
+app.delete('/api/prefixes/:prefixId/bindings/:bindingId', async (c) => {
+  const email = c.get('userEmail');
+  const prefixId = c.req.param('prefixId');
+  const bindingId = c.req.param('bindingId');
+  const accountId = c.req.query('account_id');
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await deleteServiceBinding(acct.account_id, prefixId, bindingId, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'delete_binding',
+      `Deleted service binding ${bindingId} on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
