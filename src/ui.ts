@@ -1021,18 +1021,6 @@ export function renderDashboard(userEmail: string): string {
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0)) {
         html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes or service bindings</td></tr>';
       }
-      // Add binding row at bottom of expanded area
-      var parentPrefix = allPrefixes.find(function(p) { return p.id === prefixId; });
-      var parentCidr = parentPrefix ? parentPrefix.cidr : '';
-      html += '<tr class="child-row border-b border-cf-border">' +
-        '<td class="px-2"></td><td class="px-3"></td><td class="px-2"></td>' +
-        '<td class="px-3 pl-8" colspan="7">' +
-          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(parentCidr) + '\\')" class="text-cf-gray hover:text-cf-orange text-[10px] flex items-center gap-1 py-1">' +
-            '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>' +
-            'Add Service Binding' +
-          '</button>' +
-        '</td>' +
-      '</tr>';
       return html;
     }
 
