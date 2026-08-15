@@ -269,6 +269,7 @@ export function renderDashboard(userEmail: string): string {
           <option value="all">All</option>
           <option value="advertised">Advertised</option>
           <option value="withdrawn">Withdrawn</option>
+          <option value="locked">Locked</option>
         </select>
       </div>
       <div class="flex items-center gap-2">
@@ -860,6 +861,7 @@ export function renderDashboard(userEmail: string): string {
       filteredPrefixes = allPrefixes.filter(function(p) {
         if (statusFilter === 'advertised' && p.advertised !== true) return false;
         if (statusFilter === 'withdrawn' && p.advertised !== false) return false;
+        if (statusFilter === 'locked' && !p.on_demand_locked) return false;
         if (lockFilter === 'locked' && !p.on_demand_locked) return false;
         if (lockFilter === 'unlocked' && p.on_demand_locked) return false;
         if (prefixFilter && (!p.cidr || p.cidr.toLowerCase().indexOf(prefixFilter) === -1)) return false;

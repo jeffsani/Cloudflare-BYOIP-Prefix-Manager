@@ -282,6 +282,16 @@ app.get('/api/prefixes/stats', async (c) => {
 
     const allBgpPrefixes = bgpResults.flat();
 
+    // Per-prefix child advertisement summary for filtering
+    const perPrefix: Record<string, { has_advertised_child: boolean; has_withdrawn_child: boolean }> = {};
+    for (let i = 0; i < prefixes.length; i++) {
+      const children = bgpResults[i];
+      perPrefix[prefixes[i].id] = {
+        has_advertised_child: children.some((bp) => bp.on_demand?.advertised === true),
+        has_withdrawn_child: children.some((bp) => bp.on_demand?.advertised === false),
+      };
+    }
+
     const stats = {
       parent: {
         total: prefixes.length,
@@ -294,6 +304,7 @@ app.get('/api/prefixes/stats', async (c) => {
         advertised: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === true).length,
         withdrawn: allBgpPrefixes.filter((bp) => bp.on_demand?.advertised === false).length,
       },
+      per_prefix: perPrefix,
     };
 
     return c.json({ stats });
