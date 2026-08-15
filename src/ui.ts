@@ -778,13 +778,9 @@ export function renderDashboard(userEmail: string): string {
           var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
           var bgpAdv = bp.on_demand && bp.on_demand.advertised;
           var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
-          var bgpEnabled = bp.on_demand && bp.on_demand.on_demand_enabled;
-          var toggleHtml = '';
-          if (bgpEnabled) {
-            toggleHtml = '<button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
-              (bgpLocked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
-              '><span class="toggle-knob"></span></button>';
-          }
+          var toggleHtml = '<button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
+            (bgpLocked ? ' disabled title="Locked"' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
+            '><span class="toggle-knob"></span></button>';
 
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
@@ -885,12 +881,13 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (data.ok) {
-          // Refresh the child data for this prefix
+          // Refresh parent prefix data and child data
           delete childData[t.prefixId];
-          toggleRow(t.prefixId);
-          // Close and re-expand to refresh
-          expandedRows[t.prefixId] = false;
-          setTimeout(function() { toggleRow(t.prefixId); }, 100);
+          await loadPrefixes();
+          // Re-expand the row to show updated child data
+          if (!expandedRows[t.prefixId]) {
+            toggleRow(t.prefixId);
+          }
         } else {
           alert('Toggle failed: ' + (data.error || 'Unknown error'));
         }
@@ -925,10 +922,11 @@ export function renderDashboard(userEmail: string): string {
 
         var errors = [];
         var toggled = 0;
+        var skipped = 0;
         for (var i = 0; i < bgpPrefixes.length; i++) {
           var bp = bgpPrefixes[i];
-          if (!bp.on_demand || !bp.on_demand.on_demand_enabled || bp.on_demand.on_demand_locked) continue;
-          if (bp.on_demand.advertised === t.advertised) continue;
+          if (bp.on_demand && bp.on_demand.on_demand_locked) { skipped++; continue; }
+          if (bp.on_demand && bp.on_demand.advertised === t.advertised) { skipped++; continue; }
           try {
             var toggleResp = await fetch('/api/prefixes/' + t.prefixId + '/bgp/' + bp.id + '/toggle', {
               method: 'POST',
@@ -948,6 +946,8 @@ export function renderDashboard(userEmail: string): string {
 
         if (errors.length > 0) {
           alert('Toggled ' + toggled + ' sub-prefix(es), but ' + errors.length + ' failed:\\n' + errors.join('\\n'));
+        } else if (toggled === 0) {
+          alert('No sub-prefixes were toggled. They may all be locked or already in the desired state.' + (skipped > 0 ? ' (' + skipped + ' skipped)' : ''));
         }
 
         // Refresh
@@ -1253,6 +1253,91 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // ─── Service Classification Helpers ──────────────────────────
+    function isMagicTransit(serviceName) {
+      return serviceName && serviceName.toLowerCase().indexOf('magic') !== -1;
+    }
+
+    function isEgress(serviceName) {
+      return serviceName && serviceName.toLowerCase().indexOf('egress') !== -1;
+    }
+
+    function isCdnOrSpectrum(serviceName) {
+      if (!serviceName) return false;
+      var lower = serviceName.toLowerCase();
+      return (lower.indexOf('cdn') !== -1 && !isEgress(lower)) || lower.indexOf('spectrum') !== -1;
+    }
+
+    function getSelectedServiceName() {
+      var svcSel = document.getElementById('binding-service');
+      if (!svcSel || !svcSel.value) return '';
+      var opt = svcSel.options[svcSel.selectedIndex];
+      return opt ? opt.textContent : '';
+    }
+
+    // Check if Magic Transit is already bound at the parent prefix length
+    function hasMagicTransitAtParentLength(existingBindings, parentMaskLen) {
+      for (var i = 0; i < existingBindings.length; i++) {
+        var bp = parseCIDR(existingBindings[i].cidr);
+        if (bp && bp.maskLen === parentMaskLen && isMagicTransit(existingBindings[i].service_name)) {
+          return true;
+        }
+      }
+      return false;
+    }
+
+    // Filter which services are available based on existing bindings
+    function getAvailableServices(allServices, existingBindings, parentMaskLen) {
+      var hasMT = hasMagicTransitAtParentLength(existingBindings, parentMaskLen);
+
+      return allServices.filter(function(s) {
+        // If Magic Transit is bound at the parent length, it acts as the parent binding.
+        // Only CDN and Spectrum can be added (as more-specific sub-bindings)
+        if (hasMT && isMagicTransit(s.name)) return false;
+
+        return true;
+      });
+    }
+
+    function rebuildMaskDropdown() {
+      if (!bindingModalContext) return;
+      var parsed = parseCIDR(bindingModalContext.parentCidr);
+      if (!parsed) return;
+      var maskSel = document.getElementById('binding-mask');
+      var existingBindings = (childData[bindingModalContext.prefixId] && childData[bindingModalContext.prefixId].bindings) || [];
+      var isFirst = existingBindings.length === 0;
+
+      // CDN and Spectrum can bind down to /32 (IPv4) or /128 (IPv6)
+      var maxMask = parsed.v6 ? 128 : 32;
+
+      // Determine the starting mask length based on the selected service
+      var serviceName = getSelectedServiceName();
+      var minMask = parsed.maskLen;
+
+      if (!isFirst) {
+        var hasMT = hasMagicTransitAtParentLength(existingBindings, parsed.maskLen);
+        if (hasMT && isCdnOrSpectrum(serviceName)) {
+          // If Magic Transit is at parent length, CDN/Spectrum must be more specific
+          minMask = parsed.maskLen + 1;
+        }
+        if (isMagicTransit(serviceName)) {
+          // Magic Transit bindings must be more specific than parent when bindings exist
+          minMask = parsed.maskLen + 1;
+        }
+      }
+
+      var prevVal = maskSel.value;
+      var html = '';
+      for (var m = minMask; m <= maxMask; m++) {
+        html += '<option value="' + m + '"' + (String(m) === prevVal ? ' selected' : '') + '>/' + m + '</option>';
+      }
+      maskSel.innerHTML = html;
+      // If previous selection is now out of range, reset to first option
+      if (!maskSel.value && maskSel.options.length > 0) {
+        maskSel.selectedIndex = 0;
+      }
+    }
+
     async function openBindingModal(prefixId, parentCidr) {
       bindingModalContext = { prefixId: prefixId, parentCidr: parentCidr };
       var parsed = parseCIDR(parentCidr);
@@ -1260,15 +1345,6 @@ export function renderDashboard(userEmail: string): string {
 
       // Set prefix label
       document.getElementById('binding-modal-prefix').textContent = 'Prefix: ' + parentCidr;
-
-      // Populate mask dropdown
-      var maskSel = document.getElementById('binding-mask');
-      var maxMask = parsed.v6 ? 48 : 32;
-      var html = '';
-      for (var m = parsed.maskLen; m <= maxMask; m++) {
-        html += '<option value="' + m + '"' + (m === parsed.maskLen ? ' selected' : '') + '>/' + m + '</option>';
-      }
-      maskSel.innerHTML = html;
 
       // Pre-fill IP with parent network address
       document.getElementById('binding-ip').value = ipToString(parsed.network, parsed.v6);
@@ -1281,19 +1357,26 @@ export function renderDashboard(userEmail: string): string {
       // Load services into dropdown
       var svcSel = document.getElementById('binding-service');
       svcSel.innerHTML = '<option value="">Loading services...</option>';
+      svcSel.onchange = function() { rebuildMaskDropdown(); };
       document.getElementById('binding-modal').classList.remove('hidden');
 
-      var services = await loadServices();
-      if (services.length === 0) {
-        svcSel.innerHTML = '<option value="">No services available</option>';
+      var allServicesList = await loadServices();
+      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      var available = getAvailableServices(allServicesList, existingBindings, parsed.maskLen);
+
+      if (available.length === 0) {
+        svcSel.innerHTML = '<option value="">No eligible services</option>';
       } else {
-        svcSel.innerHTML = services.map(function(s) {
+        svcSel.innerHTML = available.map(function(s) {
           return '<option value="' + escAttr(s.id) + '">' + escHtml(s.name) + '</option>';
         }).join('');
       }
 
+      // Build initial mask dropdown based on the default-selected service
+      rebuildMaskDropdown();
+
       // If this is the first binding, lock CIDR to match parent prefix
-      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      var maskSel = document.getElementById('binding-mask');
       if (existingBindings.length === 0) {
         document.getElementById('binding-ip').value = ipToString(parsed.network, parsed.v6);
         maskSel.value = String(parsed.maskLen);
@@ -1328,17 +1411,55 @@ export function renderDashboard(userEmail: string): string {
       var childParsed = parseCIDR(childCidr);
       if (!childParsed) return 'Invalid IP address';
 
+      var selectedService = getSelectedServiceName();
+
       // Check address family matches
       if (childParsed.v6 !== parentParsed.v6) return 'Address family mismatch (IPv4 vs IPv6)';
 
-      // Check containment
+      // Check containment within parent prefix
       if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
 
-      // Check overlap with existing bindings
+      // Collect all existing bindings (parent prefix bindings)
       var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+
+      // Egress can only be bound if no other binding exists at the same CIDR length
+      if (isEgress(selectedService)) {
+        for (var e = 0; e < existingBindings.length; e++) {
+          var eb = parseCIDR(existingBindings[e].cidr);
+          if (eb && eb.maskLen === childParsed.maskLen && eb.network === childParsed.network) {
+            return 'Egress cannot be bound — another service (' + existingBindings[e].service_name + ') is already bound to ' + existingBindings[e].cidr;
+          }
+        }
+      }
+
+      // If Magic Transit is bound at the parent length, CDN/Spectrum must use a longer prefix
+      if (hasMagicTransitAtParentLength(existingBindings, parentParsed.maskLen)) {
+        if (isCdnOrSpectrum(selectedService) && childParsed.maskLen === parentParsed.maskLen) {
+          return 'When Magic Transit is bound at the parent prefix length, CDN/Spectrum must use a more specific (longer) prefix';
+        }
+      }
+
       for (var i = 0; i < existingBindings.length; i++) {
         var existing = parseCIDR(existingBindings[i].cidr);
-        if (existing && cidrOverlaps(childParsed, existing)) {
+        if (!existing) continue;
+
+        // Check for same-service at same CIDR length
+        if (existing.maskLen === childParsed.maskLen &&
+            existing.network === childParsed.network &&
+            existingBindings[i].service_name === selectedService) {
+          return selectedService + ' is already bound to ' + existingBindings[i].cidr;
+        }
+
+        // Check for overlapping bindings (skip the parent-level Magic Transit binding
+        // since CDN/Spectrum sub-bindings are expected to be within it)
+        if (isMagicTransit(existingBindings[i].service_name) &&
+            existing.maskLen === parentParsed.maskLen &&
+            isCdnOrSpectrum(selectedService)) {
+          // This overlap is expected - CDN/Spectrum within a Magic Transit parent
+          continue;
+        }
+
+        if (cidrOverlaps(childParsed, existing)) {
           return 'CIDR ' + childCidr + ' overlaps existing binding ' + existingBindings[i].cidr + ' (' + existingBindings[i].service_name + ')';
         }
       }

@@ -491,6 +491,15 @@ app.post('/api/prefixes/:prefixId/bgp/:bgpPrefixId/toggle', async (c) => {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
     }
 
+    // Verify the advertisement state actually changed
+    const actualState = data.result?.on_demand?.advertised;
+    if (actualState !== undefined && actualState !== null && actualState !== body.advertised) {
+      const reason = data.result?.on_demand?.on_demand_locked
+        ? 'Prefix is locked — contact your Cloudflare account team to unlock'
+        : 'Advertisement state did not change. This may be caused by auto_advertise_withdraw or insufficient token permissions.';
+      return c.json({ error: reason, bgp_prefix: data.result }, 409);
+    }
+
     await logActivity(
       c.env.DB,
       email,
@@ -569,7 +578,7 @@ app.post('/api/prefixes/bulk-toggle', async (c) => {
         for (const bp of bgpData.result) {
           if (!result.cidr && bp.cidr) result.cidr = bp.cidr;
 
-          if (!bp.on_demand?.on_demand_enabled || bp.on_demand?.on_demand_locked) {
+          if (bp.on_demand?.on_demand_locked) {
             result.skipped++;
             continue;
           }
