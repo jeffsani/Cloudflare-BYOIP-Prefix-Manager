@@ -149,6 +149,23 @@ export interface RpkiLookupResult {
   total_peers: number;
 }
 
+// --- RIPEstat Visibility types ---
+
+export interface RipestatVisibilityRrc {
+  rrc: string;
+  peers_seeing: number;
+  total_peers: number;
+  location: string;
+}
+
+export interface RipestatVisibilityResult {
+  rrcs: RipestatVisibilityRrc[];
+  total_seeing: number;
+  total_peers: number;
+  visibility: number;
+  query_time: string;
+}
+
 // --- RDAP / Whois types ---
 
 export interface RdapResult {

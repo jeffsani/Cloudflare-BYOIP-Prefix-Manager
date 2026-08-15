@@ -8,6 +8,7 @@ import type {
   RdapResult,
   RpkiLookupResult,
   RpkiPrefixOrigin,
+  RipestatVisibilityResult,
 } from './types';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
@@ -283,6 +284,84 @@ export async function lookupRpki(prefix: string, token: string): Promise<RpkiLoo
     prefix_origins: data.result.prefix_origins || [],
     data_time: data.result.meta?.data_time || '',
     total_peers: data.result.meta?.total_peers || 0,
+  };
+}
+
+// --- RIPEstat Visibility Lookup ---
+
+interface RipestatVisibilityResponse {
+  status: string;
+  data: {
+    visibilities: Array<{
+      probe: {
+        city: string;
+        country: string;
+        name: string;
+      };
+      rrcs: Array<{
+        rrc: string;
+        location: string;
+        peers: Array<{
+          asn_origin: number;
+          as_path: string;
+          community: string;
+          last_updated: string;
+          prefix: string;
+          peer: string;
+          next_hop: string;
+        }>;
+      }>;
+    }>;
+    query_time: string;
+    resource: string;
+  };
+}
+
+export async function lookupRipestatVisibility(prefix: string): Promise<RipestatVisibilityResult> {
+  const r = await fetchWithRetry(
+    `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+      },
+    },
+  );
+  if (!r.ok) throw new Error(`RIPEstat visibility lookup failed: ${r.status}`);
+  const data = (await r.json()) as RipestatVisibilityResponse;
+
+  if (data.status !== 'ok' || !data.data?.visibilities) {
+    throw new Error('RIPEstat visibility data unavailable');
+  }
+
+  const rrcs: RipestatVisibilityResult['rrcs'] = [];
+  let totalSeeing = 0;
+  let totalPeers = 0;
+
+  for (const vis of data.data.visibilities) {
+    for (const rrc of vis.rrcs) {
+      const seeing = rrc.peers?.length || 0;
+      // RIPEstat doesn't directly give total_peers per RRC in visibility endpoint,
+      // but the peers array contains those seeing the prefix
+      rrcs.push({
+        rrc: rrc.rrc,
+        peers_seeing: seeing,
+        total_peers: seeing, // Will be updated if we get more data
+        location: rrc.location || '',
+      });
+      totalSeeing += seeing;
+    }
+  }
+
+  // Total peers is approximated from seeing peers across all RRCs
+  totalPeers = totalSeeing > 0 ? totalSeeing : 1;
+
+  return {
+    rrcs,
+    total_seeing: totalSeeing,
+    total_peers: totalPeers,
+    visibility: totalPeers > 0 ? totalSeeing / totalPeers : 0,
+    query_time: data.data.query_time || '',
   };
 }
 
