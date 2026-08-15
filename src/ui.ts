@@ -1636,9 +1636,10 @@ export function renderDashboard(userEmail: string): string {
       // Check containment
       if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
 
-      // Check overlap with existing BGP child prefixes
+      // Check overlap with existing BGP child prefixes (skip the parent prefix itself)
       var existingBgp = (childData[prefixId] && childData[prefixId].bgp_prefixes) || [];
       for (var i = 0; i < existingBgp.length; i++) {
+        if (existingBgp[i].cidr === parentCidr) continue;
         var existing = parseCIDR(existingBgp[i].cidr);
         if (existing && cidrOverlaps(childParsed, existing)) {
           return 'CIDR ' + childCidr + ' overlaps existing child prefix ' + existingBgp[i].cidr;
