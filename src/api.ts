@@ -13,11 +13,27 @@ import type {
 const CF_API = 'https://api.cloudflare.com/client/v4';
 const RADAR_API = 'https://api.cloudflare.com/client/v4';
 
+const MAX_RETRIES = 3;
+
 function authHeaders(token: string): HeadersInit {
   return {
     Authorization: `Bearer ${token}`,
     'Content-Type': 'application/json',
   };
+}
+
+// Retry wrapper: backs off on HTTP 429 using the retry-after header
+async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const r = await fetch(input, init);
+    if (r.status !== 429 || attempt === MAX_RETRIES) return r;
+
+    const retryAfter = r.headers.get('retry-after');
+    const waitSec = retryAfter ? Math.min(parseInt(retryAfter, 10) || 5, 30) : 5 * (attempt + 1);
+    await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
+  }
+  // Unreachable, but satisfies TypeScript
+  throw new Error('Retry loop exited unexpectedly');
 }
 
 // --- Addressing Prefixes ---
@@ -26,7 +42,7 @@ export async function listPrefixes(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix[]>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes`,
     { headers: authHeaders(token) },
   );
@@ -38,7 +54,7 @@ export async function listBgpPrefixes(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix[]>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes`,
     { headers: authHeaders(token) },
   );
@@ -51,7 +67,7 @@ export async function createBgpPrefix(
   cidr: string,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes`,
     {
       method: 'POST',
@@ -67,7 +83,7 @@ export async function listServiceBindings(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfServiceBinding[]>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings`,
     { headers: authHeaders(token) },
   );
@@ -78,7 +94,7 @@ export async function listServices(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfService[]>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/services`,
     { headers: authHeaders(token) },
   );
@@ -94,7 +110,7 @@ export async function createServiceBinding(
   serviceId: string,
   token: string,
 ): Promise<CfApiResponse<CfServiceBinding>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings`,
     {
       method: 'POST',
@@ -114,7 +130,7 @@ export async function toggleBgpAdvertisement(
   advertised: boolean,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes/${bgpPrefixId}`,
     {
       method: 'PATCH',
@@ -136,7 +152,7 @@ export async function verifyTokenPermissions(
   // Test 1: IP Prefixes Read
   let firstPrefixId: string | null = null;
   try {
-    const r = await fetch(
+    const r = await fetchWithRetry(
       `${CF_API}/accounts/${accountId}/addressing/prefixes`,
       { headers: authHeaders(token) },
     );
@@ -156,7 +172,7 @@ export async function verifyTokenPermissions(
   // Test 2: BGP On Demand Read (requires a prefix to test against)
   if (firstPrefixId) {
     try {
-      const r = await fetch(
+      const r = await fetchWithRetry(
         `${CF_API}/accounts/${accountId}/addressing/prefixes/${firstPrefixId}/bgp/prefixes`,
         { headers: authHeaders(token) },
       );
@@ -179,7 +195,7 @@ export async function verifyTokenPermissions(
 
   // Test 3: Services Read (tests addressing scope)
   try {
-    const r = await fetch(
+    const r = await fetchWithRetry(
       `${CF_API}/accounts/${accountId}/addressing/services`,
       { headers: authHeaders(token) },
     );
@@ -204,7 +220,7 @@ export async function updatePrefixDescription(
   description: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}`,
     {
       method: 'PATCH',
@@ -222,7 +238,7 @@ export async function validatePrefix(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix>> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/validate`,
     {
       method: 'POST',
@@ -235,7 +251,7 @@ export async function validatePrefix(
 // --- Looking Glass (Cloudflare Radar) ---
 
 export async function lookupBgpRoutes(prefix: string, token: string): Promise<LgResult> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${RADAR_API}/radar/bgp/routes/realtime?prefix=${encodeURIComponent(prefix)}`,
     { headers: authHeaders(token) },
   );
@@ -249,7 +265,7 @@ export async function lookupBgpRoutes(prefix: string, token: string): Promise<Lg
 // --- RPKI ROA Lookup (Cloudflare Radar) ---
 
 export async function lookupRpki(prefix: string, token: string): Promise<RpkiLookupResult> {
-  const r = await fetch(
+  const r = await fetchWithRetry(
     `${RADAR_API}/radar/bgp/routes/pfx2as?prefix=${encodeURIComponent(prefix)}`,
     { headers: authHeaders(token) },
   );

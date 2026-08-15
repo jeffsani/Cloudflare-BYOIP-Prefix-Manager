@@ -217,7 +217,7 @@ export function renderDashboard(userEmail: string): string {
         <h2 class="text-sm font-semibold" style="color:var(--text-strong)">Account Settings</h2>
         <button onclick="toggleSettings()" class="text-cf-gray hover:text-cf-orange text-xs">Close</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-3">
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
         <div>
           <label class="block text-xs text-cf-gray mb-1">Account Label</label>
           <input id="set-label" type="text" placeholder="e.g. Production" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
@@ -226,11 +226,16 @@ export function renderDashboard(userEmail: string): string {
           <label class="block text-xs text-cf-gray mb-1">Account ID</label>
           <input id="set-account-id" type="text" placeholder="Cloudflare Account ID" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
+        <div>
+          <label class="block text-xs text-cf-gray mb-1">API Token</label>
+          <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
       </div>
       <div class="flex gap-2 mb-4">
         <button onclick="saveAccount()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Account</button>
+        <button onclick="testNewAccountToken()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Test Token</button>
+        <div id="test-token-result" class="flex items-center text-[10px]"></div>
       </div>
-      <p class="text-[10px] text-cf-gray mb-3">Add multiple API tokens per account to distribute requests and avoid the 1200 req / 5 min / token rate limit. ${infoTip('Tokens are round-robin load balanced across read requests. The first token is used for write operations (e.g. advertisement toggles).')}</p>
       <div id="accounts-list"></div>
     </div>
   </div>
@@ -482,7 +487,7 @@ export function renderDashboard(userEmail: string): string {
     var expandedRows = {};
     var childData = {};
     var pendingToggle = null;
-    var expandedAccountTokens = {};
+    
     var rdapCache = {};
     var rpkiCache = {};
     var selectedPrefixes = new Set();
@@ -614,117 +619,30 @@ export function renderDashboard(userEmail: string): string {
         el.innerHTML = '<p class="text-xs text-cf-gray">No accounts configured yet.</p>';
         return;
       }
-      el.innerHTML = '<div class="space-y-3">' + savedAccounts.map(function(a) {
+      el.innerHTML = '<div class="space-y-2">' + savedAccounts.map(function(a) {
         var defBadge = a.is_default ? '<span class="badge-advertised ml-2">Default</span>' : '';
-        var tokenBadge = '<span class="badge-active ml-1">' + (a.token_count || 0) + ' token' + (a.token_count === 1 ? '' : 's') + '</span>';
-        var isExpanded = expandedAccountTokens[a.account_id] || false;
-        var chevClass = isExpanded ? 'chevron open' : 'chevron';
+        var tokenDisplay = a.api_token ? '<span class="text-cf-gray font-mono text-[10px] ml-1">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid ml-1">No token</span>';
 
-        var html = '<div class="rounded-lg border border-cf-border overflow-hidden">' +
-          '<div class="flex items-center justify-between p-2.5 cursor-pointer" onclick="toggleAccountTokens(\\'' + escAttr(a.account_id) + '\\')">' +
+        return '<div class="flex items-center justify-between p-2.5 rounded-lg border border-cf-border">' +
             '<div class="flex items-center gap-2 text-xs">' +
-              '<span class="' + chevClass + '" style="font-size:10px">&#9656;</span>' +
               '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(a.account_label || 'Untitled') + '</span>' +
               '<span class="text-cf-gray font-mono text-[10px]">' + a.account_id + '</span>' +
-              tokenBadge +
+              tokenDisplay +
               defBadge +
             '</div>' +
-            '<div class="flex gap-1" onclick="event.stopPropagation()">' +
+            '<div class="flex gap-1">' +
               (a.is_default ? '' : '<button onclick="setDefault(' + a.id + ')" class="text-[10px] text-cf-gray hover:text-cf-orange px-1.5 py-0.5 border border-cf-border rounded hover:border-cf-orange">Set Default</button>') +
               '<button onclick="deleteAccount(' + a.id + ')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400">Delete</button>' +
             '</div>' +
           '</div>';
-
-        if (isExpanded) {
-          html += '<div class="border-t border-cf-border p-3" id="token-section-' + escAttr(a.account_id) + '">' +
-            '<div class="flex items-center gap-2 mb-2">' +
-              '<span class="text-[10px] text-cf-gray font-medium uppercase tracking-wider">API Tokens</span>' +
-            '</div>' +
-            '<div id="token-list-' + escAttr(a.account_id) + '"><div class="spinner"></div></div>' +
-            '<div class="mt-3 pt-3 border-t border-cf-border">' +
-              '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">' +
-                '<input id="add-token-label-' + escAttr(a.account_id) + '" type="text" placeholder="Token label (optional)" class="px-2 py-1 rounded-lg border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none">' +
-                '<input id="add-token-value-' + escAttr(a.account_id) + '" type="password" placeholder="API Token" class="px-2 py-1 rounded-lg border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none">' +
-                '<div class="flex gap-1">' +
-                  '<button onclick="addToken(\\'' + escAttr(a.account_id) + '\\')" class="px-2.5 py-1 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Add Token</button>' +
-                  '<button onclick="testNewToken(\\'' + escAttr(a.account_id) + '\\')" class="px-2.5 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Test</button>' +
-                  '<div id="add-token-result-' + escAttr(a.account_id) + '" class="flex items-center text-[10px] ml-1"></div>' +
-                '</div>' +
-              '</div>' +
-            '</div>' +
-          '</div>';
-        }
-
-        html += '</div>';
-        return html;
       }).join('') + '</div>';
-
-      // Load tokens for expanded accounts
-      savedAccounts.forEach(function(a) {
-        if (expandedAccountTokens[a.account_id]) {
-          loadTokensForAccount(a.account_id);
-        }
-      });
     }
 
-    function toggleAccountTokens(accountId) {
-      expandedAccountTokens[accountId] = !expandedAccountTokens[accountId];
-      renderAccountsList();
-    }
-
-    async function loadTokensForAccount(accountId) {
-      var el = document.getElementById('token-list-' + accountId);
-      if (!el) return;
-      try {
-        var resp = await fetch('/api/tokens?account_id=' + accountId);
-        var data = await resp.json();
-        var tokens = data.tokens || [];
-        if (tokens.length === 0) {
-          el.innerHTML = '<p class="text-[10px] text-cf-gray italic">No tokens added yet. Add one below.</p>';
-          return;
-        }
-        el.innerHTML = '<div class="space-y-1">' + tokens.map(function(t) {
-          return '<div class="flex items-center justify-between py-1 px-2 rounded border border-cf-border">' +
-            '<div class="flex items-center gap-2 text-[10px]">' +
-              '<span class="text-cf-gray font-mono">' + escHtml(t.api_token) + '</span>' +
-              (t.token_label ? '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(t.token_label) + '</span>' : '') +
-              '<span class="text-cf-gray">' + escHtml(t.created_at || '') + '</span>' +
-            '</div>' +
-            '<button onclick="deleteToken(' + t.id + ',\\'' + escAttr(accountId) + '\\')" class="text-[10px] text-red-400 hover:text-red-300 px-1 py-0.5 border border-cf-border rounded hover:border-red-400">Remove</button>' +
-          '</div>';
-        }).join('') + '</div>';
-      } catch (e) {
-        el.innerHTML = '<p class="text-[10px] text-red-400">Failed to load tokens</p>';
-      }
-    }
-
-    async function addToken(accountId) {
-      var label = document.getElementById('add-token-label-' + accountId).value.trim();
-      var token = document.getElementById('add-token-value-' + accountId).value.trim();
-      if (!token) { alert('API Token is required'); return; }
-      try {
-        var resp = await fetch('/api/tokens', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, api_token: token, token_label: label })
-        });
-        var data = await resp.json();
-        if (data.error) { alert(data.error); return; }
-        document.getElementById('add-token-label-' + accountId).value = '';
-        document.getElementById('add-token-value-' + accountId).value = '';
-        document.getElementById('add-token-result-' + accountId).innerHTML = '';
-        loadAccounts();
-        // Keep expanded
-        expandedAccountTokens[accountId] = true;
-      } catch (e) {
-        alert('Failed to add token: ' + e);
-      }
-    }
-
-    async function testNewToken(accountId) {
-      var token = document.getElementById('add-token-value-' + accountId).value.trim();
-      if (!token) { alert('Enter a token first'); return; }
-      var el = document.getElementById('add-token-result-' + accountId);
+    async function testNewAccountToken() {
+      var token = document.getElementById('set-api-token').value.trim();
+      var accountId = document.getElementById('set-account-id').value.trim();
+      if (!token || !accountId) { alert('Account ID and API Token are required'); return; }
+      var el = document.getElementById('test-token-result');
       el.innerHTML = '<div class="spinner" style="width:12px;height:12px"></div>';
       try {
         var resp = await fetch('/api/test-token', {
@@ -745,28 +663,22 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
-    async function deleteToken(tokenId, accountId) {
-      if (!confirm('Remove this token?')) return;
-      await fetch('/api/tokens/' + tokenId, { method: 'DELETE' });
-      loadAccounts();
-      expandedAccountTokens[accountId] = true;
-    }
-
     async function saveAccount() {
       var label = document.getElementById('set-label').value.trim();
       var accountId = document.getElementById('set-account-id').value.trim();
+      var apiToken = document.getElementById('set-api-token').value.trim();
       if (!accountId) { alert('Account ID is required'); return; }
       try {
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_label: label, account_id: accountId })
+          body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined })
         });
         document.getElementById('set-label').value = '';
         document.getElementById('set-account-id').value = '';
+        document.getElementById('set-api-token').value = '';
+        document.getElementById('test-token-result').innerHTML = '';
         loadAccounts();
-        // Auto-expand the new account's token section
-        expandedAccountTokens[accountId] = true;
       } catch (e) {
         alert('Failed to save account: ' + e);
       }

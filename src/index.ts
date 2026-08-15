@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import type { Env, UserAccount, AccountToken } from './types';
+import type { Env, UserAccount } from './types';
 import { accessAuthMiddleware } from './auth';
 import { renderDashboard } from './ui';
 import {
@@ -22,9 +22,6 @@ type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
 
 const app = new Hono<AppEnv>();
 
-// Module-level round-robin counter for token load balancing
-let tokenCounter = 0;
-
 // Auth middleware
 app.use('*', accessAuthMiddleware);
 
@@ -34,63 +31,17 @@ app.get('/health', (c) => c.text('OK'));
 // User info
 app.get('/api/me', (c) => c.json({ email: c.get('userEmail') }));
 
-// ─── Token Pool Helpers ─────────────────────────────────────────────
+// ─── Token Helper ───────────────────────────────────────────────────
 
-// Auto-migrate legacy api_token from user_accounts into account_tokens
-async function migrateTokenIfNeeded(db: D1Database, email: string, accountId: string) {
-  const hasNew = await db
-    .prepare('SELECT COUNT(*) as cnt FROM account_tokens WHERE user_email = ? AND account_id = ?')
-    .bind(email, accountId)
-    .first<{ cnt: number }>();
-  if (hasNew && hasNew.cnt > 0) return;
-
-  const legacy = await db
-    .prepare('SELECT api_token FROM user_accounts WHERE user_email = ? AND account_id = ?')
-    .bind(email, accountId)
-    .first<{ api_token: string }>();
-  if (legacy?.api_token) {
-    await db
-      .prepare(
-        'INSERT OR IGNORE INTO account_tokens (user_email, account_id, token_label, api_token) VALUES (?, ?, ?, ?)',
-      )
-      .bind(email, accountId, 'Default', legacy.api_token)
-      .run();
-  }
-}
-
-// Get a token via round-robin for read operations
+// Get the API token for an account
 async function getToken(db: D1Database, email: string, accountId: string): Promise<string> {
-  await migrateTokenIfNeeded(db, email, accountId);
-
-  const rows = await db
-    .prepare(
-      'SELECT api_token FROM account_tokens WHERE user_email = ? AND account_id = ? ORDER BY id ASC',
-    )
-    .bind(email, accountId)
-    .all<{ api_token: string }>();
-
-  const tokens = (rows.results || []).map((r) => r.api_token).filter(Boolean);
-  if (tokens.length === 0) {
-    throw new Error('No API tokens configured for this account');
-  }
-
-  const idx = tokenCounter++ % tokens.length;
-  return tokens[idx];
-}
-
-// Get the first token for write operations (consistent, predictable)
-async function getFirstToken(db: D1Database, email: string, accountId: string): Promise<string> {
-  await migrateTokenIfNeeded(db, email, accountId);
-
   const row = await db
-    .prepare(
-      'SELECT api_token FROM account_tokens WHERE user_email = ? AND account_id = ? ORDER BY id ASC LIMIT 1',
-    )
+    .prepare('SELECT api_token FROM user_accounts WHERE user_email = ? AND account_id = ?')
     .bind(email, accountId)
     .first<{ api_token: string }>();
 
   if (!row?.api_token) {
-    throw new Error('No API tokens configured for this account');
+    throw new Error('No API token configured for this account');
   }
   return row.api_token;
 }
@@ -138,7 +89,7 @@ function maskToken(token: string): string {
 
 // ─── Account Settings ───────────────────────────────────────────────
 
-// List accounts (with token counts)
+// List accounts
 app.get('/api/settings', async (c) => {
   const email = c.get('userEmail');
   const rows = await c.env.DB.prepare(
@@ -147,34 +98,24 @@ app.get('/api/settings', async (c) => {
     .bind(email)
     .all<UserAccount>();
 
-  const accounts = await Promise.all(
-    (rows.results || []).map(async (r) => {
-      await migrateTokenIfNeeded(c.env.DB, email, r.account_id);
-      const tokenCount = await c.env.DB.prepare(
-        'SELECT COUNT(*) as cnt FROM account_tokens WHERE user_email = ? AND account_id = ?',
-      )
-        .bind(email, r.account_id)
-        .first<{ cnt: number }>();
-
-      return {
-        id: r.id,
-        account_label: r.account_label,
-        account_id: r.account_id,
-        is_default: r.is_default,
-        token_count: tokenCount?.cnt || 0,
-        updated_at: r.updated_at,
-      };
-    }),
-  );
+  const accounts = (rows.results || []).map((r) => ({
+    id: r.id,
+    account_label: r.account_label,
+    account_id: r.account_id,
+    api_token: maskToken(r.api_token),
+    is_default: r.is_default,
+    updated_at: r.updated_at,
+  }));
   return c.json({ accounts });
 });
 
-// Add / update account (label + account_id only, tokens managed separately)
+// Add / update account
 app.post('/api/settings', async (c) => {
   const email = c.get('userEmail');
   const body = await c.req.json<{
     account_label: string;
     account_id: string;
+    api_token?: string;
   }>();
 
   if (!body.account_id) {
@@ -189,12 +130,21 @@ app.post('/api/settings', async (c) => {
     .first<{ id: number }>();
 
   if (existing) {
-    await c.env.DB.prepare(
-      `UPDATE user_accounts SET account_label = ?, updated_at = datetime('now')
-       WHERE id = ? AND user_email = ?`,
-    )
-      .bind(body.account_label || '', existing.id, email)
-      .run();
+    if (body.api_token) {
+      await c.env.DB.prepare(
+        `UPDATE user_accounts SET account_label = ?, api_token = ?, updated_at = datetime('now')
+         WHERE id = ? AND user_email = ?`,
+      )
+        .bind(body.account_label || '', body.api_token, existing.id, email)
+        .run();
+    } else {
+      await c.env.DB.prepare(
+        `UPDATE user_accounts SET account_label = ?, updated_at = datetime('now')
+         WHERE id = ? AND user_email = ?`,
+      )
+        .bind(body.account_label || '', existing.id, email)
+        .run();
+    }
   } else {
     // Auto-set default if first account
     const count = await c.env.DB.prepare(
@@ -205,17 +155,17 @@ app.post('/api/settings', async (c) => {
     const isDefault = (count?.cnt || 0) === 0 ? 1 : 0;
 
     await c.env.DB.prepare(
-      `INSERT INTO user_accounts (user_email, account_label, account_id, is_default)
-       VALUES (?, ?, ?, ?)`,
+      `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default)
+       VALUES (?, ?, ?, ?, ?)`,
     )
-      .bind(email, body.account_label || '', body.account_id, isDefault)
+      .bind(email, body.account_label || '', body.account_id, body.api_token || '', isDefault)
       .run();
   }
 
   return c.json({ ok: true });
 });
 
-// Delete account (and its tokens)
+// Delete account
 app.delete('/api/settings/:id', async (c) => {
   const email = c.get('userEmail');
   const id = parseInt(c.req.param('id'), 10);
@@ -227,10 +177,6 @@ app.delete('/api/settings/:id', async (c) => {
     .first<UserAccount>();
   if (!row) return c.json({ error: 'Not found' }, 404);
 
-  // Delete account and all associated tokens
-  await c.env.DB.prepare('DELETE FROM account_tokens WHERE user_email = ? AND account_id = ?')
-    .bind(email, row.account_id)
-    .run();
   await c.env.DB.prepare('DELETE FROM user_accounts WHERE id = ? AND user_email = ?')
     .bind(id, email)
     .run();
@@ -265,81 +211,6 @@ app.put('/api/settings/:id/default', async (c) => {
   await c.env.DB.prepare(
     'UPDATE user_accounts SET is_default = 1 WHERE id = ? AND user_email = ?',
   )
-    .bind(id, email)
-    .run();
-
-  return c.json({ ok: true });
-});
-
-// ─── Token Management ───────────────────────────────────────────────
-
-// List tokens for an account
-app.get('/api/tokens', async (c) => {
-  const email = c.get('userEmail');
-  const accountId = c.req.query('account_id');
-  if (!accountId) return c.json({ error: 'account_id required' }, 400);
-
-  await migrateTokenIfNeeded(c.env.DB, email, accountId);
-
-  const rows = await c.env.DB.prepare(
-    'SELECT * FROM account_tokens WHERE user_email = ? AND account_id = ? ORDER BY id ASC',
-  )
-    .bind(email, accountId)
-    .all<AccountToken>();
-
-  const tokens = (rows.results || []).map((r) => ({
-    id: r.id,
-    token_label: r.token_label,
-    api_token: maskToken(r.api_token),
-    created_at: r.created_at,
-  }));
-  return c.json({ tokens });
-});
-
-// Add a token to an account
-app.post('/api/tokens', async (c) => {
-  const email = c.get('userEmail');
-  const body = await c.req.json<{
-    account_id: string;
-    api_token: string;
-    token_label?: string;
-  }>();
-
-  if (!body.account_id || !body.api_token) {
-    return c.json({ error: 'account_id and api_token are required' }, 400);
-  }
-
-  // Verify the account belongs to this user
-  const acct = await c.env.DB.prepare(
-    'SELECT id FROM user_accounts WHERE user_email = ? AND account_id = ?',
-  )
-    .bind(email, body.account_id)
-    .first<{ id: number }>();
-  if (!acct) return c.json({ error: 'Account not found' }, 404);
-
-  try {
-    await c.env.DB.prepare(
-      'INSERT INTO account_tokens (user_email, account_id, token_label, api_token) VALUES (?, ?, ?, ?)',
-    )
-      .bind(email, body.account_id, body.token_label || '', body.api_token)
-      .run();
-  } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : String(e);
-    if (msg.includes('UNIQUE')) {
-      return c.json({ error: 'This token already exists for this account' }, 409);
-    }
-    throw e;
-  }
-
-  return c.json({ ok: true });
-});
-
-// Delete a token
-app.delete('/api/tokens/:id', async (c) => {
-  const email = c.get('userEmail');
-  const id = parseInt(c.req.param('id'), 10);
-
-  await c.env.DB.prepare('DELETE FROM account_tokens WHERE id = ? AND user_email = ?')
     .bind(id, email)
     .run();
 
@@ -410,7 +281,7 @@ app.post('/api/prefixes/:prefixId/bgp', async (c) => {
   }
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const data = await createBgpPrefix(acct.account_id, prefixId, body.cidr, token);
     if (!data.success) {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
@@ -462,7 +333,7 @@ app.post('/api/prefixes/:prefixId/bindings', async (c) => {
   }
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const data = await createServiceBinding(acct.account_id, prefixId, body.cidr, body.service_id, token);
     if (!data.success) {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
@@ -512,7 +383,7 @@ app.post('/api/prefixes/:prefixId/bgp/:bgpPrefixId/toggle', async (c) => {
   if (!acct) return c.json({ error: 'No account configured' }, 400);
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const data = await toggleBgpAdvertisement(
       acct.account_id,
       prefixId,
@@ -556,7 +427,7 @@ app.patch('/api/prefixes/:prefixId/description', async (c) => {
   if (!acct) return c.json({ error: 'No account configured' }, 400);
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const data = await updatePrefixDescription(acct.account_id, prefixId, body.description ?? '', token);
 
     if (!data.success) {
@@ -588,7 +459,7 @@ app.post('/api/prefixes/bulk-toggle', async (c) => {
   }
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const results: Array<{
       prefix_id: string;
       cidr: string;
@@ -677,7 +548,7 @@ app.post('/api/prefixes/:prefixId/validate', async (c) => {
   if (!acct) return c.json({ error: 'No account configured' }, 400);
 
   try {
-    const token = await getFirstToken(c.env.DB, email, acct.account_id);
+    const token = await getToken(c.env.DB, email, acct.account_id);
     const data = await validatePrefix(acct.account_id, prefixId, token);
 
     if (!data.success) {

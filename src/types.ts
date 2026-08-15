@@ -14,15 +14,6 @@ export interface UserAccount {
   updated_at: string;
 }
 
-export interface AccountToken {
-  id: number;
-  user_email: string;
-  account_id: string;
-  token_label: string;
-  api_token: string;
-  created_at: string;
-}
-
 // --- Cloudflare Addressing API types ---
 
 export interface CfPrefix {
