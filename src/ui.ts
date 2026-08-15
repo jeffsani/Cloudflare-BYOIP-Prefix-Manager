@@ -79,6 +79,9 @@ export function renderDashboard(userEmail: string): string {
     .cidr-hover { position: relative; cursor: help; }
     .rdap-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 8px); left: 0; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
+    .validation-hover { position: relative; display: inline-block; cursor: help; }
+    .validation-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: none; }
+    .validation-hover:hover .validation-tip { display: block; }
     .rdap-row { display: flex; gap: 6px; }
     .rdap-label { color: var(--muted); min-width: 70px; }
     .rdap-val { color: var(--text-strong); font-weight: 500; }
@@ -778,8 +781,8 @@ export function renderDashboard(userEmail: string): string {
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
       var statusBadge = statusBadgeHtml(p.advertised);
-      var irrBadge = validationBadge(p.irr_validation_state);
-      var rpkiBadge = validationBadge(p.rpki_validation_state);
+      var irrBadge = validationBadge(p.irr_validation_state, 'irr');
+      var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki');
       var isChecked = selectedPrefixes.has(p.id);
 
       // Parent-level toggle button
@@ -1745,13 +1748,21 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function lgGetProcessedPaths(filtered) {
-      return filtered.map(function(r) {
-        var cleaned = lgCleanPath(r.as_path);
-        if (lgState.showTier1 && lgPathReachesTier1(cleaned)) {
-          return lgTruncatePath(cleaned);
+      var result = [];
+      for (var i = 0; i < filtered.length; i++) {
+        var cleaned = lgCleanPath(filtered[i].as_path);
+        if (lgState.showTier1) {
+          // In Tier-1 mode, only include paths that reach a Tier-1 AS,
+          // and truncate them at the first Tier-1 (from collector side)
+          if (lgPathReachesTier1(cleaned)) {
+            result.push(lgTruncatePath(cleaned));
+          }
+          // Skip paths that don't reach Tier-1 entirely
+        } else {
+          result.push(cleaned);
         }
-        return cleaned;
-      });
+      }
+      return result;
     }
 
     // Check if tier-1 truncation produces empty result or misses filtered ASN
@@ -2347,13 +2358,43 @@ export function renderDashboard(userEmail: string): string {
       return '<span class="badge-unknown">Unknown</span>';
     }
 
-    function validationBadge(state) {
-      if (!state) return '<span class="badge-unknown">—</span>';
-      var s = state.toLowerCase();
-      if (s === 'valid') return '<span class="badge-valid">Valid</span>';
-      if (s === 'invalid') return '<span class="badge-invalid">Invalid</span>';
-      if (s === 'pending') return '<span class="badge-pending">Pending</span>';
-      return '<span class="badge-unknown">' + escHtml(state) + '</span>';
+    function validationTooltipText(state, type) {
+      var s = (state || '').toLowerCase();
+      if (type === 'irr') {
+        if (s === 'valid') return 'IRR record found. A valid route/route6 object exists in the Internet Routing Registry with the correct origin ASN for this prefix.';
+        if (s === 'invalid') return 'IRR validation failed. The route object in the IRR has a mismatched origin ASN or other inconsistency. Update your IRR record to match the configured ASN.';
+        if (s === 'pending') return 'IRR validation is pending. Cloudflare is checking the Internet Routing Registry for a matching route object. This may take a few minutes.';
+        if (s === 'missing') return 'No IRR record found. Create a route/route6 object in your Regional Internet Registry (RIR) with the correct origin ASN for this prefix.';
+        if (s === 'mismatch_asn') return 'IRR record has a mismatched ASN. The origin ASN in your IRR route object does not match the ASN configured for this prefix. Update the IRR record or prefix ASN.';
+        return 'IRR validation status: ' + escHtml(state) + '.';
+      }
+      if (type === 'rpki') {
+        if (s === 'valid') return 'RPKI ROA found. A valid Route Origin Authorization exists that authorizes this prefix to be announced by the configured ASN.';
+        if (s === 'invalid') return 'RPKI validation failed. The ROA for this prefix is invalid or conflicts with the configured ASN. Check your ROA configuration at your RIR.';
+        if (s === 'pending') return 'RPKI validation is pending. Cloudflare is verifying the Route Origin Authorization for this prefix. This may take a few minutes.';
+        if (s === 'missing') return 'No ROA found. Create a Route Origin Authorization (ROA) at your Regional Internet Registry (RIR) for this prefix and ASN.';
+        if (s === 'mismatch_asn') return 'RPKI ROA has a mismatched ASN. The authorized ASN in the ROA does not match the ASN configured for this prefix.';
+        return 'RPKI validation status: ' + escHtml(state) + '.';
+      }
+      return '';
+    }
+
+    function validationBadge(state, type) {
+      var badge;
+      if (!state) {
+        badge = '<span class="badge-unknown">—</span>';
+      } else {
+        var s = state.toLowerCase();
+        if (s === 'valid') badge = '<span class="badge-valid">Valid</span>';
+        else if (s === 'invalid') badge = '<span class="badge-invalid">Invalid</span>';
+        else if (s === 'pending') badge = '<span class="badge-pending">Pending</span>';
+        else badge = '<span class="badge-unknown">' + escHtml(state) + '</span>';
+      }
+      if (type) {
+        var tip = validationTooltipText(state, type);
+        return '<span class="validation-hover">' + badge + '<span class="validation-tip">' + tip + '</span></span>';
+      }
+      return badge;
     }
 
     function escHtml(s) {
