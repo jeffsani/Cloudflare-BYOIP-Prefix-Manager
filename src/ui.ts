@@ -51,7 +51,7 @@ export function renderDashboard(userEmail: string): string {
     @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
     .spinner { border: 2px solid var(--border); border-top-color: #F6821F; border-radius: 50%; width: 18px; height: 18px; animation: spin 0.8s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    [data-theme="light"] .text-white { color: var(--text-strong) !important; }
+    [data-theme="light"] .text-white:not(.btn-force-white) { color: var(--text-strong) !important; }
     [data-theme="light"] .bg-cf-dark { background-color: var(--input-bg) !important; }
     [data-theme="light"] .bg-cf-surface { background-color: var(--surface) !important; }
     [data-theme="light"] .border-cf-border { border-color: var(--border) !important; }
@@ -234,11 +234,11 @@ export function renderDashboard(userEmail: string): string {
     <!-- Bulk Action Bar -->
     <div id="bulk-action-bar" class="hidden panel p-3 mb-4 flex items-center gap-3 fade-in" style="border-color:#F6821F;border-width:1px">
       <span id="bulk-count" class="text-xs font-medium" style="color:var(--text-strong)">0 prefixes selected</span>
-      <button onclick="bulkToggle(true)" class="px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 transition flex items-center gap-1">
+      <button onclick="bulkToggle(true)" class="px-3 py-1.5 bg-green-600 text-white btn-force-white text-xs font-medium rounded-lg hover:bg-green-700 transition flex items-center gap-1">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
         Advertise Selected
       </button>
-      <button onclick="bulkToggle(false)" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition flex items-center gap-1">
+      <button onclick="bulkToggle(false)" class="px-3 py-1.5 bg-red-600 text-white btn-force-white text-xs font-medium rounded-lg hover:bg-red-700 transition flex items-center gap-1">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"/></svg>
         Withdraw Selected
       </button>
