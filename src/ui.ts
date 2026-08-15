@@ -74,13 +74,13 @@ export function renderDashboard(userEmail: string): string {
     .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; outline: none; }
     .info-ico { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: normal; line-height: 1; cursor: help; transition: all 0.15s; }
     .info-tip:hover .info-ico, .info-tip:focus .info-ico { color: #F6821F; border-color: #F6821F; }
-    .info-bubble { display: none; position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); text-transform: none; letter-spacing: normal; white-space: normal; }
+    .info-bubble { display: none; position: fixed; z-index: 9999; width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); text-transform: none; letter-spacing: normal; white-space: normal; }
     .info-tip:hover .info-bubble, .info-tip:focus .info-bubble, .info-tip:focus-within .info-bubble { display: block; }
     .cidr-hover { position: relative; cursor: help; }
-    .rdap-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 8px); left: 0; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
+    .rdap-tip { display: none; position: fixed; z-index: 9999; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
     .validation-hover { position: relative; display: inline-block; cursor: help; }
-    .validation-tip { display: none; position: absolute; z-index: 70; top: calc(100% + 6px); left: 50%; transform: translateX(-50%); min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; }
+    .validation-tip { display: none; position: fixed; z-index: 9999; min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; }
     .validation-hover:hover .validation-tip { display: block; }
     .validation-tip a { pointer-events: auto; }
     .rdap-row { display: flex; gap: 6px; }
@@ -490,6 +490,54 @@ export function renderDashboard(userEmail: string): string {
     var servicesCache = {};
     var bindingModalContext = null;
     var childPrefixModalContext = null;
+
+    // ─── Tooltip Positioning (fixed, escapes overflow:hidden) ────
+    function positionTooltip(triggerEl, tipEl) {
+      var rect = triggerEl.getBoundingClientRect();
+      tipEl.style.left = rect.left + 'px';
+      tipEl.style.top = (rect.bottom + 6) + 'px';
+      requestAnimationFrame(function() {
+        var tipRect = tipEl.getBoundingClientRect();
+        if (tipRect.bottom > window.innerHeight) {
+          tipEl.style.top = (rect.top - tipRect.height - 6) + 'px';
+        }
+        if (tipRect.right > window.innerWidth) {
+          tipEl.style.left = (window.innerWidth - tipRect.width - 8) + 'px';
+        }
+        if (tipRect.left < 0) {
+          tipEl.style.left = '8px';
+        }
+      });
+    }
+
+    document.addEventListener('mouseenter', function(e) {
+      var infoTip = e.target.closest('.info-tip');
+      if (infoTip) {
+        var bubble = infoTip.querySelector('.info-bubble');
+        if (bubble) positionTooltip(infoTip, bubble);
+        return;
+      }
+      var valHover = e.target.closest('.validation-hover');
+      if (valHover) {
+        var tip = valHover.querySelector('.validation-tip');
+        if (tip) positionTooltip(valHover, tip);
+        return;
+      }
+      var cidrHover = e.target.closest('.cidr-hover');
+      if (cidrHover) {
+        var tip = cidrHover.querySelector('.rdap-tip');
+        if (tip) positionTooltip(cidrHover, tip);
+        return;
+      }
+    }, true);
+
+    document.addEventListener('focusin', function(e) {
+      var infoTip = e.target.closest('.info-tip');
+      if (infoTip) {
+        var bubble = infoTip.querySelector('.info-bubble');
+        if (bubble) positionTooltip(infoTip, bubble);
+      }
+    }, true);
 
     // ─── Init ─────────────────────────────────────────────────────
     (function init() {
@@ -1848,9 +1896,11 @@ export function renderDashboard(userEmail: string): string {
       if (!tipEl) return;
       if (rdapCache[cidr]) {
         tipEl.innerHTML = formatRdap(rdapCache[cidr]);
+        positionTooltip(el, tipEl);
         return;
       }
       tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-label">Loading...</span></div>';
+      positionTooltip(el, tipEl);
       try {
         var resp = await fetch('/api/rdap?prefix=' + encodeURIComponent(cidr));
         var data = await resp.json();
@@ -1860,8 +1910,10 @@ export function renderDashboard(userEmail: string): string {
         } else {
           tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-val" style="color:#ef4444">Lookup failed</span></div>';
         }
+        positionTooltip(el, tipEl);
       } catch (e) {
         tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-val" style="color:#ef4444">Lookup failed</span></div>';
+        positionTooltip(el, tipEl);
       }
     }
 
@@ -1882,9 +1934,11 @@ export function renderDashboard(userEmail: string): string {
       if (!tipEl) return;
       if (rpkiCache[cidr]) {
         tipEl.innerHTML = formatRpkiDetails(rpkiCache[cidr], state, cidr);
+        positionTooltip(el, tipEl);
         return;
       }
       tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-label">Loading ROA data...</span></div>';
+      positionTooltip(el, tipEl);
       try {
         var resp = await fetch('/api/rpki?prefix=' + encodeURIComponent(cidr) + '&account_id=' + encodeURIComponent(activeAccountId));
         var data = await resp.json();
@@ -1894,8 +1948,10 @@ export function renderDashboard(userEmail: string): string {
         } else {
           tipEl.innerHTML = formatRpkiDetails(null, state, cidr);
         }
+        positionTooltip(el, tipEl);
       } catch (e) {
         tipEl.innerHTML = formatRpkiDetails(null, state, cidr);
+        positionTooltip(el, tipEl);
       }
     }
 
@@ -1970,8 +2026,8 @@ export function renderDashboard(userEmail: string): string {
       showRpkiValid: true,
       showRpkiInvalid: true,
       filterCollector: '',
-      showVisibility: true,
-      showRoutes: true,
+      showVisibility: false,
+      showRoutes: false,
       expandedCollectors: {},
       refreshInterval: null,
       refreshCountdown: 0,
@@ -2246,6 +2302,18 @@ export function renderDashboard(userEmail: string): string {
       if (lgState.filterAsn) html += '<button onclick="lgState.filterAsn=\\'\\';lgRefresh()" style="font-size:12px;color:var(--muted);cursor:pointer;background:none;border:none">&times;</button>';
       html += '<label><input type="checkbox" ' + (lgState.showRpkiValid ? 'checked' : '') + ' onchange="lgState.showRpkiValid=this.checked;lgRefresh()"> RPKI valid (' + validCount + ')</label>';
       html += '<label><input type="checkbox" ' + (lgState.showRpkiInvalid ? 'checked' : '') + ' onchange="lgState.showRpkiInvalid=this.checked;lgRefresh()"> RPKI invalid (' + invalidCount + ')</label>';
+      // Refresh controls (right-justified)
+      var isRunning = !!lgState.refreshInterval;
+      html += '<div class="lg-refresh-bar" style="margin-left:auto">';
+      if (isRunning) {
+        html += '<span class="lg-refresh-dot active"></span>';
+        html += '<span id="lg-refresh-countdown">' + lgState.refreshCountdown + 's</span>';
+        html += '<button onclick="lgStopRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Stop</button>';
+      } else {
+        html += '<button onclick="lgStartRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Auto (30s)</button>';
+      }
+      html += '<button onclick="lgManualRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer" title="Refresh now">&#x21bb;</button>';
+      html += '</div>';
       html += '</div>';
       return html;
     }
@@ -2436,31 +2504,13 @@ export function renderDashboard(userEmail: string): string {
       return html;
     }
 
-    function lgRenderRefreshBar() {
-      var isRunning = !!lgState.refreshInterval;
-      var html = '<div class="lg-refresh-bar" style="margin:4px 0">';
-      if (isRunning) {
-        html += '<span class="lg-refresh-dot active"></span>';
-        html += '<span>Auto-refresh in <strong>' + lgState.refreshCountdown + 's</strong></span>';
-        html += '<button onclick="lgStopRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Stop</button>';
-      } else {
-        html += '<span class="lg-refresh-dot"></span>';
-        html += '<span>Auto-refresh off</span>';
-        html += '<button onclick="lgStartRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer">Start (30s)</button>';
-      }
-      html += '<button onclick="lgManualRefresh()" style="font-size:10px;padding:2px 8px;border-radius:4px;border:1px solid var(--border);background:var(--input-bg);color:var(--text-primary);cursor:pointer" title="Refresh now">&#x21bb; Refresh</button>';
-      html += '</div>';
-      return html;
-    }
-
     function lgStartRefresh() {
       lgStopRefresh();
       lgState.refreshCountdown = lgState.refreshSeconds;
       lgState.refreshInterval = setInterval(function() {
         lgState.refreshCountdown--;
         // Update just the countdown display without full re-render
-        var dotEl = document.querySelector('.lg-refresh-dot');
-        var countEl = document.querySelector('.lg-refresh-bar strong');
+        var countEl = document.getElementById('lg-refresh-countdown');
         if (countEl) countEl.textContent = lgState.refreshCountdown + 's';
         if (lgState.refreshCountdown <= 0) {
           lgManualRefresh();
@@ -2542,7 +2592,6 @@ export function renderDashboard(userEmail: string): string {
 
       var html = '';
       html += lgRenderFilters();
-      html += lgRenderRefreshBar();
       html += lgRenderPathToggle(filtered, forceFullMsg);
 
       // Graph
@@ -2714,8 +2763,8 @@ export function renderDashboard(userEmail: string): string {
       lgState.showRpkiValid = true;
       lgState.showRpkiInvalid = true;
       lgState.filterCollector = '';
-      lgState.showVisibility = true;
-      lgState.showRoutes = true;
+      lgState.showVisibility = false;
+      lgState.showRoutes = false;
       lgState.expandedCollectors = {};
       lgStopRefresh();
 
