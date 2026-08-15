@@ -813,6 +813,15 @@ export function renderDashboard(userEmail: string): string {
         try {
           var statsData = await results[1].json();
           prefixStats = statsData.stats || null;
+          if (prefixStats && prefixStats.per_prefix) {
+            allPrefixes.forEach(function(p) {
+              var pp = prefixStats.per_prefix[p.id];
+              if (pp) {
+                p._has_advertised_child = pp.has_advertised_child;
+                p._has_withdrawn_child = pp.has_withdrawn_child;
+              }
+            });
+          }
         } catch (_e) {
           prefixStats = null;
         }
@@ -859,8 +868,8 @@ export function renderDashboard(userEmail: string): string {
       var asnFilter = document.getElementById('filter-asn').value.trim();
 
       filteredPrefixes = allPrefixes.filter(function(p) {
-        if (statusFilter === 'advertised' && p.advertised !== true) return false;
-        if (statusFilter === 'withdrawn' && p.advertised !== false) return false;
+        if (statusFilter === 'advertised' && p.advertised !== true && !p._has_advertised_child) return false;
+        if (statusFilter === 'withdrawn' && p.advertised !== false && !p._has_withdrawn_child) return false;
         if (statusFilter === 'locked' && !p.on_demand_locked) return false;
         if (lockFilter === 'locked' && !p.on_demand_locked) return false;
         if (lockFilter === 'unlocked' && p.on_demand_locked) return false;
