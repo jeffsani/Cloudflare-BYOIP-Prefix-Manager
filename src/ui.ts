@@ -2461,7 +2461,7 @@ export function renderDashboard(userEmail: string): string {
 
       // Side-by-side comparison with RIPEstat
       var ripestat = lgState.ripestatVisibility;
-      if (ripestat && ripestat.total_peers > 0) {
+      if (ripestat && ripestat.total_peers > 0 && ripestat.total_seeing > 0) {
         var ripeVisPct = Math.round(ripestat.visibility * 100 * 10) / 10;
         var ripeBadgeClass = ripeVisPct >= 95 ? 'lg-vis-badge-green' : ripeVisPct >= 50 ? 'lg-vis-badge-yellow' : 'lg-vis-badge-red';
         var discrepancy = Math.abs(visPct - ripeVisPct);
@@ -2484,6 +2484,8 @@ export function renderDashboard(userEmail: string): string {
         if (ripestat.query_time) {
           html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px">RIPE RIS data as of ' + escHtml(ripestat.query_time) + ' (snapshots at 00:00, 08:00, 16:00 UTC)</div>';
         }
+      } else if (ripestat && ripestat.total_peers > 0 && ripestat.total_seeing === 0) {
+        html += '<div style="font-size:11px;color:var(--muted);margin:6px 0 4px">RIPE RIS: Prefix not found in RIPE RIS collectors at this exact CIDR. Visibility data available only via Cloudflare Radar (RouteViews + RIS).</div>';
       }
 
       if (lgState.showVisibility) {
