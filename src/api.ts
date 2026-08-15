@@ -66,6 +66,26 @@ export async function listServices(
   return r.json();
 }
 
+// --- Create Service Binding ---
+
+export async function createServiceBinding(
+  accountId: string,
+  prefixId: string,
+  cidr: string,
+  serviceId: string,
+  token: string,
+): Promise<CfApiResponse<CfServiceBinding>> {
+  const r = await fetch(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({ cidr, service_id: serviceId }),
+    },
+  );
+  return r.json();
+}
+
 // --- BGP Advertisement Toggle ---
 
 export async function toggleBgpAdvertisement(
