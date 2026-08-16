@@ -219,7 +219,8 @@ export function renderDashboard(userEmail: string): string {
         <div>&bull; BGP sub-prefix creation &amp; advertisement toggling</div>
         <div>&bull; Bulk advertise / withdraw across prefixes</div>
         <div>&bull; Service binding management (CDN, Spectrum, Magic Transit, etc.)</div>
-        <div>&bull; Inline prefix description editing</div>
+        <div>&bull; Inline prefix description editing with #tag support</div>
+        <div>&bull; Tag-based filtering &mdash; add #tags to descriptions to organize and filter prefixes</div>
         <div>&bull; Prefix re-validation (RPKI, IRR, ownership)</div>
         <div>&bull; Looking Glass &mdash; interactive BGP path graph via Cloudflare Radar</div>
         <div>&bull; Prefix Visibility &mdash; global propagation % (Radar + RIPEstat)</div>
@@ -292,7 +293,7 @@ export function renderDashboard(userEmail: string): string {
         <input id="filter-asn" type="text" placeholder="Filter by ASN" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-28">
       </div>
       <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Tag:</label>
+        <label class="text-xs text-cf-gray font-medium">Tag:${infoTip('Add #tags to any prefix description to organize and filter prefixes. For example: <strong>#production</strong>, <strong>#us-east</strong>, <strong>#customer-xyz</strong>. Tags are case-insensitive and support letters, numbers, hyphens, and underscores.')}</label>
         <select id="filter-tag" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
           <option value="all">All</option>
         </select>
@@ -928,22 +929,32 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
     }
 
+    function extractTagsRaw(desc) {
+      if (!desc) return [];
+      var matches = desc.match(/(?:^|\s)#([a-zA-Z0-9_-]+)/g);
+      if (!matches) return [];
+      return matches.map(function(m) { return m.trim().slice(1); });
+    }
+
     function updateTagFilter() {
       var sel = document.getElementById('filter-tag');
       if (!sel) return;
       var currentVal = sel.value;
-      var tagSet = {};
+      var tagDisplay = {};
       allPrefixes.forEach(function(p) {
-        var tags = extractTags(p.description);
-        tags.forEach(function(t) { tagSet[t] = true; });
+        var raw = extractTagsRaw(p.description);
+        raw.forEach(function(t) {
+          var key = t.toLowerCase();
+          if (!tagDisplay[key]) tagDisplay[key] = t;
+        });
       });
-      var tags = Object.keys(tagSet).sort();
+      var keys = Object.keys(tagDisplay).sort();
       var html = '<option value="all">All</option>';
-      tags.forEach(function(t) {
-        html += '<option value="' + escAttr(t) + '">#' + escHtml(t) + '</option>';
+      keys.forEach(function(k) {
+        html += '<option value="' + escAttr(k) + '">#' + escHtml(tagDisplay[k]) + '</option>';
       });
       sel.innerHTML = html;
-      if (currentVal && tagSet[currentVal]) {
+      if (currentVal && tagDisplay[currentVal]) {
         sel.value = currentVal;
       }
     }
@@ -1130,7 +1141,7 @@ export function renderDashboard(userEmail: string): string {
         '<button onclick="event.stopPropagation();startEditDescription(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.description || '') + '\\')" class="text-cf-gray hover:text-cf-orange ml-1 inline-flex align-middle" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
         '</span>' +
         '<span id="desc-edit-' + escAttr(p.id) + '" class="hidden">' +
-          '<input type="text" value="' + escAttr(p.description || '') + '" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none w-40" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveDescription(\\'' + escAttr(p.id) + '\\',this.value)}else if(event.key===\\'Escape\\'){cancelEditDescription(\\'' + escAttr(p.id) + '\\')}" onblur="saveDescription(\\'' + escAttr(p.id) + '\\',this.value)">' +
+          '<input type="text" value="' + escAttr(p.description || '') + '" placeholder="e.g. My prefix #production #us-east" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none w-40" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveDescription(\\'' + escAttr(p.id) + '\\',this.value)}else if(event.key===\\'Escape\\'){cancelEditDescription(\\'' + escAttr(p.id) + '\\')}" onblur="saveDescription(\\'' + escAttr(p.id) + '\\',this.value)">' +
           '<span id="desc-spinner-' + escAttr(p.id) + '" class="hidden ml-1"><span class="spinner" style="width:12px;height:12px"></span></span>' +
         '</span>';
 

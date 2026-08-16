@@ -11,7 +11,8 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 ### Prefix Management
 - **Prefix Table** — View all BYOIP prefixes with CIDR, ASN, advertisement status, IRR/RPKI validation state, lock status, and description
 - **Expandable Rows** — Click any prefix to drill into its BGP sub-prefixes and service bindings in a tree view
-- **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, and ASN
+- **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, ASN, and tags
+- **Tag-Based Filtering** — Add `#tags` to prefix descriptions (e.g. `My prefix #production #us-east`) to organize prefixes. Tags appear as clickable badges in the description column and auto-populate a Tag filter dropdown. Click any tag badge to instantly filter by that tag
 - **Advertisement Toggle** — Advertise or withdraw individual BGP sub-prefixes with a toggle switch and confirmation dialog; all changes are logged to an activity feed
 
 ### Looking Glass
