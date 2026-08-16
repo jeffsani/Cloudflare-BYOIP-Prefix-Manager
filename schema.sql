@@ -19,3 +19,14 @@ CREATE TABLE IF NOT EXISTS activity_log (
   details     TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Local descriptions for prefix delegations (CF API has no description field)
+CREATE TABLE IF NOT EXISTS delegation_descriptions (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  delegation_id   TEXT NOT NULL,
+  account_id      TEXT NOT NULL,
+  description     TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(delegation_id, account_id)
+);

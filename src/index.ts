@@ -476,7 +476,24 @@ app.get('/api/prefixes/:prefixId/delegations', async (c) => {
     if (!data.success) {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
     }
-    return c.json({ delegations: data.result || [] });
+
+    // Enrich delegations with locally stored descriptions
+    const delegations = data.result || [];
+    if (delegations.length > 0) {
+      const ids = delegations.map((d) => d.id);
+      const placeholders = ids.map(() => '?').join(',');
+      const rows = await c.env.DB.prepare(
+        `SELECT delegation_id, description FROM delegation_descriptions WHERE account_id = ? AND delegation_id IN (${placeholders})`,
+      )
+        .bind(acct.account_id, ...ids)
+        .all<{ delegation_id: string; description: string }>();
+      const descMap = new Map((rows.results || []).map((r) => [r.delegation_id, r.description]));
+      for (const d of delegations) {
+        (d as any).description = descMap.get(d.id) || '';
+      }
+    }
+
+    return c.json({ delegations });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
@@ -485,7 +502,7 @@ app.get('/api/prefixes/:prefixId/delegations', async (c) => {
 // Create a delegation for a prefix
 app.post('/api/prefixes/:prefixId/delegations', async (c) => {
   const email = c.get('userEmail');
-  const body = await c.req.json<{ cidr: string; delegated_account_id: string; account_id?: string }>();
+  const body = await c.req.json<{ cidr: string; delegated_account_id: string; description?: string; account_id?: string }>();
   const prefixId = c.req.param('prefixId');
   const acct = await resolveAccount(c.env.DB, email, body.account_id);
   if (!acct) return c.json({ error: 'No account configured' }, 400);
@@ -499,6 +516,15 @@ app.post('/api/prefixes/:prefixId/delegations', async (c) => {
     const data = await createDelegation(acct.account_id, prefixId, body.cidr, body.delegated_account_id, token);
     if (!data.success) {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    // Store local description if provided
+    if (body.description && data.result?.id) {
+      await c.env.DB.prepare(
+        `INSERT INTO delegation_descriptions (delegation_id, account_id, description) VALUES (?, ?, ?)`,
+      )
+        .bind(data.result.id, acct.account_id, body.description)
+        .run();
     }
 
     await logActivity(
@@ -530,6 +556,13 @@ app.delete('/api/prefixes/:prefixId/delegations/:delegationId', async (c) => {
       return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
     }
 
+    // Clean up local description
+    await c.env.DB.prepare(
+      `DELETE FROM delegation_descriptions WHERE delegation_id = ? AND account_id = ?`,
+    )
+      .bind(delegationId, acct.account_id)
+      .run();
+
     await logActivity(
       c.env.DB,
       email,
@@ -541,6 +574,28 @@ app.delete('/api/prefixes/:prefixId/delegations/:delegationId', async (c) => {
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
+});
+
+// Update a delegation's local description
+app.put('/api/delegations/:delegationId/description', async (c) => {
+  const email = c.get('userEmail');
+  const delegationId = c.req.param('delegationId');
+  const body = await c.req.json<{ description: string; account_id?: string }>();
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  const description = (body.description || '').trim();
+
+  await c.env.DB.prepare(
+    `INSERT INTO delegation_descriptions (delegation_id, account_id, description)
+     VALUES (?, ?, ?)
+     ON CONFLICT(delegation_id, account_id)
+     DO UPDATE SET description = excluded.description, updated_at = datetime('now')`,
+  )
+    .bind(delegationId, acct.account_id, description)
+    .run();
+
+  return c.json({ ok: true });
 });
 
 // List available services

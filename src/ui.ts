@@ -561,6 +561,10 @@ export function renderDashboard(userEmail: string): string {
           <label class="block text-xs text-cf-gray mb-1">Delegated Account ID</label>
           <input id="delegation-account-id" type="text" placeholder="Target Cloudflare Account ID" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
         </div>
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Description <span class="text-[10px]">(optional)</span></label>
+          <input id="delegation-description" type="text" placeholder="e.g. Customer XYZ, Partner network" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
         <div id="delegation-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -1173,6 +1177,11 @@ export function renderDashboard(userEmail: string): string {
       if (data.delegations && data.delegations.length > 0) {
         for (var d = 0; d < data.delegations.length; d++) {
           var del = data.delegations[d];
+          var delDesc = del.description || '';
+          var descCell = '<span id="del-desc-' + escAttr(del.id) + '" class="del-desc-display" style="display:inline-flex;align-items:center;gap:4px">' +
+            (delDesc ? '<span class="text-cf-gray text-[10px] max-w-[160px] truncate" title="' + escAttr(delDesc) + '">' + escHtml(delDesc) + '</span>' : '<span class="text-cf-gray text-[10px] italic opacity-50">No description</span>') +
+            '<button onclick="event.stopPropagation();startEditDelegationDesc(\\'' + escAttr(del.id) + '\\',\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(delDesc) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+          '</span>';
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
@@ -1180,7 +1189,8 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-teal-400 mr-1">&#9500;&#9472;</span> <span class="badge-delegation">Delegation</span> <span class="text-cf-gray ml-1">' + escHtml(del.cidr) + '</span></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3 text-cf-gray text-[10px] font-mono" title="Delegated Account ID">' + escHtml(del.delegated_account_id) + '</td>' +
-            '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
+            '<td class="px-3"></td><td class="px-3"></td>' +
+            '<td class="px-3">' + descCell + '</td>' +
             '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
           '</tr>';
         }
@@ -2298,6 +2308,7 @@ export function renderDashboard(userEmail: string): string {
 
       // Clear fields
       document.getElementById('delegation-account-id').value = '';
+      document.getElementById('delegation-description').value = '';
       document.getElementById('delegation-error').classList.add('hidden');
       document.getElementById('delegation-submit-btn').disabled = false;
       document.getElementById('delegation-submit-btn').textContent = 'Create Delegation';
@@ -2351,6 +2362,7 @@ export function renderDashboard(userEmail: string): string {
       var mask = document.getElementById('delegation-mask').value;
       var cidr = ip + '/' + mask;
       var delegatedAccountId = document.getElementById('delegation-account-id').value.trim();
+      var description = document.getElementById('delegation-description').value.trim();
       var prefixId = delegationModalContext.prefixId;
 
       // Disable button and show loading
@@ -2360,10 +2372,12 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('delegation-error').classList.add('hidden');
 
       try {
+        var postBody = { cidr: cidr, delegated_account_id: delegatedAccountId, account_id: activeAccountId };
+        if (description) postBody.description = description;
         var resp = await fetch('/api/prefixes/' + prefixId + '/delegations', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cidr: cidr, delegated_account_id: delegatedAccountId, account_id: activeAccountId })
+          body: JSON.stringify(postBody)
         });
         var data = await resp.json();
         if (data.ok) {
@@ -2432,6 +2446,55 @@ export function renderDashboard(userEmail: string): string {
         btn.disabled = false;
         btn.textContent = 'Delete';
       }
+    }
+
+    // ─── Inline Edit Delegation Description ─────────────────────────
+    function startEditDelegationDesc(delegationId, prefixId, currentDesc) {
+      var container = document.getElementById('del-desc-' + delegationId);
+      if (!container) return;
+      container.innerHTML =
+        '<input id="del-desc-input-' + delegationId + '" type="text" value="' + escAttr(currentDesc) + '" placeholder="Add description" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-[10px] text-white focus:border-cf-orange focus:outline-none" style="width:140px" onkeydown="if(event.key===\'Enter\')saveDelegationDesc(\'' + escAttr(delegationId) + '\',\'' + escAttr(prefixId) + '\');if(event.key===\'Escape\')cancelEditDelegationDesc(\'' + escAttr(delegationId) + '\',\'' + escAttr(prefixId) + '\')">' +
+        '<button onclick="event.stopPropagation();saveDelegationDesc(\'' + escAttr(delegationId) + '\',\'' + escAttr(prefixId) + '\')" class="text-teal-400 hover:text-teal-300 ml-1" title="Save"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg></button>' +
+        '<button onclick="event.stopPropagation();cancelEditDelegationDesc(\'' + escAttr(delegationId) + '\',\'' + escAttr(prefixId) + '\')" class="text-cf-gray hover:text-red-400 ml-0.5" title="Cancel"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
+      var inp = document.getElementById('del-desc-input-' + delegationId);
+      if (inp) { inp.focus(); inp.select(); }
+    }
+
+    async function saveDelegationDesc(delegationId, prefixId) {
+      var inp = document.getElementById('del-desc-input-' + delegationId);
+      if (!inp) return;
+      var desc = inp.value.trim();
+
+      try {
+        var resp = await fetch('/api/delegations/' + delegationId + '/description', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description: desc, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          // Update local childData so re-render shows the new description
+          var cd = childData[prefixId];
+          if (cd && cd.delegations) {
+            for (var i = 0; i < cd.delegations.length; i++) {
+              if (cd.delegations[i].id === delegationId) {
+                cd.delegations[i].description = desc;
+                break;
+              }
+            }
+          }
+          renderPrefixTable();
+        } else {
+          alert('Failed to save description: ' + (data.error || 'Unknown error'));
+        }
+      } catch (e) {
+        alert('Failed to save description: ' + e);
+      }
+    }
+
+    function cancelEditDelegationDesc(delegationId, prefixId) {
+      // Re-render to restore the display state
+      renderPrefixTable();
     }
 
     // ─── RDAP Whois Tooltip ────────────────────────────────────────
