@@ -72,6 +72,8 @@ export function renderDashboard(userEmail: string): string {
     .badge-active { background: rgba(59,130,246,0.15); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-service { background: rgba(168,85,247,0.15); color: #a855f7; border: 1px solid rgba(168,85,247,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-delegation { background: rgba(20,184,166,0.15); color: #14b8a6; border: 1px solid rgba(20,184,166,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
+    .badge-tag { background: rgba(99,102,241,0.15); color: #6366f1; border: 1px solid rgba(99,102,241,0.3); padding: 2px 6px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; cursor: pointer; }
+    .badge-tag:hover { background: rgba(99,102,241,0.25); }
     .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; outline: none; }
     .info-ico { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: normal; line-height: 1; cursor: help; transition: all 0.15s; }
     .info-tip:hover .info-ico, .info-tip:focus .info-ico { color: #F6821F; border-color: #F6821F; }
@@ -288,6 +290,12 @@ export function renderDashboard(userEmail: string): string {
       <div class="flex items-center gap-2">
         <label class="text-xs text-cf-gray font-medium">ASN:</label>
         <input id="filter-asn" type="text" placeholder="Filter by ASN" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-28">
+      </div>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-cf-gray font-medium">Tag:</label>
+        <select id="filter-tag" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          <option value="all">All</option>
+        </select>
       </div>
       <button onclick="loadPrefixes()" class="ml-auto px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition flex items-center gap-1">
         <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -865,6 +873,7 @@ export function renderDashboard(userEmail: string): string {
           prefixStats = null;
         }
         updateStats();
+        updateTagFilter();
         applyFilters();
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">Failed to load: ' + escHtml(String(e)) + '</td></tr>';
@@ -915,11 +924,32 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
     }
 
+    function updateTagFilter() {
+      var sel = document.getElementById('filter-tag');
+      if (!sel) return;
+      var currentVal = sel.value;
+      var tagSet = {};
+      allPrefixes.forEach(function(p) {
+        var tags = extractTags(p.description);
+        tags.forEach(function(t) { tagSet[t] = true; });
+      });
+      var tags = Object.keys(tagSet).sort();
+      var html = '<option value="all">All</option>';
+      tags.forEach(function(t) {
+        html += '<option value="' + escAttr(t) + '">#' + escHtml(t) + '</option>';
+      });
+      sel.innerHTML = html;
+      if (currentVal && tagSet[currentVal]) {
+        sel.value = currentVal;
+      }
+    }
+
     function applyFilters() {
       currentPage = 1;
       var statusFilter = document.getElementById('filter-status').value;
       var prefixFilter = document.getElementById('filter-prefix').value.trim().toLowerCase();
       var asnFilter = document.getElementById('filter-asn').value.trim();
+      var tagFilter = document.getElementById('filter-tag').value;
 
       filteredPrefixes = allPrefixes.filter(function(p) {
         if (statusFilter === 'advertised' && p.advertised !== true && !p._has_advertised_child) return false;
@@ -929,6 +959,7 @@ export function renderDashboard(userEmail: string): string {
         if (prefixFilter && (!p.cidr || p.cidr.toLowerCase().indexOf(prefixFilter) === -1)) return false;
         if (asnFilter && p.asn !== null && String(p.asn).indexOf(asnFilter) === -1) return false;
         if (asnFilter && p.asn === null) return false;
+        if (tagFilter !== 'all' && extractTags(p.description).indexOf(tagFilter) === -1) return false;
         return true;
       });
 
@@ -1091,7 +1122,7 @@ export function renderDashboard(userEmail: string): string {
 
       // Description with inline edit
       var descHtml = '<span id="desc-display-' + escAttr(p.id) + '">' +
-        '<span class="desc-text">' + escHtml(p.description || '—') + '</span>' +
+        '<span class="desc-text">' + renderDescriptionWithTags(p.description) + '</span>' +
         '<button onclick="event.stopPropagation();startEditDescription(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.description || '') + '\\')" class="text-cf-gray hover:text-cf-orange ml-1 inline-flex align-middle" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
         '</span>' +
         '<span id="desc-edit-' + escAttr(p.id) + '" class="hidden">' +
@@ -1391,6 +1422,7 @@ export function renderDashboard(userEmail: string): string {
         if (data.ok) {
           // Update local data
           if (prefix) prefix.description = newDesc;
+          updateTagFilter();
           renderPrefixTable();
           refreshActivityLog();
         } else {
@@ -3560,6 +3592,28 @@ export function renderDashboard(userEmail: string): string {
 
       html += '</tbody></table>';
       document.getElementById('activity-log-content').innerHTML = html;
+    }
+
+    function extractTags(desc) {
+      if (!desc) return [];
+      var matches = desc.match(/(?:^|\s)#([a-zA-Z0-9_-]+)/g);
+      if (!matches) return [];
+      return matches.map(function(m) { return m.trim().slice(1).toLowerCase(); });
+    }
+
+    function renderDescriptionWithTags(desc) {
+      if (!desc) return escHtml('—');
+      return escHtml(desc).replace(/(^|\s)#([a-zA-Z0-9_-]+)/g, function(match, space, tag) {
+        return space + '<span class="badge-tag" onclick="event.stopPropagation();filterByTag(\\'' + escAttr(tag.toLowerCase()) + '\\')">#' + escHtml(tag) + '</span>';
+      });
+    }
+
+    function filterByTag(tag) {
+      var sel = document.getElementById('filter-tag');
+      if (sel) {
+        sel.value = tag;
+        applyFilters();
+      }
     }
 
     function escHtml(s) {
