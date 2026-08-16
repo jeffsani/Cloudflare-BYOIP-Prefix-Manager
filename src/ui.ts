@@ -278,13 +278,6 @@ export function renderDashboard(userEmail: string): string {
           <option value="advertised">Advertised</option>
           <option value="withdrawn">Withdrawn</option>
           <option value="locked">Locked</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Lock:</label>
-        <select id="filter-lock" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-          <option value="all">All</option>
-          <option value="locked">Locked</option>
           <option value="unlocked">Unlocked</option>
         </select>
       </div>
@@ -390,7 +383,12 @@ export function renderDashboard(userEmail: string): string {
           <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Activity Log</h3>
           <span id="activity-log-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
         </div>
-        <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
+        <div class="flex items-center gap-2">
+          <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
+          <button id="activity-log-refresh" onclick="event.stopPropagation();loadActivityLog()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
       </div>
       <div id="activity-log-body" class="hidden" style="border-top:1px solid var(--border)">
         <div id="activity-log-content">
@@ -920,7 +918,6 @@ export function renderDashboard(userEmail: string): string {
     function applyFilters() {
       currentPage = 1;
       var statusFilter = document.getElementById('filter-status').value;
-      var lockFilter = document.getElementById('filter-lock').value;
       var prefixFilter = document.getElementById('filter-prefix').value.trim().toLowerCase();
       var asnFilter = document.getElementById('filter-asn').value.trim();
 
@@ -928,8 +925,7 @@ export function renderDashboard(userEmail: string): string {
         if (statusFilter === 'advertised' && p.advertised !== true && !p._has_advertised_child) return false;
         if (statusFilter === 'withdrawn' && p.advertised !== false && !p._has_withdrawn_child) return false;
         if (statusFilter === 'locked' && !p.on_demand_locked) return false;
-        if (lockFilter === 'locked' && !p.on_demand_locked) return false;
-        if (lockFilter === 'unlocked' && p.on_demand_locked) return false;
+        if (statusFilter === 'unlocked' && p.on_demand_locked) return false;
         if (prefixFilter && (!p.cidr || p.cidr.toLowerCase().indexOf(prefixFilter) === -1)) return false;
         if (asnFilter && p.asn !== null && String(p.asn).indexOf(asnFilter) === -1) return false;
         if (asnFilter && p.asn === null) return false;
@@ -3470,15 +3466,18 @@ export function renderDashboard(userEmail: string): string {
       var body = document.getElementById('activity-log-body');
       var chevron = document.getElementById('activity-log-chevron');
       var hint = document.getElementById('activity-log-hint');
+      var refreshBtn = document.getElementById('activity-log-refresh');
       if (activityLogExpanded) {
         body.classList.remove('hidden');
         chevron.classList.add('open');
         if (hint) hint.textContent = 'Click to collapse';
+        if (refreshBtn) refreshBtn.classList.remove('hidden');
         if (!activityLogLoaded) loadActivityLog();
       } else {
         body.classList.add('hidden');
         chevron.classList.remove('open');
         if (hint) hint.textContent = 'Click to expand';
+        if (refreshBtn) refreshBtn.classList.add('hidden');
       }
     }
 
