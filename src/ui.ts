@@ -261,38 +261,6 @@ export function renderDashboard(userEmail: string): string {
         <div id="test-token-result" class="flex items-center text-[10px]"></div>
       </div>
       <div id="accounts-list"></div>
-
-      <!-- RIR Credentials -->
-      <div class="mt-4 pt-4 border-t border-cf-border">
-        <div class="flex items-center gap-2 mb-2 cursor-pointer" onclick="toggleRirCredentials()">
-          <svg id="rir-cred-chevron" class="w-3 h-3 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
-          <h3 class="text-xs font-semibold" style="color:var(--text-strong)">RIR Credentials (Optional)</h3>
-          <span class="text-[10px] text-cf-gray">— for automated IRR route object creation at ARIN / RIPE</span>
-        </div>
-        <div id="rir-cred-section" class="hidden">
-          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-            <div>
-              <label class="block text-[10px] text-cf-gray mb-1">RIR</label>
-              <select id="rir-cred-rir" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-                <option value="arin">ARIN</option>
-                <option value="ripe">RIPE</option>
-              </select>
-            </div>
-            <div>
-              <label class="block text-[10px] text-cf-gray mb-1">API Key${infoTip('ARIN: Your IRR API key from ARIN Online (Settings &gt; Security Info &gt; Manage API Keys). RIPE: Base64-encoded API key from RIPE NCC Access.')}</label>
-              <input id="rir-cred-apikey" type="password" placeholder="API key" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-            </div>
-            <div>
-              <label class="block text-[10px] text-cf-gray mb-1">Org / Maintainer${infoTip('ARIN: Your Org Handle (e.g. EXAMPLECORP). RIPE: Your mnt-by value (e.g. MNT-EXAMPLE).')}</label>
-              <input id="rir-cred-maintainer" type="text" placeholder="e.g. MNT-EXAMPLE" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-            </div>
-            <div class="flex items-end">
-              <button onclick="saveRirCredential()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Save</button>
-            </div>
-          </div>
-          <div id="rir-cred-list"></div>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -929,20 +897,135 @@ export function renderDashboard(userEmail: string): string {
       el.innerHTML = '<div class="space-y-2">' + savedAccounts.map(function(a) {
         var defBadge = a.is_default ? '<span class="badge-advertised ml-2">Default</span>' : '';
         var tokenDisplay = a.api_token ? '<span class="text-cf-gray font-mono text-[10px] ml-1">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid ml-1">No token</span>';
+        var aid = a.account_id;
 
-        return '<div class="flex items-center justify-between p-2.5 rounded-lg border border-cf-border">' +
-            '<div class="flex items-center gap-2 text-xs">' +
-              '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(a.account_label || 'Untitled') + '</span>' +
-              '<span class="text-cf-gray font-mono text-[10px]">' + a.account_id + '</span>' +
-              tokenDisplay +
-              defBadge +
+        return '<div class="rounded-lg border border-cf-border">' +
+            // Header row (clickable to expand)
+            '<div class="flex items-center justify-between p-2.5 cursor-pointer" onclick="toggleAccountExpand(\\'' + escAttr(aid) + '\\')">' +
+              '<div class="flex items-center gap-2 text-xs">' +
+                '<svg id="acct-chev-' + escAttr(aid) + '" class="w-3 h-3 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' +
+                '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(a.account_label || 'Untitled') + '</span>' +
+                '<span class="text-cf-gray font-mono text-[10px]">' + aid + '</span>' +
+                tokenDisplay +
+                defBadge +
+              '</div>' +
+              '<div class="flex gap-1" onclick="event.stopPropagation()">' +
+                (a.is_default ? '' : '<button onclick="setDefault(' + a.id + ')" class="text-[10px] text-cf-gray hover:text-cf-orange px-1.5 py-0.5 border border-cf-border rounded hover:border-cf-orange">Set Default</button>') +
+                '<button onclick="deleteAccount(' + a.id + ')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400">Delete</button>' +
+              '</div>' +
             '</div>' +
-            '<div class="flex gap-1">' +
-              (a.is_default ? '' : '<button onclick="setDefault(' + a.id + ')" class="text-[10px] text-cf-gray hover:text-cf-orange px-1.5 py-0.5 border border-cf-border rounded hover:border-cf-orange">Set Default</button>') +
-              '<button onclick="deleteAccount(' + a.id + ')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400">Delete</button>' +
+            // Expandable edit section
+            '<div id="acct-expand-' + escAttr(aid) + '" class="hidden border-t border-cf-border p-3">' +
+              // API Token
+              '<div class="mb-3">' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Cloudflare API Token</label>' +
+                '<div class="flex gap-2">' +
+                  '<input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token to update" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Update Token</button>' +
+                '</div>' +
+              '</div>' +
+              // RIR Credentials
+              '<div>' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR Credentials <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
+                '<div id="acct-rir-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '</div>' +
             '</div>' +
           '</div>';
       }).join('') + '</div>';
+    }
+
+    function toggleAccountExpand(accountId) {
+      var sec = document.getElementById('acct-expand-' + accountId);
+      var chev = document.getElementById('acct-chev-' + accountId);
+      if (!sec) return;
+      if (sec.classList.contains('hidden')) {
+        sec.classList.remove('hidden');
+        if (chev) chev.style.transform = 'rotate(90deg)';
+        loadAccountRirCredentials(accountId);
+      } else {
+        sec.classList.add('hidden');
+        if (chev) chev.style.transform = '';
+      }
+    }
+
+    async function updateAccountToken(accountId) {
+      var input = document.getElementById('acct-token-' + accountId);
+      var token = input ? input.value.trim() : '';
+      if (!token) { alert('Enter a new API token.'); return; }
+      // Find the account label
+      var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      var resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', api_token: token })
+      });
+      if (resp.ok) {
+        if (input) input.value = '';
+        loadSettings();
+      } else {
+        alert('Failed to update token');
+      }
+    }
+
+    async function loadAccountRirCredentials(accountId) {
+      var el = document.getElementById('acct-rir-' + accountId);
+      if (!el) return;
+      try {
+        var r = await fetch('/api/rir/credentials?account_id=' + encodeURIComponent(accountId));
+        var data = await r.json();
+        var creds = data.credentials || [];
+        var html = '';
+
+        // Show existing credentials
+        if (creds.length > 0) {
+          html += '<div class="space-y-1 mb-2">';
+          creds.forEach(function(c) {
+            html += '<div class="flex items-center gap-3 p-2 rounded border border-cf-border">';
+            html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
+            html += '<span class="font-mono">' + escHtml(c.api_key) + '</span>';
+            if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
+            html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="ml-auto text-red-400 hover:text-red-300">Delete</button>';
+            html += '</div>';
+          });
+          html += '</div>';
+        }
+
+        // Add new credential form
+        html += '<div class="flex gap-2 items-end flex-wrap">';
+        html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="acct-rir-sel-' + escAttr(accountId) + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="acct-rir-key-' + escAttr(accountId) + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Org / Maintainer</label><input id="acct-rir-mnt-' + escAttr(accountId) + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. MNT-EXAMPLE"></div>';
+        html += '<button onclick="saveAccountRirCredential(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
+        html += '</div>';
+
+        el.innerHTML = html;
+      } catch (e) {
+        el.innerHTML = '<span class="text-red-400">Failed to load RIR credentials</span>';
+      }
+    }
+
+    async function saveAccountRirCredential(accountId) {
+      var rir = document.getElementById('acct-rir-sel-' + accountId).value;
+      var apiKey = document.getElementById('acct-rir-key-' + accountId).value.trim();
+      var maintainer = document.getElementById('acct-rir-mnt-' + accountId).value.trim();
+      if (!apiKey) { alert('API key is required.'); return; }
+      var r = await fetch('/api/rir/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, rir: rir, api_key: apiKey, maintainer: maintainer })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        loadAccountRirCredentials(accountId);
+      } else {
+        alert(data.error || 'Failed to save credentials');
+      }
+    }
+
+    async function deleteRirCredential(id, accountId) {
+      if (!confirm('Delete this RIR credential?')) return;
+      await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
+      loadAccountRirCredentials(accountId);
     }
 
     async function testNewAccountToken() {
@@ -2721,70 +2804,6 @@ export function renderDashboard(userEmail: string): string {
     function cancelEditDelegationDesc(delegationId, prefixId) {
       // Re-render to restore the display state
       renderPrefixTable();
-    }
-
-    // ─── RIR Credentials ──────────────────────────────────────────
-    function toggleRirCredentials() {
-      var sec = document.getElementById('rir-cred-section');
-      var chev = document.getElementById('rir-cred-chevron');
-      if (sec.classList.contains('hidden')) {
-        sec.classList.remove('hidden');
-        chev.style.transform = 'rotate(90deg)';
-        loadRirCredentials();
-      } else {
-        sec.classList.add('hidden');
-        chev.style.transform = '';
-      }
-    }
-
-    async function loadRirCredentials() {
-      if (!activeAccountId) return;
-      var r = await fetch('/api/rir/credentials?account_id=' + encodeURIComponent(activeAccountId));
-      var data = await r.json();
-      var list = document.getElementById('rir-cred-list');
-      if (!data.credentials || data.credentials.length === 0) {
-        list.innerHTML = '<p class="text-[10px] text-cf-gray">No RIR credentials saved for this account.</p>';
-        return;
-      }
-      var html = '<div class="space-y-1">';
-      data.credentials.forEach(function(c) {
-        html += '<div class="flex items-center gap-3 p-2 rounded-lg border border-cf-border text-xs">';
-        html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
-        html += '<span class="font-mono text-[10px] text-cf-gray">' + escHtml(c.api_key) + '</span>';
-        if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
-        html += '<span class="text-[10px] text-cf-gray ml-auto">' + escHtml(c.updated_at || '') + '</span>';
-        html += '<button onclick="deleteRirCredential(' + c.id + ')" class="text-red-400 hover:text-red-300 text-[10px]">Delete</button>';
-        html += '</div>';
-      });
-      html += '</div>';
-      list.innerHTML = html;
-    }
-
-    async function saveRirCredential() {
-      if (!activeAccountId) { alert('Select an account first.'); return; }
-      var rir = document.getElementById('rir-cred-rir').value;
-      var apiKey = document.getElementById('rir-cred-apikey').value.trim();
-      var maintainer = document.getElementById('rir-cred-maintainer').value.trim();
-      if (!apiKey) { alert('API key is required.'); return; }
-      var r = await fetch('/api/rir/credentials', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: activeAccountId, rir: rir, api_key: apiKey, maintainer: maintainer })
-      });
-      var data = await r.json();
-      if (data.ok) {
-        document.getElementById('rir-cred-apikey').value = '';
-        document.getElementById('rir-cred-maintainer').value = '';
-        loadRirCredentials();
-      } else {
-        alert(data.error || 'Failed to save credentials');
-      }
-    }
-
-    async function deleteRirCredential(id) {
-      if (!confirm('Delete this RIR credential?')) return;
-      await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
-      loadRirCredentials();
     }
 
     // ─── Add Prefix Modal ──────────────────────────────────────────
