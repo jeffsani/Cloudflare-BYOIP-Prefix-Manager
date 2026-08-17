@@ -37,12 +37,12 @@ export function renderDashboard(userEmail: string): string {
     :root, [data-theme="dark"] {
       --page-bg: #0D1117; --surface: #161B22; --border: #30363D; --muted: #8B949E;
       --text-primary: #E5E7EB; --text-strong: #FFFFFF; --input-bg: #0D1117;
-      --header-bg: rgba(22,27,34,0.85); --scrollbar: #30363D;
+      --header-bg: rgba(22,27,34,0.85); --scrollbar: #30363D; --accent: #F6821F;
     }
     [data-theme="light"] {
       --page-bg: #F9FAFB; --surface: #FFFFFF; --border: #E5E7EB; --muted: #6B7280;
       --text-primary: #374151; --text-strong: #111827; --input-bg: #F3F4F6;
-      --header-bg: rgba(255,255,255,0.85); --scrollbar: #D1D5DB;
+      --header-bg: rgba(255,255,255,0.85); --scrollbar: #D1D5DB; --accent: #F6821F;
     }
     body { background: var(--page-bg); color: var(--text-primary); transition: background 0.2s, color 0.2s; }
     * { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
