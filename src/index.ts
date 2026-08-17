@@ -418,18 +418,21 @@ app.post('/api/prefixes/validate-new', async (c) => {
         warnings.push('No IRR records found for this prefix. Cloudflare will manage IRR records for ASN 13335.');
       }
     } else {
-      // Custom ASN — require both valid IRR and ROA
+      // BYO-ASN — require valid IRR, ROA, and will need ownership + ASN ownership validation post-creation
       if (!roa.found) {
-        errors.push('No ROA records found. A valid ROA is required for custom ASN prefixes. Create a ROA at your RIR or via the Cloudflare RPKI Portal.');
+        errors.push('No ROA records found. A valid ROA authorizing your ASN to originate this prefix is required. Create a ROA at your RIR or via the Cloudflare RPKI Portal.');
       } else if (!roa.matching_asn) {
         errors.push(`ROA found but origin ASN does not match ${body.asn}. Update your ROA to include AS${body.asn}.`);
       }
 
       if (!irr.found && !irrExplorer.found) {
-        errors.push('No IRR records found. A route/route6 object with the correct origin ASN is required. Create one at your RIR or an IRR database (e.g., RADB).');
+        errors.push('No IRR records found. An exact route/route6 object with your ASN as the origin is required. Create one at your RIR or an IRR database (e.g., RADB).');
       } else if (!irr.matching_asn && !irrExplorer.matching_asn) {
         errors.push(`IRR record found but origin ASN does not match ${body.asn}. Update your IRR route object to reference AS${body.asn}.`);
       }
+
+      // Remind about aut-num requirement
+      warnings.push('BYO-ASN: After creating the prefix, you will need to publish the validation token in both the route/route6 object AND your aut-num object at the authoritative RIR.');
     }
 
     const ready = errors.length === 0;

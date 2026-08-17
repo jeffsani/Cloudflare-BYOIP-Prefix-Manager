@@ -673,7 +673,7 @@ export function renderDashboard(userEmail: string): string {
             </label>
             <div id="add-prefix-custom-asn-wrap" class="hidden ml-5">
               <input id="add-prefix-custom-asn" type="number" placeholder="e.g. 64496" min="1" max="4294967295" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
-              <p class="text-[10px] text-yellow-400 mt-1">Custom ASN requires valid IRR and ROA records for this prefix.</p>
+              <p class="text-[10px] text-yellow-400 mt-1">BYO-ASN requires valid IRR route object, ROA, and ownership validation of both the prefix and ASN (via aut-num object).</p>
             </div>
           </div>
         </div>
@@ -729,6 +729,19 @@ export function renderDashboard(userEmail: string): string {
             <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Post-Creation Guide Modal -->
+  <div id="post-creation-guide-modal" class="hidden modal-overlay" onclick="if(event.target===this)closePostCreationGuide()">
+    <div class="modal-content" style="max-width:580px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Prefix Created Successfully</h3>
+      </div>
+      <div id="post-creation-guide-body" class="p-4 text-xs" style="color:var(--text-primary)"></div>
+      <div class="p-4 pt-0 flex justify-end">
+        <button onclick="closePostCreationGuide()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Done</button>
       </div>
     </div>
   </div>
@@ -3108,7 +3121,7 @@ export function renderDashboard(userEmail: string): string {
       var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
       if (asnMode === 'custom') {
         if (!addPrefixValidationResult) {
-          if (!confirm('You have not validated IRR/ROA records for this prefix. Custom ASN prefixes require valid IRR and ROA records. Continue anyway?')) return;
+          if (!confirm('You have not validated IRR/ROA records for this prefix. BYO-ASN requires valid IRR route object, ROA, and ownership validation of both the prefix and ASN. Continue anyway?')) return;
         } else if (!addPrefixValidationResult.summary.ready) {
           if (!confirm('Validation found issues with IRR/ROA records. The prefix may be rejected by Cloudflare. Continue anyway?')) return;
         }
@@ -3141,8 +3154,7 @@ export function renderDashboard(userEmail: string): string {
 
           // Show post-creation info about ownership validation
           if (data.prefix && data.prefix.ownership_validation_token) {
-            var token = data.prefix.ownership_validation_token;
-            alert('Prefix ' + cidr + ' created successfully!\\n\\nNext step: Complete ownership validation.\\n\\nYour validation token is:\\n' + token + '\\n\\nAdd this to your IRR record description or create a DNS TXT record, then use the re-validate button on the prefix.');
+            showPostCreationGuide(cidr, asn, data.prefix.ownership_validation_token);
           }
         } else {
           var errEl = document.getElementById('add-prefix-error');
@@ -3157,6 +3169,67 @@ export function renderDashboard(userEmail: string): string {
         btn.disabled = false;
         btn.textContent = 'Add Prefix';
       }
+    }
+
+    // ─── Post-Creation Guide ─────────────────────────────────────
+    function showPostCreationGuide(cidr, asn, token) {
+      var isCustomAsn = asn !== 13335;
+      var html = '';
+
+      html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
+
+      html += '<div class="mb-3 p-3 rounded-lg border border-cf-border font-mono text-[11px]" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
+
+      html += '<div class="font-semibold mb-2" style="color:var(--text-strong)">Next Steps: Complete Ownership Validation</div>';
+
+      if (isCustomAsn) {
+        // BYO-ASN flow — need both route object AND aut-num object
+        html += '<div class="space-y-2">';
+        html += '<div><span class="font-semibold" style="color:var(--text-strong)">1.</span> Add the validation token to the <strong>route/route6 object</strong> for this prefix at your RIR:</div>';
+        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px]" style="background:var(--input-bg)">';
+        html += (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ': ' + escHtml(cidr) + '<br>';
+        html += 'origin: AS' + asn + '<br>';
+        html += 'descr: cf-validation: ' + escHtml(token);
+        html += '</div>';
+
+        html += '<div><span class="font-semibold" style="color:var(--text-strong)">2.</span> Add the same token to your <strong>aut-num object</strong> at the authoritative RIR:</div>';
+        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px]" style="background:var(--input-bg)">';
+        html += 'aut-num: AS' + asn + '<br>';
+        html += 'descr: cf-validation: ' + escHtml(token);
+        html += '</div>';
+
+        html += '<div><span class="font-semibold" style="color:var(--text-strong)">3.</span> Wait for RIR changes to propagate, then click the <strong>re-validate</strong> button on the prefix.</div>';
+
+        html += '<div class="mt-2 p-2 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
+        html += '<div class="text-yellow-400 font-semibold mb-1">BYO-ASN requires all four validation states to pass:</div>';
+        html += '<div class="text-[10px] space-y-0.5">';
+        html += '<div>&bull; <strong>irr_validation_state</strong> &mdash; exact route/route6 object with correct origin ASN</div>';
+        html += '<div>&bull; <strong>rpki_validation_state</strong> &mdash; valid ROA authorizing your ASN</div>';
+        html += '<div>&bull; <strong>ownership_validation_state</strong> &mdash; cf-validation token in route/route6 object</div>';
+        html += '<div>&bull; <strong>asn_ownership_validation_state</strong> &mdash; cf-validation token in aut-num object</div>';
+        html += '</div></div>';
+
+        html += '<div class="mt-1 text-[10px]" style="color:var(--muted)">ASN ownership normally needs to be proven only once per account. Each additional prefix still requires its own prefix and RPKI validation.</div>';
+        html += '</div>';
+      } else {
+        // Cloudflare ASN flow — simpler
+        html += '<div class="space-y-2">';
+        html += '<div><span class="font-semibold" style="color:var(--text-strong)">1.</span> Publish the validation token in <strong>one</strong> of these ways:</div>';
+        html += '<div class="pl-3 space-y-1">';
+        html += '<div>&bull; Add <span class="font-mono text-[10px]">cf-validation: ' + escHtml(token) + '</span> to the <strong>description</strong> or <strong>remarks</strong> field of the IRR route object for this prefix</div>';
+        html += '<div>&bull; Or create a DNS TXT record for the prefix with the token value</div>';
+        html += '</div>';
+        html += '<div><span class="font-semibold" style="color:var(--text-strong)">2.</span> Wait for changes to propagate, then click the <strong>re-validate</strong> button on the prefix.</div>';
+        html += '<div class="mt-1 text-[10px]" style="color:var(--muted)">Cloudflare manages IRR and ROA records for ASN 13335. You only need to prove ownership.</div>';
+        html += '</div>';
+      }
+
+      document.getElementById('post-creation-guide-body').innerHTML = html;
+      document.getElementById('post-creation-guide-modal').classList.remove('hidden');
+    }
+
+    function closePostCreationGuide() {
+      document.getElementById('post-creation-guide-modal').classList.add('hidden');
     }
 
     // ─── RDAP Whois Tooltip ────────────────────────────────────────
