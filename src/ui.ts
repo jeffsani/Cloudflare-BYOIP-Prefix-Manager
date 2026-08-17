@@ -298,10 +298,16 @@ export function renderDashboard(userEmail: string): string {
           <option value="all">All</option>
         </select>
       </div>
-      <button onclick="loadPrefixes()" class="ml-auto px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition flex items-center gap-1">
-        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
-        Refresh
-      </button>
+      <div class="ml-auto flex items-center gap-2">
+        <button onclick="openAddPrefixModal()" class="px-3 py-1.5 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Prefix
+        </button>
+        <button onclick="loadPrefixes()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition flex items-center gap-1">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+      </div>
     </div>
 
     <!-- Stats Row -->
@@ -366,7 +372,7 @@ export function renderDashboard(userEmail: string): string {
               <th class="px-3 py-2.5 text-cf-gray font-medium">Status</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">IRR</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">RPKI</th>
-              <th class="px-3 py-2.5 text-cf-gray font-medium">Description</th>
+              <th class="px-3 py-2.5 text-cf-gray font-medium">Description / Tags</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium w-10"></th>
             </tr>
           </thead>
@@ -477,6 +483,23 @@ export function renderDashboard(userEmail: string): string {
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delete-binding-btn" onclick="executeDeleteBinding()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete BGP Child Prefix Confirm Modal -->
+  <div id="delete-bgp-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteBgpPrefixModal()">
+    <div class="modal-content" style="max-width:420px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delete BGP Child Prefix</h3>
+      </div>
+      <div class="p-4">
+        <p id="delete-bgp-prefix-message" class="text-xs text-cf-gray mb-3"></p>
+        <p class="text-[10px] text-yellow-400 mb-4">This action cannot be undone.</p>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeDeleteBgpPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="delete-bgp-prefix-btn" onclick="executeDeleteBgpPrefix()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
         </div>
       </div>
     </div>
@@ -606,6 +629,100 @@ export function renderDashboard(userEmail: string): string {
         <div class="flex justify-end gap-2">
           <button onclick="closeBulkConfirmModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="bulk-confirm-btn" onclick="executeBulkToggle()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Add Prefix Modal -->
+  <div id="add-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAddPrefixModal()">
+    <div class="modal-content" style="max-width:560px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Prefix</h3>
+        <p class="text-xs text-cf-gray mt-0.5">Onboard a new BYOIP prefix to your Cloudflare account</p>
+      </div>
+      <div class="p-4">
+        <!-- Prefix CIDR -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Prefix (CIDR)${infoTip('Enter an IPv4 or IPv6 prefix in CIDR notation. Minimum size: /24 for IPv4, /48 for IPv6. Must be a publicly routable prefix registered at an RIR.')}</label>
+          <div class="flex gap-2">
+            <input id="add-prefix-ip" type="text" placeholder="e.g. 192.0.2.0 or 2001:db8::" oninput="onAddPrefixIpChange()" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+            <span class="text-cf-gray self-center">/</span>
+            <select id="add-prefix-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+              <option value="">--</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- ASN -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">ASN (Autonomous System Number)${infoTip('Select the Cloudflare ASN (13335) or enter your own. If using your own ASN, valid IRR and ROA records are required for the prefix.')}</label>
+          <div class="flex flex-col gap-2">
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-asn-mode" value="cloudflare" checked onchange="onAsnModeChange()" style="accent-color:#F6821F">
+              <span style="color:var(--text-primary)">Use Cloudflare's ASN (13335)</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-asn-mode" value="custom" onchange="onAsnModeChange()" style="accent-color:#F6821F">
+              <span style="color:var(--text-primary)">Use my own ASN</span>
+            </label>
+            <div id="add-prefix-custom-asn-wrap" class="hidden ml-5">
+              <input id="add-prefix-custom-asn" type="number" placeholder="e.g. 64496" min="1" max="4294967295" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+              <p class="text-[10px] text-yellow-400 mt-1">Custom ASN requires valid IRR and ROA records for this prefix.</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- LOA -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Letter of Authorization (LOA)${infoTip('A LOA proves you are authorized to use this IP prefix. You can let Cloudflare auto-generate one, or upload your own PDF (max 10MB).')}</label>
+          <div class="flex flex-col gap-2">
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-loa-mode" value="delegate" checked onchange="onLoaModeChange()" style="accent-color:#F6821F">
+              <span style="color:var(--text-primary)">Delegate LOA auto-generation to Cloudflare</span>
+            </label>
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-loa-mode" value="upload" onchange="onLoaModeChange()" style="accent-color:#F6821F">
+              <span style="color:var(--text-primary)">Upload LOA document (PDF)</span>
+            </label>
+            <div id="add-prefix-loa-upload-wrap" class="hidden ml-5">
+              <div class="flex items-center gap-2">
+                <input id="add-prefix-loa-file" type="file" accept=".pdf,application/pdf" onchange="onLoaFileSelected()" class="text-xs text-cf-gray file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border file:border-cf-border file:bg-cf-dark file:text-xs file:text-cf-gray file:cursor-pointer hover:file:border-cf-orange">
+                <span id="add-prefix-loa-status" class="text-[10px]"></span>
+              </div>
+              <p class="text-[10px] text-cf-gray mt-1">PDF format only, max 10MB</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Description -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Description <span class="text-[10px]">(optional)</span></label>
+          <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+
+        <!-- Validation Results -->
+        <div id="add-prefix-validation-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-semibold" style="color:var(--text-strong)">Validation Results</span>
+            <span id="add-prefix-validation-badge"></span>
+          </div>
+          <div id="add-prefix-validation-details" class="text-[11px] space-y-1.5"></div>
+        </div>
+
+        <!-- Client-Side Errors -->
+        <div id="add-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
+
+        <!-- Buttons -->
+        <div class="flex justify-between gap-2">
+          <button id="add-prefix-validate-btn" onclick="validatePrefixRemote()" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Validate IRR / ROA
+          </button>
+          <div class="flex gap-2">
+            <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+            <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
+          </div>
         </div>
       </div>
     </div>
@@ -1224,6 +1341,7 @@ export function renderDashboard(userEmail: string): string {
             (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
             '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
           var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
+          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
 
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
@@ -1235,7 +1353,7 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
-            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + '</td>' +
+            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + bgpDeleteBtn + '</td>' +
           '</tr>';
         }
       }
@@ -2294,6 +2412,53 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // ─── Delete BGP Child Prefix ──────────────────────────────────
+    var pendingDeleteBgpPrefix = null;
+
+    function confirmDeleteBgpPrefix(prefixId, bgpPrefixId, cidr) {
+      pendingDeleteBgpPrefix = { prefixId: prefixId, bgpPrefixId: bgpPrefixId, cidr: cidr };
+      document.getElementById('delete-bgp-prefix-message').innerHTML =
+        'Are you sure you want to delete the BGP child prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
+      document.getElementById('delete-bgp-prefix-btn').disabled = false;
+      document.getElementById('delete-bgp-prefix-btn').textContent = 'Delete';
+      document.getElementById('delete-bgp-prefix-modal').classList.remove('hidden');
+    }
+
+    function closeDeleteBgpPrefixModal() {
+      document.getElementById('delete-bgp-prefix-modal').classList.add('hidden');
+      pendingDeleteBgpPrefix = null;
+    }
+
+    async function executeDeleteBgpPrefix() {
+      if (!pendingDeleteBgpPrefix) return;
+      var d = pendingDeleteBgpPrefix;
+      var btn = document.getElementById('delete-bgp-prefix-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+
+      try {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bgp/' + d.bgpPrefixId + '?account_id=' + activeAccountId, {
+          method: 'DELETE'
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeDeleteBgpPrefixModal();
+          delete childData[d.prefixId];
+          expandedRows[d.prefixId] = false;
+          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          refreshActivityLog();
+        } else {
+          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+        }
+      } catch (e) {
+        alert('Delete failed: ' + e);
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
+    }
+
     // ─── Delegation Modal ──────────────────────────────────────────
 
     function openDelegationModal(prefixId, parentCidr) {
@@ -2506,6 +2671,466 @@ export function renderDashboard(userEmail: string): string {
     function cancelEditDelegationDesc(delegationId, prefixId) {
       // Re-render to restore the display state
       renderPrefixTable();
+    }
+
+    // ─── Add Prefix Modal ──────────────────────────────────────────
+    var addPrefixLoaDocumentId = null;
+    var addPrefixValidationResult = null;
+    var addPrefixIpFamily = null; // 'v4', 'v6', or null
+
+    // Non-routable IPv4 ranges (network BigInt, prefix length)
+    var NON_ROUTABLE_V4 = [
+      { cidr: '0.0.0.0/8' },
+      { cidr: '10.0.0.0/8' },
+      { cidr: '100.64.0.0/10' },
+      { cidr: '127.0.0.0/8' },
+      { cidr: '169.254.0.0/16' },
+      { cidr: '172.16.0.0/12' },
+      { cidr: '192.0.2.0/24' },
+      { cidr: '192.168.0.0/16' },
+      { cidr: '198.51.100.0/24' },
+      { cidr: '203.0.113.0/24' },
+      { cidr: '224.0.0.0/4' },
+      { cidr: '240.0.0.0/4' }
+    ];
+
+    var NON_ROUTABLE_V6 = [
+      { cidr: '::1/128' },
+      { cidr: 'fc00::/7' },
+      { cidr: 'fe80::/10' },
+      { cidr: 'ff00::/8' },
+      { cidr: '2001:db8::/32' },
+      { cidr: '100::/64' },
+      { cidr: '::ffff:0:0/96' }
+    ];
+
+    function openAddPrefixModal() {
+      if (!activeAccountId) {
+        alert('Please configure an account in Settings first.');
+        return;
+      }
+      // Reset state
+      addPrefixLoaDocumentId = null;
+      addPrefixValidationResult = null;
+      addPrefixIpFamily = null;
+
+      document.getElementById('add-prefix-ip').value = '';
+      document.getElementById('add-prefix-mask').innerHTML = '<option value="">--</option>';
+      document.getElementById('add-prefix-custom-asn').value = '';
+      document.getElementById('add-prefix-description').value = '';
+      document.getElementById('add-prefix-error').classList.add('hidden');
+      document.getElementById('add-prefix-validation-results').classList.add('hidden');
+      document.getElementById('add-prefix-submit-btn').disabled = false;
+      document.getElementById('add-prefix-submit-btn').textContent = 'Add Prefix';
+      document.getElementById('add-prefix-validate-btn').disabled = false;
+      document.getElementById('add-prefix-validate-btn').innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
+      document.getElementById('add-prefix-loa-status').innerHTML = '';
+
+      // Reset radio buttons
+      var asnRadios = document.querySelectorAll('input[name="add-prefix-asn-mode"]');
+      asnRadios.forEach(function(r, i) { r.checked = i === 0; });
+      document.getElementById('add-prefix-custom-asn-wrap').classList.add('hidden');
+
+      var loaRadios = document.querySelectorAll('input[name="add-prefix-loa-mode"]');
+      loaRadios.forEach(function(r, i) { r.checked = i === 0; });
+      document.getElementById('add-prefix-loa-upload-wrap').classList.add('hidden');
+
+      // Reset file input
+      var fileInput = document.getElementById('add-prefix-loa-file');
+      if (fileInput) fileInput.value = '';
+
+      document.getElementById('add-prefix-modal').classList.remove('hidden');
+    }
+
+    function closeAddPrefixModal() {
+      document.getElementById('add-prefix-modal').classList.add('hidden');
+      addPrefixLoaDocumentId = null;
+      addPrefixValidationResult = null;
+      addPrefixIpFamily = null;
+    }
+
+    function onAddPrefixIpChange() {
+      var ip = document.getElementById('add-prefix-ip').value.trim();
+      var newFamily = null;
+      if (ip.indexOf(':') !== -1) {
+        newFamily = 'v6';
+      } else if (/^\d/.test(ip)) {
+        newFamily = 'v4';
+      }
+
+      if (newFamily !== addPrefixIpFamily) {
+        addPrefixIpFamily = newFamily;
+        var maskSel = document.getElementById('add-prefix-mask');
+        if (newFamily === 'v4') {
+          var html = '';
+          for (var m = 8; m <= 24; m++) {
+            html += '<option value="' + m + '"' + (m === 24 ? ' selected' : '') + '>/' + m + '</option>';
+          }
+          maskSel.innerHTML = html;
+        } else if (newFamily === 'v6') {
+          var html = '';
+          for (var m = 20; m <= 48; m++) {
+            html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
+          }
+          maskSel.innerHTML = html;
+        } else {
+          maskSel.innerHTML = '<option value="">--</option>';
+        }
+      }
+
+      // Clear previous validation when prefix changes
+      document.getElementById('add-prefix-validation-results').classList.add('hidden');
+      document.getElementById('add-prefix-error').classList.add('hidden');
+      addPrefixValidationResult = null;
+    }
+
+    function onAsnModeChange() {
+      var mode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
+      var customWrap = document.getElementById('add-prefix-custom-asn-wrap');
+      if (mode === 'custom') {
+        customWrap.classList.remove('hidden');
+        document.getElementById('add-prefix-custom-asn').focus();
+      } else {
+        customWrap.classList.add('hidden');
+      }
+      // Clear validation when ASN changes
+      document.getElementById('add-prefix-validation-results').classList.add('hidden');
+      addPrefixValidationResult = null;
+    }
+
+    function onLoaModeChange() {
+      var mode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
+      var uploadWrap = document.getElementById('add-prefix-loa-upload-wrap');
+      if (mode === 'upload') {
+        uploadWrap.classList.remove('hidden');
+      } else {
+        uploadWrap.classList.add('hidden');
+        addPrefixLoaDocumentId = null;
+        document.getElementById('add-prefix-loa-status').innerHTML = '';
+      }
+    }
+
+    async function onLoaFileSelected() {
+      var fileInput = document.getElementById('add-prefix-loa-file');
+      var statusEl = document.getElementById('add-prefix-loa-status');
+      if (!fileInput.files || fileInput.files.length === 0) return;
+
+      var file = fileInput.files[0];
+
+      // Client-side validation
+      if (file.size > 10 * 1024 * 1024) {
+        statusEl.innerHTML = '<span class="text-red-400">File exceeds 10MB limit</span>';
+        return;
+      }
+      if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+        statusEl.innerHTML = '<span class="text-red-400">Only PDF files are accepted</span>';
+        return;
+      }
+
+      statusEl.innerHTML = '<div class="spinner" style="width:12px;height:12px;display:inline-block"></div> <span class="text-cf-gray">Uploading...</span>';
+
+      try {
+        var formData = new FormData();
+        formData.append('loa_document', file);
+        formData.append('account_id', activeAccountId);
+
+        var resp = await fetch('/api/loa-upload', {
+          method: 'POST',
+          body: formData
+        });
+        var data = await resp.json();
+        if (data.ok && data.loa_document) {
+          addPrefixLoaDocumentId = data.loa_document.id;
+          statusEl.innerHTML = '<span class="badge-valid">Uploaded</span> <span class="text-cf-gray">' + escHtml(data.loa_document.filename || file.name) + '</span>';
+        } else {
+          statusEl.innerHTML = '<span class="text-red-400">' + escHtml(data.error || 'Upload failed') + '</span>';
+        }
+      } catch (e) {
+        statusEl.innerHTML = '<span class="text-red-400">Upload failed: ' + escHtml(String(e)) + '</span>';
+      }
+    }
+
+    function getAddPrefixAsn() {
+      var mode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
+      if (mode === 'cloudflare') return 13335;
+      var val = parseInt(document.getElementById('add-prefix-custom-asn').value, 10);
+      return isNaN(val) ? null : val;
+    }
+
+    function validateNewPrefix() {
+      var ip = document.getElementById('add-prefix-ip').value.trim();
+      var mask = document.getElementById('add-prefix-mask').value;
+      if (!ip) return 'IP address is required';
+      if (!mask) return 'Prefix length is required';
+
+      var cidr = ip + '/' + mask;
+      var parsed = parseCIDR(cidr);
+      if (!parsed) return 'Invalid IP address format';
+
+      var maskLen = parseInt(mask, 10);
+
+      // Minimum size for BGP on the public internet
+      if (!parsed.v6 && maskLen > 24) return 'IPv4 prefix must be /24 or shorter (larger) for BGP on the public internet';
+      if (parsed.v6 && maskLen > 48) return 'IPv6 prefix must be /48 or shorter (larger) for BGP on the public internet';
+
+      // Check non-routable / documentation ranges
+      var nonRoutable = parsed.v6 ? NON_ROUTABLE_V6 : NON_ROUTABLE_V4;
+      for (var i = 0; i < nonRoutable.length; i++) {
+        var reserved = parseCIDR(nonRoutable[i].cidr);
+        if (reserved && cidrOverlaps(parsed, reserved)) {
+          return 'Prefix ' + cidr + ' is in a non-routable or documentation range (' + nonRoutable[i].cidr + ')';
+        }
+      }
+
+      // Validate ASN
+      var asn = getAddPrefixAsn();
+      if (asn === null) return 'ASN is required';
+      if (asn < 1 || asn > 4294967295) return 'ASN must be between 1 and 4294967295';
+
+      // Check reserved/private ASN ranges
+      var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
+      if (asnMode === 'custom') {
+        if ((asn >= 64512 && asn <= 65534) || (asn >= 4200000000 && asn <= 4294967294)) {
+          return 'ASN ' + asn + ' is in a private/reserved range. Use a public ASN.';
+        }
+      }
+
+      // Check LOA upload if upload mode selected
+      var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
+      if (loaMode === 'upload' && !addPrefixLoaDocumentId) {
+        return 'Please upload a LOA document first, or select auto-generation';
+      }
+
+      return null; // valid
+    }
+
+    async function validatePrefixRemote() {
+      // First run client-side validation
+      var clientError = validateNewPrefix();
+      if (clientError) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = clientError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+      document.getElementById('add-prefix-error').classList.add('hidden');
+
+      var ip = document.getElementById('add-prefix-ip').value.trim();
+      var mask = document.getElementById('add-prefix-mask').value;
+      var cidr = ip + '/' + mask;
+      var asn = getAddPrefixAsn();
+
+      var btn = document.getElementById('add-prefix-validate-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:14px;height:14px"></div> Validating...';
+
+      try {
+        var resp = await fetch('/api/prefixes/validate-new', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ cidr: cidr, asn: asn, account_id: activeAccountId })
+        });
+        var data = await resp.json();
+
+        if (data.error) {
+          var errEl = document.getElementById('add-prefix-error');
+          errEl.textContent = data.error;
+          errEl.classList.remove('hidden');
+          return;
+        }
+
+        addPrefixValidationResult = data.result;
+        renderValidationResults(data.result, asn);
+      } catch (e) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = 'Validation request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
+      }
+    }
+
+    function renderValidationResults(result, asn) {
+      var container = document.getElementById('add-prefix-validation-results');
+      var badgeEl = document.getElementById('add-prefix-validation-badge');
+      var detailsEl = document.getElementById('add-prefix-validation-details');
+
+      var summary = result.summary;
+      if (summary.ready && summary.warnings.length === 0) {
+        badgeEl.innerHTML = '<span class="badge-valid">Ready</span>';
+      } else if (summary.ready && summary.warnings.length > 0) {
+        badgeEl.innerHTML = '<span class="badge-pending">Ready with warnings</span>';
+      } else {
+        badgeEl.innerHTML = '<span class="badge-invalid">Issues found</span>';
+      }
+
+      var html = '';
+
+      // ROA section
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div class="flex items-center gap-2 mb-1">';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">ROA / RPKI</span>';
+      if (result.roa.found && result.roa.matching_asn) {
+        html += '<span class="badge-valid">Valid</span>';
+      } else if (result.roa.found && !result.roa.matching_asn) {
+        html += '<span class="badge-invalid">ASN mismatch</span>';
+      } else {
+        html += '<span class="badge-unknown">Not found</span>';
+      }
+      html += '</div>';
+      if (result.roa.origins.length > 0) {
+        for (var i = 0; i < result.roa.origins.length; i++) {
+          var o = result.roa.origins[i];
+          var rpkiCls = o.rpki_status.toLowerCase() === 'valid' ? 'badge-valid' : o.rpki_status.toLowerCase() === 'invalid' ? 'badge-invalid' : 'badge-unknown';
+          html += '<div style="color:var(--text-primary)">Origin: AS' + o.asn + ' &mdash; <span class="' + rpkiCls + '">' + escHtml(o.rpki_status) + '</span> (' + o.peer_count + ' peers)</div>';
+        }
+      } else {
+        html += '<div style="color:var(--muted)">No ROA entries found in global routing tables</div>';
+      }
+      html += '</div>';
+
+      // IRR section (RIPEstat)
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div class="flex items-center gap-2 mb-1">';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Records (RIPEstat)</span>';
+      if (result.irr.found && result.irr.matching_asn) {
+        html += '<span class="badge-valid">Valid</span>';
+      } else if (result.irr.found && !result.irr.matching_asn) {
+        html += '<span class="badge-invalid">ASN mismatch</span>';
+      } else {
+        html += '<span class="badge-unknown">Not found</span>';
+      }
+      html += '</div>';
+      if (result.irr.records.length > 0) {
+        for (var i = 0; i < result.irr.records.length; i++) {
+          var r = result.irr.records[i];
+          html += '<div style="color:var(--text-primary)">' + escHtml(r.prefix) + ' &mdash; origin: ' + escHtml(r.origin) + (r.source ? ' (' + escHtml(r.source) + ')' : '') + '</div>';
+        }
+      } else {
+        html += '<div style="color:var(--muted)">No IRR route/route6 objects found</div>';
+      }
+      html += '</div>';
+
+      // IRR Explorer section
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div class="flex items-center gap-2 mb-1">';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Explorer</span>';
+      if (result.irr_explorer.error) {
+        html += '<span class="badge-unknown">Unavailable</span>';
+      } else if (result.irr_explorer.found && result.irr_explorer.matching_asn) {
+        html += '<span class="badge-valid">Valid</span>';
+      } else if (result.irr_explorer.found && !result.irr_explorer.matching_asn) {
+        html += '<span class="badge-invalid">ASN mismatch</span>';
+      } else {
+        html += '<span class="badge-unknown">Not found</span>';
+      }
+      html += '</div>';
+      if (result.irr_explorer.error) {
+        html += '<div style="color:var(--muted)">' + escHtml(result.irr_explorer.error) + '</div>';
+      } else if (result.irr_explorer.prefixes.length > 0) {
+        for (var i = 0; i < result.irr_explorer.prefixes.length; i++) {
+          var p = result.irr_explorer.prefixes[i];
+          html += '<div style="color:var(--text-primary)">' + escHtml(p.prefix);
+          if (p.irr_origins.length > 0) html += ' &mdash; IRR origins: AS' + p.irr_origins.join(', AS');
+          if (p.irr_sources.length > 0) html += ' (' + p.irr_sources.filter(function(v,i,a){return a.indexOf(v)===i}).join(', ') + ')';
+          html += '</div>';
+        }
+      } else {
+        html += '<div style="color:var(--muted)">No records found in IRR Explorer</div>';
+      }
+      html += '</div>';
+
+      // Summary messages
+      if (summary.warnings.length > 0 || summary.errors.length > 0) {
+        html += '<div style="padding:6px 0">';
+        for (var i = 0; i < summary.errors.length; i++) {
+          html += '<div style="color:#ef4444;margin-bottom:4px">&#10007; ' + escHtml(summary.errors[i]) + '</div>';
+        }
+        for (var i = 0; i < summary.warnings.length; i++) {
+          html += '<div style="color:#eab308;margin-bottom:4px">&#9888; ' + escHtml(summary.warnings[i]) + '</div>';
+        }
+        html += '</div>';
+      }
+
+      // RPKI Portal link
+      html += '<div style="padding-top:6px"><a href="https://rpki.cloudflare.com/" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>';
+
+      detailsEl.innerHTML = html;
+      container.classList.remove('hidden');
+    }
+
+    async function submitNewPrefix() {
+      var clientError = validateNewPrefix();
+      if (clientError) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = clientError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+      document.getElementById('add-prefix-error').classList.add('hidden');
+
+      var ip = document.getElementById('add-prefix-ip').value.trim();
+      var mask = document.getElementById('add-prefix-mask').value;
+      var cidr = ip + '/' + mask;
+      var asn = getAddPrefixAsn();
+      var description = document.getElementById('add-prefix-description').value.trim();
+      var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
+      var delegateLoaCreation = loaMode === 'delegate';
+
+      // Warn custom ASN users if validation wasn't run or has errors
+      var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
+      if (asnMode === 'custom') {
+        if (!addPrefixValidationResult) {
+          if (!confirm('You have not validated IRR/ROA records for this prefix. Custom ASN prefixes require valid IRR and ROA records. Continue anyway?')) return;
+        } else if (!addPrefixValidationResult.summary.ready) {
+          if (!confirm('Validation found issues with IRR/ROA records. The prefix may be rejected by Cloudflare. Continue anyway?')) return;
+        }
+      }
+
+      var btn = document.getElementById('add-prefix-submit-btn');
+      btn.disabled = true;
+      btn.textContent = 'Creating...';
+
+      try {
+        var postBody = {
+          cidr: cidr,
+          asn: asn,
+          delegate_loa_creation: delegateLoaCreation,
+          account_id: activeAccountId
+        };
+        if (description) postBody.description = description;
+        if (addPrefixLoaDocumentId) postBody.loa_document_id = addPrefixLoaDocumentId;
+
+        var resp = await fetch('/api/prefixes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(postBody)
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeAddPrefixModal();
+          loadPrefixes();
+          refreshActivityLog();
+
+          // Show post-creation info about ownership validation
+          if (data.prefix && data.prefix.ownership_validation_token) {
+            var token = data.prefix.ownership_validation_token;
+            alert('Prefix ' + cidr + ' created successfully!\\n\\nNext step: Complete ownership validation.\\n\\nYour validation token is:\\n' + token + '\\n\\nAdd this to your IRR record description or create a DNS TXT record, then use the re-validate button on the prefix.');
+          }
+        } else {
+          var errEl = document.getElementById('add-prefix-error');
+          errEl.textContent = data.error || 'Failed to create prefix';
+          errEl.classList.remove('hidden');
+        }
+      } catch (e) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = 'Request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Add Prefix';
+      }
     }
 
     // ─── RDAP Whois Tooltip ────────────────────────────────────────

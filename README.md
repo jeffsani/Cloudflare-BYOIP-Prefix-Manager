@@ -9,6 +9,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 ## Features
 
 ### Prefix Management
+- **Add Prefix** — Onboard new BYOIP prefixes with CIDR input, ASN selection (Cloudflare 13335 or custom), LOA upload/auto-generation, pre-submission IRR/ROA validation (via RIPEstat + IRR Explorer + Cloudflare Radar), and ownership validation guidance
 - **Prefix Table** — View all BYOIP prefixes with CIDR, ASN, advertisement status, IRR/RPKI validation state, lock status, and description
 - **Expandable Rows** — Click any prefix to drill into its BGP sub-prefixes and service bindings in a tree view
 - **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, ASN, and tags
@@ -165,9 +166,16 @@ Tracks advertisement toggle actions (advertise/withdraw) with user email, action
 | `POST` | `/api/tokens` | Add token to an account |
 | `DELETE` | `/api/tokens/:id` | Delete a token |
 | `POST` | `/api/test-token` | Validate token permissions |
+| `POST` | `/api/prefixes` | Create new BYOIP prefix |
+| `POST` | `/api/prefixes/validate-new` | Pre-submission IRR/ROA validation |
+| `POST` | `/api/loa-upload` | Upload LOA document (PDF) |
 | `GET` | `/api/prefixes` | List BYOIP prefixes |
 | `GET` | `/api/prefixes/:id/bgp` | List BGP sub-prefixes |
+| `POST` | `/api/prefixes/:id/bgp` | Create BGP child prefix |
+| `DELETE` | `/api/prefixes/:pid/bgp/:bid` | Delete BGP child prefix |
 | `GET` | `/api/prefixes/:id/bindings` | List service bindings |
+| `POST` | `/api/prefixes/:id/bindings` | Create service binding |
+| `DELETE` | `/api/prefixes/:pid/bindings/:bid` | Delete service binding |
 | `GET` | `/api/services` | List available services |
 | `POST` | `/api/prefixes/:pid/bgp/:bid/toggle` | Toggle BGP advertisement |
 | `POST` | `/api/looking-glass` | BGP route lookup (Radar API) |

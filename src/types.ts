@@ -175,6 +175,71 @@ export interface RipestatVisibilityResult {
   query_time: string;
 }
 
+// --- LOA Document types ---
+
+export interface CfLoaDocument {
+  id: string;
+  account_id: string;
+  auto_generated: boolean;
+  created: string;
+  filename: string;
+  size_bytes: number;
+  verified: boolean;
+  verified_at: string | null;
+}
+
+// --- IRR Lookup types ---
+
+export interface IrrRecord {
+  source: string;
+  prefix: string;
+  origin: string;
+}
+
+export interface IrrLookupResult {
+  records: IrrRecord[];
+  data_source: string;
+}
+
+export interface IrrExplorerPrefix {
+  prefix: string;
+  bgp_origins: number[];
+  irr_origins: number[];
+  rpki_origins: number[];
+  irr_sources: string[];
+  rpki_status: string;
+}
+
+export interface IrrExplorerResult {
+  prefixes: IrrExplorerPrefix[];
+  data_source: string;
+}
+
+export interface PrefixValidationResult {
+  roa: {
+    found: boolean;
+    matching_asn: boolean;
+    origins: Array<{ asn: number; rpki_status: string; peer_count: number }>;
+  };
+  irr: {
+    found: boolean;
+    matching_asn: boolean;
+    records: IrrRecord[];
+    databases: string[];
+  };
+  irr_explorer: {
+    found: boolean;
+    matching_asn: boolean;
+    prefixes: IrrExplorerPrefix[];
+    error?: string;
+  };
+  summary: {
+    ready: boolean;
+    warnings: string[];
+    errors: string[];
+  };
+}
+
 // --- RDAP / Whois types ---
 
 export interface RdapResult {

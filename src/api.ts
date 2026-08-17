@@ -5,11 +5,16 @@ import type {
   CfServiceBinding,
   CfService,
   CfDelegation,
+  CfLoaDocument,
   LgResult,
   RdapResult,
   RpkiLookupResult,
   RpkiPrefixOrigin,
   RipestatVisibilityResult,
+  IrrRecord,
+  IrrLookupResult,
+  IrrExplorerPrefix,
+  IrrExplorerResult,
 } from './types';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
@@ -51,6 +56,132 @@ export async function listPrefixes(
   return r.json();
 }
 
+// --- Create Prefix ---
+
+export async function createPrefix(
+  accountId: string,
+  cidr: string,
+  asn: number,
+  delegateLoaCreation: boolean,
+  token: string,
+  description?: string,
+  loaDocumentId?: string,
+): Promise<CfApiResponse<CfPrefix>> {
+  const body: Record<string, unknown> = { cidr, asn, delegate_loa_creation: delegateLoaCreation };
+  if (description) body.description = description;
+  if (loaDocumentId) body.loa_document_id = loaDocumentId;
+
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    },
+  );
+  return r.json();
+}
+
+// --- Upload LOA Document ---
+
+export async function uploadLoaDocument(
+  accountId: string,
+  fileData: ArrayBuffer,
+  filename: string,
+  token: string,
+): Promise<CfApiResponse<CfLoaDocument>> {
+  const formData = new FormData();
+  const blob = new Blob([fileData], { type: 'application/pdf' });
+  formData.append('loa_document', blob, filename);
+
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/loa_documents`,
+    {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: formData,
+    },
+  );
+  return r.json();
+}
+
+// --- IRR Lookup (RIPEstat whois) ---
+
+interface RipestatWhoisResponse {
+  status: string;
+  data: {
+    records: Array<Array<{ key: string; value: string }>>;
+  };
+}
+
+export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult> {
+  const r = await fetchWithRetry(
+    `https://stat.ripe.net/data/whois/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+      },
+    },
+  );
+  if (!r.ok) throw new Error(`RIPEstat whois lookup failed: ${r.status}`);
+  const data = (await r.json()) as RipestatWhoisResponse;
+  if (data.status !== 'ok' || !data.data?.records) {
+    return { records: [], data_source: 'ripestat' };
+  }
+
+  const records: IrrRecord[] = [];
+  for (const recordGroup of data.data.records) {
+    let source = '';
+    let recordPrefix = '';
+    let origin = '';
+    for (const field of recordGroup) {
+      if (field.key === 'source') source = field.value;
+      if (field.key === 'route' || field.key === 'route6') recordPrefix = field.value;
+      if (field.key === 'origin') origin = field.value;
+    }
+    if (recordPrefix && origin) {
+      records.push({ source, prefix: recordPrefix, origin });
+    }
+  }
+
+  return { records, data_source: 'ripestat' };
+}
+
+// --- IRR Explorer Lookup ---
+
+export async function lookupIrrExplorer(prefix: string): Promise<IrrExplorerResult> {
+  const r = await fetchWithRetry(
+    `https://irrexplorer.nlnog.net/api/prefixes/exact/${encodeURIComponent(prefix)}`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+      },
+    },
+  );
+  if (!r.ok) throw new Error(`IRR Explorer lookup failed: ${r.status}`);
+  const data = (await r.json()) as Array<{
+    prefix: string;
+    bgpOrigins: number[];
+    irrRoutes: Array<{ origin: number; source: string }>;
+    rpkiRoutes: Array<{ origin: number; rpkiStatus: string }>;
+  }>;
+
+  const prefixes: IrrExplorerPrefix[] = (data || []).map((entry) => ({
+    prefix: entry.prefix,
+    bgp_origins: entry.bgpOrigins || [],
+    irr_origins: (entry.irrRoutes || []).map((r) => r.origin),
+    rpki_origins: (entry.rpkiRoutes || []).map((r) => r.origin),
+    irr_sources: (entry.irrRoutes || []).map((r) => r.source),
+    rpki_status: (entry.rpkiRoutes || []).length > 0
+      ? entry.rpkiRoutes[0].rpkiStatus || 'unknown'
+      : 'not_found',
+  }));
+
+  return { prefixes, data_source: 'irr_explorer' };
+}
+
 export async function listBgpPrefixes(
   accountId: string,
   prefixId: string,
@@ -75,6 +206,24 @@ export async function createBgpPrefix(
       method: 'POST',
       headers: authHeaders(token),
       body: JSON.stringify({ cidr }),
+    },
+  );
+  return r.json();
+}
+
+// --- Delete BGP Child Prefix ---
+
+export async function deleteBgpPrefix(
+  accountId: string,
+  prefixId: string,
+  bgpPrefixId: string,
+  token: string,
+): Promise<CfApiResponse<null>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes/${bgpPrefixId}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(token),
     },
   );
   return r.json();

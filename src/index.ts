@@ -10,6 +10,7 @@ import {
   createServiceBinding,
   deleteServiceBinding,
   createBgpPrefix,
+  deleteBgpPrefix,
   toggleBgpAdvertisement,
   updatePrefixDescription,
   validatePrefix,
@@ -21,6 +22,10 @@ import {
   listDelegations,
   createDelegation,
   deleteDelegation,
+  createPrefix,
+  uploadLoaDocument,
+  lookupIrrRecords,
+  lookupIrrExplorer,
 } from './api';
 
 type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
@@ -257,6 +262,191 @@ app.get('/api/prefixes', async (c) => {
   }
 });
 
+// Create a new BYOIP prefix
+app.post('/api/prefixes', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{
+    cidr: string;
+    asn: number;
+    delegate_loa_creation: boolean;
+    description?: string;
+    loa_document_id?: string;
+    account_id?: string;
+  }>();
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  if (!body.cidr || !body.asn) {
+    return c.json({ error: 'cidr and asn are required' }, 400);
+  }
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await createPrefix(
+      acct.account_id,
+      body.cidr,
+      body.asn,
+      body.delegate_loa_creation ?? true,
+      token,
+      body.description,
+      body.loa_document_id,
+    );
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'create_prefix',
+      `Created prefix ${body.cidr} (ASN ${body.asn}) in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true, prefix: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Upload LOA document
+app.post('/api/loa-upload', async (c) => {
+  const email = c.get('userEmail');
+  const formData = await c.req.formData();
+  const accountId = formData.get('account_id') as string;
+  const file = formData.get('loa_document') as File;
+
+  if (!file || !(file instanceof File)) {
+    return c.json({ error: 'loa_document file is required' }, 400);
+  }
+
+  if (file.size > 10 * 1024 * 1024) {
+    return c.json({ error: 'File size exceeds 10MB limit' }, 400);
+  }
+
+  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+    return c.json({ error: 'Only PDF files are accepted' }, 400);
+  }
+
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const fileData = await file.arrayBuffer();
+    const data = await uploadLoaDocument(acct.account_id, fileData, file.name, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'Upload failed' }, 502);
+    }
+
+    return c.json({ ok: true, loa_document: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Upload failed' }, 400);
+  }
+});
+
+// Pre-submission prefix validation (IRR + ROA checks)
+app.post('/api/prefixes/validate-new', async (c) => {
+  const email = c.get('userEmail');
+  const body = await c.req.json<{ cidr: string; asn: number; account_id?: string }>();
+  if (!body.cidr || !body.asn) {
+    return c.json({ error: 'cidr and asn are required' }, 400);
+  }
+
+  const acct = await resolveAccount(c.env.DB, email, body.account_id);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+
+    // Run all validation checks in parallel
+    const [rpkiResult, irrResult, irrExplorerResult] = await Promise.allSettled([
+      lookupRpki(body.cidr, token),
+      lookupIrrRecords(body.cidr),
+      lookupIrrExplorer(body.cidr),
+    ]);
+
+    // Process ROA/RPKI results
+    const roa = { found: false, matching_asn: false, origins: [] as Array<{ asn: number; rpki_status: string; peer_count: number }> };
+    if (rpkiResult.status === 'fulfilled' && rpkiResult.value.prefix_origins.length > 0) {
+      roa.found = true;
+      roa.origins = rpkiResult.value.prefix_origins.map((po) => ({
+        asn: po.origin,
+        rpki_status: po.rpki_validation || 'unknown',
+        peer_count: po.peer_count,
+      }));
+      roa.matching_asn = roa.origins.some((o) => o.asn === body.asn);
+    }
+
+    // Process IRR results (RIPEstat)
+    const irr = { found: false, matching_asn: false, records: [] as Array<{ source: string; prefix: string; origin: string }>, databases: [] as string[] };
+    if (irrResult.status === 'fulfilled' && irrResult.value.records.length > 0) {
+      irr.found = true;
+      irr.records = irrResult.value.records;
+      irr.databases = [...new Set(irrResult.value.records.map((r) => r.source).filter(Boolean))];
+      irr.matching_asn = irr.records.some((r) => {
+        const asnStr = r.origin.replace(/^AS/i, '');
+        return parseInt(asnStr, 10) === body.asn;
+      });
+    }
+
+    // Process IRR Explorer results
+    const irrExplorer = { found: false, matching_asn: false, prefixes: [] as typeof irrExplorerParsed, error: undefined as string | undefined };
+    let irrExplorerParsed: Array<{ prefix: string; bgp_origins: number[]; irr_origins: number[]; rpki_origins: number[]; irr_sources: string[]; rpki_status: string }> = [];
+    if (irrExplorerResult.status === 'fulfilled') {
+      irrExplorerParsed = irrExplorerResult.value.prefixes;
+      if (irrExplorerParsed.length > 0) {
+        irrExplorer.found = true;
+        irrExplorer.prefixes = irrExplorerParsed;
+        irrExplorer.matching_asn = irrExplorerParsed.some((p) =>
+          p.irr_origins.includes(body.asn),
+        );
+      }
+    } else {
+      irrExplorer.error = 'IRR Explorer lookup failed';
+    }
+
+    // Build summary
+    const warnings: string[] = [];
+    const errors: string[] = [];
+    const isCloudflareAsn = body.asn === 13335;
+
+    if (isCloudflareAsn) {
+      if (!roa.found) {
+        warnings.push('No ROA records found for this prefix. Cloudflare will manage ROA records for ASN 13335.');
+      }
+      if (!irr.found && !irrExplorer.found) {
+        warnings.push('No IRR records found for this prefix. Cloudflare will manage IRR records for ASN 13335.');
+      }
+    } else {
+      // Custom ASN — require both valid IRR and ROA
+      if (!roa.found) {
+        errors.push('No ROA records found. A valid ROA is required for custom ASN prefixes. Create a ROA at your RIR or via the Cloudflare RPKI Portal.');
+      } else if (!roa.matching_asn) {
+        errors.push(`ROA found but origin ASN does not match ${body.asn}. Update your ROA to include AS${body.asn}.`);
+      }
+
+      if (!irr.found && !irrExplorer.found) {
+        errors.push('No IRR records found. A route/route6 object with the correct origin ASN is required. Create one at your RIR or an IRR database (e.g., RADB).');
+      } else if (!irr.matching_asn && !irrExplorer.matching_asn) {
+        errors.push(`IRR record found but origin ASN does not match ${body.asn}. Update your IRR route object to reference AS${body.asn}.`);
+      }
+    }
+
+    const ready = errors.length === 0;
+
+    return c.json({
+      result: {
+        roa,
+        irr,
+        irr_explorer: irrExplorer,
+        summary: { ready, warnings, errors },
+      },
+    });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'Validation failed' }, 400);
+  }
+});
+
 // Aggregated prefix stats (parent + BGP children)
 app.get('/api/prefixes/stats', async (c) => {
   const email = c.get('userEmail');
@@ -374,6 +564,35 @@ app.post('/api/prefixes/:prefixId/bgp', async (c) => {
     );
 
     return c.json({ ok: true, bgp_prefix: data.result });
+  } catch (e) {
+    return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+  }
+});
+
+// Delete a BGP child prefix
+app.delete('/api/prefixes/:prefixId/bgp/:bgpPrefixId', async (c) => {
+  const email = c.get('userEmail');
+  const prefixId = c.req.param('prefixId');
+  const bgpPrefixId = c.req.param('bgpPrefixId');
+  const accountId = c.req.query('account_id');
+  const acct = await resolveAccount(c.env.DB, email, accountId);
+  if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+  try {
+    const token = await getToken(c.env.DB, email, acct.account_id);
+    const data = await deleteBgpPrefix(acct.account_id, prefixId, bgpPrefixId, token);
+    if (!data.success) {
+      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+    }
+
+    await logActivity(
+      c.env.DB,
+      email,
+      'delete_bgp_prefix',
+      `Deleted BGP child prefix ${bgpPrefixId} on prefix ${prefixId} in account ${acct.account_id}`,
+    );
+
+    return c.json({ ok: true });
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
   }
