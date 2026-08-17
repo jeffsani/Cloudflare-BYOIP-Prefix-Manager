@@ -644,7 +644,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4">
         <!-- Prefix CIDR -->
         <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">Prefix (CIDR)${infoTip('Enter an IPv4 or IPv6 prefix in CIDR notation. Minimum size: /24 for IPv4, /48 for IPv6. Must be a publicly routable prefix registered at an RIR.')}</label>
+          <label class="block text-xs text-cf-gray mb-1">Prefix (CIDR)${infoTip('Enter an IPv4 or IPv6 prefix in CIDR notation. Minimum size: /24 for IPv4, /32 for IPv6. Must be a publicly routable prefix registered at an RIR.')}</label>
           <div class="flex items-center gap-2 mb-1.5">
             <div class="flex rounded-lg border border-cf-border overflow-hidden" style="background:var(--input-bg)">
               <button id="add-prefix-ipv4-btn" onclick="setAddPrefixFamily('v4')" class="px-2.5 py-1 text-[11px] font-medium transition" style="background:var(--accent);color:#fff">IPv4</button>
@@ -2783,8 +2783,8 @@ export function renderDashboard(userEmail: string): string {
         v4Btn.style.color = 'var(--muted)';
         ipInput.placeholder = 'e.g. 2001:db8::';
         var html = '';
-        for (var m = 20; m <= 48; m++) {
-          html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
+        for (var m = 20; m <= 32; m++) {
+          html += '<option value="' + m + '"' + (m === 32 ? ' selected' : '') + '>/' + m + '</option>';
         }
         maskSel.innerHTML = html;
       }
@@ -2897,7 +2897,7 @@ export function renderDashboard(userEmail: string): string {
 
       // Minimum size for BGP on the public internet
       if (!parsed.v6 && maskLen > 24) return 'IPv4 prefix must be /24 or shorter (larger) for BGP on the public internet';
-      if (parsed.v6 && maskLen > 48) return 'IPv6 prefix must be /48 or shorter (larger) for BGP on the public internet';
+      if (parsed.v6 && maskLen > 32) return 'IPv6 prefix must be /32 or shorter (larger). Cloudflare currently supports a maximum prefix length of /32 for IPv6.';
 
       // Check non-routable / documentation ranges
       var nonRoutable = parsed.v6 ? NON_ROUTABLE_V6 : NON_ROUTABLE_V4;
