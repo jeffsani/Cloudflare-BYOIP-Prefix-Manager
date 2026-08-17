@@ -645,11 +645,16 @@ export function renderDashboard(userEmail: string): string {
         <!-- Prefix CIDR -->
         <div class="mb-3">
           <label class="block text-xs text-cf-gray mb-1">Prefix (CIDR)${infoTip('Enter an IPv4 or IPv6 prefix in CIDR notation. Minimum size: /24 for IPv4, /48 for IPv6. Must be a publicly routable prefix registered at an RIR.')}</label>
+          <div class="flex items-center gap-2 mb-1.5">
+            <div class="flex rounded-lg border border-cf-border overflow-hidden" style="background:var(--input-bg)">
+              <button id="add-prefix-ipv4-btn" onclick="setAddPrefixFamily('v4')" class="px-2.5 py-1 text-[11px] font-medium transition" style="background:var(--accent);color:#fff">IPv4</button>
+              <button id="add-prefix-ipv6-btn" onclick="setAddPrefixFamily('v6')" class="px-2.5 py-1 text-[11px] font-medium transition" style="color:var(--muted)">IPv6</button>
+            </div>
+          </div>
           <div class="flex gap-2">
-            <input id="add-prefix-ip" type="text" placeholder="e.g. 192.0.2.0 or 2001:db8::" oninput="onAddPrefixIpChange()" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
+            <input id="add-prefix-ip" type="text" placeholder="e.g. 192.0.2.0" oninput="onAddPrefixIpChange()" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
             <span class="text-cf-gray self-center">/</span>
             <select id="add-prefix-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-              <option value="">--</option>
             </select>
           </div>
         </div>
@@ -2715,7 +2720,6 @@ export function renderDashboard(userEmail: string): string {
       addPrefixIpFamily = null;
 
       document.getElementById('add-prefix-ip').value = '';
-      document.getElementById('add-prefix-mask').innerHTML = '<option value="">--</option>';
       document.getElementById('add-prefix-custom-asn').value = '';
       document.getElementById('add-prefix-description').value = '';
       document.getElementById('add-prefix-error').classList.add('hidden');
@@ -2739,6 +2743,9 @@ export function renderDashboard(userEmail: string): string {
       var fileInput = document.getElementById('add-prefix-loa-file');
       if (fileInput) fileInput.value = '';
 
+      // Default to IPv4
+      setAddPrefixFamily('v4');
+
       document.getElementById('add-prefix-modal').classList.remove('hidden');
     }
 
@@ -2749,33 +2756,52 @@ export function renderDashboard(userEmail: string): string {
       addPrefixIpFamily = null;
     }
 
-    function onAddPrefixIpChange() {
-      var ip = document.getElementById('add-prefix-ip').value.trim();
-      var newFamily = null;
-      if (ip.indexOf(':') !== -1) {
-        newFamily = 'v6';
-      } else if (/^\d/.test(ip)) {
-        newFamily = 'v4';
+    function setAddPrefixFamily(family) {
+      if (family === addPrefixIpFamily) return;
+      addPrefixIpFamily = family;
+
+      var v4Btn = document.getElementById('add-prefix-ipv4-btn');
+      var v6Btn = document.getElementById('add-prefix-ipv6-btn');
+      var ipInput = document.getElementById('add-prefix-ip');
+      var maskSel = document.getElementById('add-prefix-mask');
+
+      if (family === 'v4') {
+        v4Btn.style.background = 'var(--accent)';
+        v4Btn.style.color = '#fff';
+        v6Btn.style.background = 'transparent';
+        v6Btn.style.color = 'var(--muted)';
+        ipInput.placeholder = 'e.g. 192.0.2.0';
+        var html = '';
+        for (var m = 8; m <= 24; m++) {
+          html += '<option value="' + m + '"' + (m === 24 ? ' selected' : '') + '>/' + m + '</option>';
+        }
+        maskSel.innerHTML = html;
+      } else {
+        v6Btn.style.background = 'var(--accent)';
+        v6Btn.style.color = '#fff';
+        v4Btn.style.background = 'transparent';
+        v4Btn.style.color = 'var(--muted)';
+        ipInput.placeholder = 'e.g. 2001:db8::';
+        var html = '';
+        for (var m = 20; m <= 48; m++) {
+          html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
+        }
+        maskSel.innerHTML = html;
       }
 
-      if (newFamily !== addPrefixIpFamily) {
-        addPrefixIpFamily = newFamily;
-        var maskSel = document.getElementById('add-prefix-mask');
-        if (newFamily === 'v4') {
-          var html = '';
-          for (var m = 8; m <= 24; m++) {
-            html += '<option value="' + m + '"' + (m === 24 ? ' selected' : '') + '>/' + m + '</option>';
-          }
-          maskSel.innerHTML = html;
-        } else if (newFamily === 'v6') {
-          var html = '';
-          for (var m = 20; m <= 48; m++) {
-            html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
-          }
-          maskSel.innerHTML = html;
-        } else {
-          maskSel.innerHTML = '<option value="">--</option>';
-        }
+      // Clear previous validation when family changes
+      document.getElementById('add-prefix-validation-results').classList.add('hidden');
+      document.getElementById('add-prefix-error').classList.add('hidden');
+      addPrefixValidationResult = null;
+    }
+
+    function onAddPrefixIpChange() {
+      var ip = document.getElementById('add-prefix-ip').value.trim();
+      // Auto-switch family based on input content
+      if (ip.indexOf(':') !== -1 && addPrefixIpFamily !== 'v6') {
+        setAddPrefixFamily('v6');
+      } else if (ip.length > 0 && ip.indexOf(':') === -1 && /^\d/.test(ip) && addPrefixIpFamily !== 'v4') {
+        setAddPrefixFamily('v4');
       }
 
       // Clear previous validation when prefix changes
