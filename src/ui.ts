@@ -2911,8 +2911,8 @@ export function renderDashboard(userEmail: string): string {
         v4Btn.style.color = 'var(--muted)';
         ipInput.placeholder = 'e.g. 2001:db8::';
         var html = '';
-        for (var m = 20; m <= 32; m++) {
-          html += '<option value="' + m + '"' + (m === 32 ? ' selected' : '') + '>/' + m + '</option>';
+        for (var m = 32; m <= 48; m++) {
+          html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
         }
         maskSel.innerHTML = html;
       }
@@ -3025,7 +3025,8 @@ export function renderDashboard(userEmail: string): string {
 
       // Minimum size for BGP on the public internet
       if (!parsed.v6 && maskLen > 24) return 'IPv4 prefix must be /24 or shorter (larger) for BGP on the public internet';
-      if (parsed.v6 && maskLen > 32) return 'IPv6 prefix must be /32 or shorter (larger). Cloudflare currently supports a maximum prefix length of /32 for IPv6.';
+      if (parsed.v6 && maskLen < 32) return 'IPv6 prefix must be /32 or longer. Cloudflare currently supports a minimum (largest) prefix size of /32 for IPv6.';
+      if (parsed.v6 && maskLen > 48) return 'IPv6 prefix must be /48 or shorter. Cloudflare does not support prefixes more specific than /48 for IPv6.';
 
       // Check non-routable / documentation ranges
       var nonRoutable = parsed.v6 ? NON_ROUTABLE_V6 : NON_ROUTABLE_V4;
