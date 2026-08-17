@@ -25,7 +25,6 @@ import {
   createPrefix,
   uploadLoaDocument,
   lookupIrrRecords,
-  lookupIrrExplorer,
   createArinRouteObject,
   createRipeRouteObject,
   updateArinAutnum,
@@ -363,11 +362,10 @@ app.post('/api/prefixes/validate-new', async (c) => {
   try {
     const token = await getToken(c.env.DB, email, acct.account_id);
 
-    // Run all validation checks in parallel
-    const [rpkiResult, irrResult, irrExplorerResult] = await Promise.allSettled([
+    // Run validation checks in parallel
+    const [rpkiResult, irrResult] = await Promise.allSettled([
       lookupRpki(body.cidr, token, body.asn),
       lookupIrrRecords(body.cidr),
-      lookupIrrExplorer(body.cidr),
     ]);
 
     // Process ROA/RPKI results
@@ -395,22 +393,6 @@ app.post('/api/prefixes/validate-new', async (c) => {
       });
     }
 
-    // Process IRR Explorer results
-    const irrExplorer = { found: false, matching_asn: false, prefixes: [] as typeof irrExplorerParsed, error: undefined as string | undefined };
-    let irrExplorerParsed: Array<{ prefix: string; bgp_origins: number[]; irr_origins: number[]; rpki_origins: number[]; irr_sources: string[]; rpki_status: string }> = [];
-    if (irrExplorerResult.status === 'fulfilled') {
-      irrExplorerParsed = irrExplorerResult.value.prefixes;
-      if (irrExplorerParsed.length > 0) {
-        irrExplorer.found = true;
-        irrExplorer.prefixes = irrExplorerParsed;
-        irrExplorer.matching_asn = irrExplorerParsed.some((p) =>
-          p.irr_origins.includes(body.asn),
-        );
-      }
-    } else {
-      irrExplorer.error = 'IRR Explorer lookup failed';
-    }
-
     // Fetch saved RIR credential types for this account
     const rirCredResult = await c.env.DB.prepare(
       'SELECT rir FROM rir_credentials WHERE user_email = ? AND account_id = ?',
@@ -428,7 +410,7 @@ app.post('/api/prefixes/validate-new', async (c) => {
       if (!roa.found) {
         warnings.push('No ROA records found for this prefix. Cloudflare will manage ROA records for ASN 13335.');
       }
-      if (!irr.found && !irrExplorer.found) {
+      if (!irr.found) {
         warnings.push('No IRR records found for this prefix. Cloudflare will manage IRR records for ASN 13335.');
       }
     } else {
@@ -439,9 +421,9 @@ app.post('/api/prefixes/validate-new', async (c) => {
         errors.push(`ROA found but origin ASN does not match ${body.asn}. Update your ROA to include AS${body.asn}.`);
       }
 
-      if (!irr.found && !irrExplorer.found) {
+      if (!irr.found) {
         errors.push('No IRR records found. An exact route/route6 object with your ASN as the origin is required. Create one at your RIR or an IRR database (e.g., RADB).');
-      } else if (!irr.matching_asn && !irrExplorer.matching_asn) {
+      } else if (!irr.matching_asn) {
         errors.push(`IRR record found but origin ASN does not match ${body.asn}. Update your IRR route object to reference AS${body.asn}.`);
       }
 
@@ -456,7 +438,6 @@ app.post('/api/prefixes/validate-new', async (c) => {
       result: {
         roa,
         irr,
-        irr_explorer: irrExplorer,
         rir_credentials: rirCredentials,
         summary: { ready, warnings, errors },
       },

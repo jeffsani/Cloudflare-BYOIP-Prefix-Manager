@@ -673,7 +673,7 @@ export function renderDashboard(userEmail: string): string {
             </label>
             <div id="add-prefix-custom-asn-wrap" class="hidden ml-5">
               <input id="add-prefix-custom-asn" type="number" placeholder="e.g. 64496" min="1" max="4294967295" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
-              <p class="text-[10px] text-yellow-400 mt-1">BYO-ASN requires valid IRR route object, ROA, and ownership validation of both the prefix and ASN (via aut-num object).</p>
+              <p id="add-prefix-byo-asn-note" class="text-[10px] mt-1" style="color:var(--muted)"></p>
             </div>
           </div>
         </div>
@@ -2944,12 +2944,36 @@ export function renderDashboard(userEmail: string): string {
       if (mode === 'custom') {
         customWrap.classList.remove('hidden');
         document.getElementById('add-prefix-custom-asn').focus();
+        // Check for RIR credentials and show appropriate note
+        updateByoAsnNote();
       } else {
         customWrap.classList.add('hidden');
       }
       // Clear validation when ASN changes
       document.getElementById('add-prefix-validation-results').classList.add('hidden');
       addPrefixValidationResult = null;
+    }
+
+    function updateByoAsnNote() {
+      var noteEl = document.getElementById('add-prefix-byo-asn-note');
+      if (!noteEl) return;
+      // Check RIR credentials for the active account
+      fetch('/api/rir/credentials?account_id=' + encodeURIComponent(activeAccountId))
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.credentials && data.credentials.length > 0) {
+            var rirs = data.credentials.map(function(c) { return c.rir.toUpperCase(); }).join(' / ');
+            noteEl.style.color = '#22c55e';
+            noteEl.textContent = 'RIR credentials saved (' + rirs + '). IRR route object and aut-num will be auto-created after prefix onboarding.';
+          } else {
+            noteEl.style.color = 'var(--muted)';
+            noteEl.textContent = 'Add RIR credentials in Account Settings to auto-create IRR route and aut-num records after prefix onboarding.';
+          }
+        })
+        .catch(function() {
+          noteEl.style.color = 'var(--muted)';
+          noteEl.textContent = 'BYO-ASN requires valid IRR route object, ROA, and ownership validation.';
+        });
     }
 
     function onLoaModeChange() {
@@ -3166,37 +3190,6 @@ export function renderDashboard(userEmail: string): string {
         html += '<div style="color:var(--muted)">No IRR route/route6 objects found</div>';
       }
       html += '</div>';
-
-      // IRR Explorer section — only show if primary IRR check didn't find records
-      if (!result.irr.found) {
-        html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
-        html += '<div class="flex items-center gap-2 mb-1">';
-        html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Explorer</span>';
-        if (result.irr_explorer.error) {
-          html += '<span class="badge-unknown">Unavailable</span>';
-        } else if (result.irr_explorer.found && result.irr_explorer.matching_asn) {
-          html += '<span class="badge-valid">Valid</span>';
-        } else if (result.irr_explorer.found && !result.irr_explorer.matching_asn) {
-          html += '<span class="badge-invalid">ASN mismatch</span>';
-        } else {
-          html += '<span class="badge-unknown">Not found</span>';
-        }
-        html += '</div>';
-        if (result.irr_explorer.error) {
-          html += '<div style="color:var(--muted)">' + escHtml(result.irr_explorer.error) + '</div>';
-        } else if (result.irr_explorer.prefixes.length > 0) {
-          for (var i = 0; i < result.irr_explorer.prefixes.length; i++) {
-            var p = result.irr_explorer.prefixes[i];
-            html += '<div style="color:var(--text-primary)">' + escHtml(p.prefix);
-            if (p.irr_origins.length > 0) html += ' &mdash; IRR origins: AS' + p.irr_origins.join(', AS');
-            if (p.irr_sources.length > 0) html += ' (' + p.irr_sources.filter(function(v,i,a){return a.indexOf(v)===i}).join(', ') + ')';
-            html += '</div>';
-          }
-        } else {
-          html += '<div style="color:var(--muted)">No records found in IRR Explorer</div>';
-        }
-        html += '</div>';
-      }
 
       // Summary messages
       var hasRirCreds = result.rir_credentials && result.rir_credentials.length > 0;
