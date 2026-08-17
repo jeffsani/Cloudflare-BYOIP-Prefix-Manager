@@ -106,18 +106,29 @@ export async function uploadLoaDocument(
   return r.json();
 }
 
-// --- IRR Lookup (RIPEstat whois) ---
+// --- IRR Lookup (RIPEstat prefix-routing-consistency) ---
+// Uses RIPEstat's prefix-routing-consistency endpoint which checks IRR databases
+// across all RIRs (including ARIN). The old whois endpoint returned ARIN WHOIS
+// registration data instead of IRR route objects for ARIN-managed prefixes.
 
-interface RipestatWhoisResponse {
+interface RipestatRoutingConsistencyResponse {
   status: string;
   data: {
-    records: Array<Array<{ key: string; value: string }>>;
+    resource: string;
+    routes: Array<{
+      in_bgp: boolean;
+      in_whois: boolean;
+      prefix: string;
+      origin: number;
+      irr_sources: string[];
+      asn_name: string;
+    }>;
   };
 }
 
 export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult> {
   const r = await fetchWithRetry(
-    `https://stat.ripe.net/data/whois/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
+    `https://stat.ripe.net/data/prefix-routing-consistency/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
     {
       headers: {
         Accept: 'application/json',
@@ -125,24 +136,21 @@ export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult>
       },
     },
   );
-  if (!r.ok) throw new Error(`RIPEstat whois lookup failed: ${r.status}`);
-  const data = (await r.json()) as RipestatWhoisResponse;
-  if (data.status !== 'ok' || !data.data?.records) {
+  if (!r.ok) throw new Error(`RIPEstat prefix-routing-consistency lookup failed: ${r.status}`);
+  const data = (await r.json()) as RipestatRoutingConsistencyResponse;
+  if (data.status !== 'ok' || !data.data?.routes) {
     return { records: [], data_source: 'ripestat' };
   }
 
   const records: IrrRecord[] = [];
-  for (const recordGroup of data.data.records) {
-    let source = '';
-    let recordPrefix = '';
-    let origin = '';
-    for (const field of recordGroup) {
-      if (field.key === 'source') source = field.value;
-      if (field.key === 'route' || field.key === 'route6') recordPrefix = field.value;
-      if (field.key === 'origin') origin = field.value;
-    }
-    if (recordPrefix && origin) {
-      records.push({ source, prefix: recordPrefix, origin });
+  for (const route of data.data.routes) {
+    // Only include entries that have IRR records (in_whois = true)
+    if (route.in_whois && route.origin) {
+      records.push({
+        source: (route.irr_sources || []).join(', '),
+        prefix: route.prefix,
+        origin: `AS${route.origin}`,
+      });
     }
   }
 
@@ -480,27 +488,58 @@ export async function lookupBgpRoutes(prefix: string, token: string): Promise<Lg
   return data.result;
 }
 
-// --- RPKI ROA Lookup (Cloudflare Radar) ---
+// --- RPKI ROA Validation (RIPEstat) ---
+// Uses RIPEstat's RPKI Validation endpoint which checks the actual ROA database
+// (via Routinator), not BGP routing tables. This correctly finds ROAs even for
+// prefixes that are not yet announced in BGP.
 
-export async function lookupRpki(prefix: string, token: string): Promise<RpkiLookupResult> {
-  const r = await fetchWithRetry(
-    `${RADAR_API}/radar/bgp/routes/pfx2as?prefix=${encodeURIComponent(prefix)}`,
-    { headers: authHeaders(token) },
-  );
-  const data = (await r.json()) as {
-    success: boolean;
-    result: {
-      meta: { data_time: string; total_peers: number };
-      prefix_origins: RpkiPrefixOrigin[];
-    };
+interface RipestatRpkiValidationResponse {
+  status: string;
+  data: {
+    resource: string;
+    prefix: string;
+    validating_roas: Array<{
+      origin: string;
+      prefix: string;
+      validity: string;
+      max_length: number;
+    }>;
+    status: string; // 'valid', 'invalid_asn', 'invalid_length', 'unknown'
+    validator: string;
   };
-  if (!data.success) {
-    throw new Error('Radar RPKI lookup failed');
+}
+
+export async function lookupRpki(prefix: string, _token: string, asn?: number): Promise<RpkiLookupResult> {
+  // Use the ASN if provided for targeted validation, otherwise just query the prefix
+  const asnParam = asn ? `&resource=${asn}` : '&resource=0';
+  const r = await fetchWithRetry(
+    `https://stat.ripe.net/data/rpki-validation/data.json?prefix=${encodeURIComponent(prefix)}${asnParam}&sourceapp=network-tools`,
+    {
+      headers: {
+        Accept: 'application/json',
+        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+      },
+    },
+  );
+  if (!r.ok) throw new Error(`RIPEstat RPKI validation lookup failed: ${r.status}`);
+  const data = (await r.json()) as RipestatRpkiValidationResponse;
+
+  if (data.status !== 'ok' || !data.data) {
+    return { prefix_origins: [], data_time: '', total_peers: 0 };
   }
+
+  const roas = data.data.validating_roas || [];
+  const prefix_origins: RpkiPrefixOrigin[] = roas.map((roa) => ({
+    origin: parseInt(roa.origin, 10) || 0,
+    prefix: roa.prefix,
+    rpki_validation: roa.validity || data.data.status || 'unknown',
+    peer_count: 0, // Not available from this endpoint
+  }));
+
   return {
-    prefix_origins: data.result.prefix_origins || [],
-    data_time: data.result.meta?.data_time || '',
-    total_peers: data.result.meta?.total_peers || 0,
+    prefix_origins,
+    data_time: '',
+    total_peers: 0,
   };
 }
 

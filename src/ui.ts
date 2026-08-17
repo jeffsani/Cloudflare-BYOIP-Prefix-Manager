@@ -3125,7 +3125,7 @@ export function renderDashboard(userEmail: string): string {
       // ROA section
       html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
       html += '<div class="flex items-center gap-2 mb-1">';
-      html += '<span class="font-semibold" style="color:var(--text-strong)">ROA / RPKI</span>';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">RPKI / ROA</span>';
       if (result.roa.found && result.roa.matching_asn) {
         html += '<span class="badge-valid">Valid</span>';
       } else if (result.roa.found && !result.roa.matching_asn) {
@@ -3138,10 +3138,10 @@ export function renderDashboard(userEmail: string): string {
         for (var i = 0; i < result.roa.origins.length; i++) {
           var o = result.roa.origins[i];
           var rpkiCls = o.rpki_status.toLowerCase() === 'valid' ? 'badge-valid' : o.rpki_status.toLowerCase() === 'invalid' ? 'badge-invalid' : 'badge-unknown';
-          html += '<div style="color:var(--text-primary)">Origin: AS' + o.asn + ' &mdash; <span class="' + rpkiCls + '">' + escHtml(o.rpki_status) + '</span> (' + o.peer_count + ' peers)</div>';
+          html += '<div style="color:var(--text-primary)">Origin: AS' + o.asn + ' &mdash; <span class="' + rpkiCls + '">' + escHtml(o.rpki_status) + '</span>' + (o.prefix ? ' (' + escHtml(o.prefix) + ')' : '') + '</div>';
         }
       } else {
-        html += '<div style="color:var(--muted)">No ROA entries found in global routing tables</div>';
+        html += '<div style="color:var(--muted)">No ROA entries found</div>';
       }
       html += '</div>';
 

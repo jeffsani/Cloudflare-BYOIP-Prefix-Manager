@@ -365,19 +365,20 @@ app.post('/api/prefixes/validate-new', async (c) => {
 
     // Run all validation checks in parallel
     const [rpkiResult, irrResult, irrExplorerResult] = await Promise.allSettled([
-      lookupRpki(body.cidr, token),
+      lookupRpki(body.cidr, token, body.asn),
       lookupIrrRecords(body.cidr),
       lookupIrrExplorer(body.cidr),
     ]);
 
     // Process ROA/RPKI results
-    const roa = { found: false, matching_asn: false, origins: [] as Array<{ asn: number; rpki_status: string; peer_count: number }> };
+    const roa = { found: false, matching_asn: false, origins: [] as Array<{ asn: number; rpki_status: string; peer_count: number; prefix?: string }> };
     if (rpkiResult.status === 'fulfilled' && rpkiResult.value.prefix_origins.length > 0) {
       roa.found = true;
       roa.origins = rpkiResult.value.prefix_origins.map((po) => ({
         asn: po.origin,
         rpki_status: po.rpki_validation || 'unknown',
         peer_count: po.peer_count,
+        prefix: po.prefix,
       }));
       roa.matching_asn = roa.origins.some((o) => o.asn === body.asn);
     }
