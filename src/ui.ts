@@ -1345,7 +1345,7 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-2"></td>' +
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-purple-400 mr-1">&#9500;&#9472;</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
             '<td class="px-3"></td>' +
-            '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? b.provisioning.state : 'unknown') + '</span></td>' +
+            '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? (b.provisioning.state.charAt(0).toUpperCase() + b.provisioning.state.slice(1)) : 'Unknown') + '</span></td>' +
             '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
             '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
           '</tr>';
