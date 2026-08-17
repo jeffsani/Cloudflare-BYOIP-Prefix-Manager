@@ -9,7 +9,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 ## Features
 
 ### Prefix Management
-- **Add Prefix** — Onboard new BYOIP prefixes with CIDR input, ASN selection (Cloudflare 13335 or custom), LOA upload/auto-generation, pre-submission IRR/ROA validation (via RIPEstat + IRR Explorer + Cloudflare Radar), and ownership validation guidance
+- **Add Prefix** — Onboard new BYOIP prefixes with CIDR input, ASN selection (Cloudflare 13335 or custom), LOA upload/auto-generation, pre-submission IRR/ROA validation (via RIPEstat + IRR Explorer + Cloudflare Radar), and ownership validation guidance with automated IRR route/route6 object creation and aut-num updates at ARIN and RIPE (auto-detected via RDAP)
 - **Prefix Table** — View all BYOIP prefixes with CIDR, ASN, advertisement status, IRR/RPKI validation state, lock status, and description
 - **Expandable Rows** — Click any prefix to drill into its BGP sub-prefixes and service bindings in a tree view
 - **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, ASN, and tags
@@ -169,6 +169,12 @@ Tracks advertisement toggle actions (advertise/withdraw) with user email, action
 | `POST` | `/api/prefixes` | Create new BYOIP prefix |
 | `POST` | `/api/prefixes/validate-new` | Pre-submission IRR/ROA validation |
 | `POST` | `/api/loa-upload` | Upload LOA document (PDF) |
+| `GET` | `/api/rir/credentials` | List saved RIR credentials (masked) |
+| `POST` | `/api/rir/credentials` | Save/update RIR credentials (ARIN/RIPE) |
+| `DELETE` | `/api/rir/credentials/:id` | Delete RIR credentials |
+| `POST` | `/api/rir/create-route` | Create route/route6 at ARIN or RIPE |
+| `POST` | `/api/rir/update-autnum` | Update aut-num at ARIN or RIPE |
+| `GET` | `/api/rir/detect` | Auto-detect RIR for a prefix via RDAP |
 | `GET` | `/api/prefixes` | List BYOIP prefixes |
 | `GET` | `/api/prefixes/:id/bgp` | List BGP sub-prefixes |
 | `POST` | `/api/prefixes/:id/bgp` | Create BGP child prefix |

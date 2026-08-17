@@ -250,3 +250,24 @@ export interface RdapResult {
   allocated: string;
   range: string;
 }
+
+// --- RIR credential types ---
+
+export interface RirCredential {
+  id: number;
+  user_email: string;
+  account_id: string;
+  rir: 'arin' | 'ripe';
+  api_key: string;
+  maintainer: string;
+  created_at: string;
+  updated_at: string;
+}
+
+// --- RIR API response types ---
+
+export interface RirApiResult {
+  ok: boolean;
+  error?: string;
+  details?: string;
+}

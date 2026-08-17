@@ -20,6 +20,19 @@ CREATE TABLE IF NOT EXISTS activity_log (
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- RIR credentials for automated IRR record management (ARIN, RIPE)
+CREATE TABLE IF NOT EXISTS rir_credentials (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_email      TEXT NOT NULL,
+  account_id      TEXT NOT NULL,
+  rir             TEXT NOT NULL,
+  api_key         TEXT NOT NULL DEFAULT '',
+  maintainer      TEXT NOT NULL DEFAULT '',
+  created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(user_email, account_id, rir)
+);
+
 -- Local descriptions for prefix delegations (CF API has no description field)
 CREATE TABLE IF NOT EXISTS delegation_descriptions (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,

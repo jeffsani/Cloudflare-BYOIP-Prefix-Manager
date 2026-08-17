@@ -15,6 +15,7 @@ import type {
   IrrLookupResult,
   IrrExplorerPrefix,
   IrrExplorerResult,
+  RirApiResult,
 } from './types';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
@@ -727,4 +728,309 @@ export async function lookupRdap(prefix: string): Promise<RdapResult> {
     allocated,
     range,
   };
+}
+
+// ── RIR API functions (ARIN + RIPE) ─────────────────────────────
+
+const ARIN_IRR_API = 'https://reg.arin.net/rest/irr';
+const RIPE_DB_API = 'https://rest.db.ripe.net';
+
+/**
+ * Create a route or route6 object at ARIN's IRR.
+ * POST /rest/irr/route/IPADDRESS/PREFIXLENGTH/ORIGINAS
+ * Payload contains the descr field with the validation token.
+ */
+export async function createArinRouteObject(
+  prefix: string,
+  originAsn: number,
+  validationToken: string,
+  apiKey: string,
+): Promise<RirApiResult> {
+  try {
+    const [ip, mask] = prefix.split('/');
+    const isV6 = ip.includes(':');
+    const objectType = isV6 ? 'route6' : 'route';
+    const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
+
+    // RPSL payload with the validation token in descr
+    const rpslBody = [
+      `${objectType}: ${prefix}`,
+      `descr: cf-validation: ${validationToken}`,
+      `origin: AS${originAsn}`,
+      `source: ARIN`,
+    ].join('\n');
+
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+        'Content-Type': 'application/rpsl',
+      },
+      body: rpslBody,
+    });
+
+    if (r.ok) return { ok: true };
+
+    const text = await r.text();
+    return { ok: false, error: `ARIN returned ${r.status}`, details: text };
+  } catch (e: unknown) {
+    return { ok: false, error: `ARIN request failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Create a route or route6 object at RIPE DB.
+ * POST /ripe/route (or /ripe/route6)
+ * Uses JSON payload with the WhoisResource format.
+ */
+export async function createRipeRouteObject(
+  prefix: string,
+  originAsn: number,
+  validationToken: string,
+  apiKey: string,
+  maintainer: string,
+): Promise<RirApiResult> {
+  try {
+    const isV6 = prefix.includes(':');
+    const objectType = isV6 ? 'route6' : 'route';
+    const url = `${RIPE_DB_API}/ripe/${objectType}`;
+
+    const attributes = [
+      { name: objectType, value: prefix },
+      { name: 'descr', value: `cf-validation: ${validationToken}` },
+      { name: 'origin', value: `AS${originAsn}` },
+      { name: 'mnt-by', value: maintainer },
+      { name: 'source', value: 'RIPE' },
+    ];
+
+    const body = {
+      objects: {
+        object: [
+          {
+            type: objectType,
+            source: { id: 'ripe' },
+            attributes: { attribute: attributes },
+          },
+        ],
+      },
+    };
+
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (r.ok) return { ok: true };
+
+    const data = await r.json().catch(() => null);
+    const errMsg = extractRipeError(data);
+    return {
+      ok: false,
+      error: `RIPE returned ${r.status}`,
+      details: errMsg || (await r.text().catch(() => '')),
+    };
+  } catch (e: unknown) {
+    return { ok: false, error: `RIPE request failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Fetch an existing aut-num object from ARIN and add a descr line with the validation token.
+ * GET then PUT /rest/irr/aut-num/ASN
+ */
+export async function updateArinAutnum(
+  asn: number,
+  validationToken: string,
+  apiKey: string,
+): Promise<RirApiResult> {
+  try {
+    const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
+
+    // Step 1: GET existing aut-num
+    const getResp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+      },
+    });
+
+    if (!getResp.ok) {
+      if (getResp.status === 404) {
+        return { ok: false, error: 'aut-num object not found at ARIN. You may need to create it first via ARIN Online.' };
+      }
+      return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
+    }
+
+    const rpsl = await getResp.text();
+
+    // Step 2: Check if token already present
+    if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+      return { ok: true, details: 'Token already present in aut-num object.' };
+    }
+
+    // Step 3: Insert descr line after the aut-num: line
+    const tokenLine = `descr: cf-validation: ${validationToken}`;
+    let modified: string;
+    const autNumLineMatch = rpsl.match(/^aut-num:\s*AS\d+.*$/m);
+    if (autNumLineMatch) {
+      const idx = rpsl.indexOf(autNumLineMatch[0]) + autNumLineMatch[0].length;
+      modified = rpsl.slice(0, idx) + '\n' + tokenLine + rpsl.slice(idx);
+    } else {
+      modified = tokenLine + '\n' + rpsl;
+    }
+
+    // Step 4: PUT updated object
+    const putResp = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+        'Content-Type': 'application/rpsl',
+      },
+      body: modified,
+    });
+
+    if (putResp.ok) return { ok: true };
+
+    return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
+  } catch (e: unknown) {
+    return { ok: false, error: `ARIN aut-num update failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Fetch an existing aut-num object from RIPE and add a descr line with the validation token.
+ * GET then PUT /ripe/aut-num/ASN
+ */
+export async function updateRipeAutnum(
+  asn: number,
+  validationToken: string,
+  apiKey: string,
+  maintainer: string,
+): Promise<RirApiResult> {
+  try {
+    const url = `${RIPE_DB_API}/ripe/aut-num/AS${asn}`;
+
+    // Step 1: GET existing aut-num
+    const getResp = await fetch(`${url}.json`, {
+      method: 'GET',
+      headers: { Accept: 'application/json' },
+    });
+
+    if (!getResp.ok) {
+      if (getResp.status === 404) {
+        return { ok: false, error: 'aut-num object not found in RIPE DB.' };
+      }
+      return { ok: false, error: `RIPE GET aut-num returned ${getResp.status}`, details: await getResp.text() };
+    }
+
+    const data = (await getResp.json()) as {
+      objects?: {
+        object?: Array<{
+          type?: string;
+          source?: { id: string };
+          attributes?: { attribute: Array<{ name: string; value: string }> };
+        }>;
+      };
+    };
+
+    const obj = data?.objects?.object?.[0];
+    if (!obj?.attributes?.attribute) {
+      return { ok: false, error: 'Could not parse RIPE aut-num object.' };
+    }
+
+    // Step 2: Check if token already present
+    const existingDescrs = obj.attributes.attribute.filter(
+      (a) => a.name === 'descr' && a.value.includes(`cf-validation: ${validationToken}`),
+    );
+    if (existingDescrs.length > 0) {
+      return { ok: true, details: 'Token already present in aut-num object.' };
+    }
+
+    // Step 3: Add descr line after existing descr lines (or after aut-num line)
+    const attrs = [...obj.attributes.attribute];
+    let insertIdx = attrs.findIndex((a) => a.name === 'aut-num');
+    if (insertIdx === -1) insertIdx = 0;
+    // Find the last descr line after aut-num to insert after it
+    for (let i = insertIdx + 1; i < attrs.length; i++) {
+      if (attrs[i].name === 'descr') insertIdx = i;
+      else if (attrs[i].name !== 'descr') break;
+    }
+    attrs.splice(insertIdx + 1, 0, {
+      name: 'descr',
+      value: `cf-validation: ${validationToken}`,
+    });
+
+    // Step 4: PUT updated object
+    const putBody = {
+      objects: {
+        object: [
+          {
+            type: obj.type || 'aut-num',
+            source: obj.source || { id: 'ripe' },
+            attributes: { attribute: attrs },
+          },
+        ],
+      },
+    };
+
+    const putResp = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(putBody),
+    });
+
+    if (putResp.ok) return { ok: true };
+
+    const errData = await putResp.json().catch(() => null);
+    const errMsg = extractRipeError(errData);
+    return {
+      ok: false,
+      error: `RIPE PUT aut-num returned ${putResp.status}`,
+      details: errMsg || '',
+    };
+  } catch (e: unknown) {
+    return { ok: false, error: `RIPE aut-num update failed: ${(e as Error).message}` };
+  }
+}
+
+/** Extract human-readable error from RIPE REST API JSON error response. */
+function extractRipeError(data: unknown): string {
+  if (!data || typeof data !== 'object') return '';
+  const d = data as { errormessages?: { errormessage?: Array<{ text?: string; args?: Array<{ value?: string }> }> } };
+  if (!d.errormessages?.errormessage) return '';
+  return d.errormessages.errormessage
+    .map((em) => {
+      let msg = em.text || '';
+      if (em.args) {
+        em.args.forEach((arg, i) => {
+          msg = msg.replace(`%s`, arg.value || '');
+        });
+      }
+      return msg;
+    })
+    .filter(Boolean)
+    .join('; ');
+}
+
+/** Normalize RIR name from RDAP extractRir() output to lowercase 'arin' | 'ripe' | other. */
+export function normalizeRirName(rir: string): string {
+  const lower = rir.toLowerCase();
+  if (lower.includes('arin')) return 'arin';
+  if (lower.includes('ripe')) return 'ripe';
+  if (lower.includes('apnic')) return 'apnic';
+  if (lower.includes('afrinic')) return 'afrinic';
+  if (lower.includes('lacnic')) return 'lacnic';
+  return lower;
 }

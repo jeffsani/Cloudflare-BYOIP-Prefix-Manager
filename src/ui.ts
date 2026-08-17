@@ -261,6 +261,38 @@ export function renderDashboard(userEmail: string): string {
         <div id="test-token-result" class="flex items-center text-[10px]"></div>
       </div>
       <div id="accounts-list"></div>
+
+      <!-- RIR Credentials -->
+      <div class="mt-4 pt-4 border-t border-cf-border">
+        <div class="flex items-center gap-2 mb-2 cursor-pointer" onclick="toggleRirCredentials()">
+          <svg id="rir-cred-chevron" class="w-3 h-3 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>
+          <h3 class="text-xs font-semibold" style="color:var(--text-strong)">RIR Credentials (Optional)</h3>
+          <span class="text-[10px] text-cf-gray">— for automated IRR route object creation at ARIN / RIPE</span>
+        </div>
+        <div id="rir-cred-section" class="hidden">
+          <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+            <div>
+              <label class="block text-[10px] text-cf-gray mb-1">RIR</label>
+              <select id="rir-cred-rir" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+                <option value="arin">ARIN</option>
+                <option value="ripe">RIPE</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-cf-gray mb-1">API Key${infoTip('ARIN: Your IRR API key from ARIN Online (Settings &gt; Security Info &gt; Manage API Keys). RIPE: Base64-encoded API key from RIPE NCC Access.')}</label>
+              <input id="rir-cred-apikey" type="password" placeholder="API key" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            </div>
+            <div>
+              <label class="block text-[10px] text-cf-gray mb-1">Org / Maintainer${infoTip('ARIN: Your Org Handle (e.g. EXAMPLECORP). RIPE: Your mnt-by value (e.g. MNT-EXAMPLE).')}</label>
+              <input id="rir-cred-maintainer" type="text" placeholder="e.g. MNT-EXAMPLE" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            </div>
+            <div class="flex items-end">
+              <button onclick="saveRirCredential()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Save</button>
+            </div>
+          </div>
+          <div id="rir-cred-list"></div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -2691,6 +2723,70 @@ export function renderDashboard(userEmail: string): string {
       renderPrefixTable();
     }
 
+    // ─── RIR Credentials ──────────────────────────────────────────
+    function toggleRirCredentials() {
+      var sec = document.getElementById('rir-cred-section');
+      var chev = document.getElementById('rir-cred-chevron');
+      if (sec.classList.contains('hidden')) {
+        sec.classList.remove('hidden');
+        chev.style.transform = 'rotate(90deg)';
+        loadRirCredentials();
+      } else {
+        sec.classList.add('hidden');
+        chev.style.transform = '';
+      }
+    }
+
+    async function loadRirCredentials() {
+      if (!activeAccountId) return;
+      var r = await fetch('/api/rir/credentials?account_id=' + encodeURIComponent(activeAccountId));
+      var data = await r.json();
+      var list = document.getElementById('rir-cred-list');
+      if (!data.credentials || data.credentials.length === 0) {
+        list.innerHTML = '<p class="text-[10px] text-cf-gray">No RIR credentials saved for this account.</p>';
+        return;
+      }
+      var html = '<div class="space-y-1">';
+      data.credentials.forEach(function(c) {
+        html += '<div class="flex items-center gap-3 p-2 rounded-lg border border-cf-border text-xs">';
+        html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
+        html += '<span class="font-mono text-[10px] text-cf-gray">' + escHtml(c.api_key) + '</span>';
+        if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
+        html += '<span class="text-[10px] text-cf-gray ml-auto">' + escHtml(c.updated_at || '') + '</span>';
+        html += '<button onclick="deleteRirCredential(' + c.id + ')" class="text-red-400 hover:text-red-300 text-[10px]">Delete</button>';
+        html += '</div>';
+      });
+      html += '</div>';
+      list.innerHTML = html;
+    }
+
+    async function saveRirCredential() {
+      if (!activeAccountId) { alert('Select an account first.'); return; }
+      var rir = document.getElementById('rir-cred-rir').value;
+      var apiKey = document.getElementById('rir-cred-apikey').value.trim();
+      var maintainer = document.getElementById('rir-cred-maintainer').value.trim();
+      if (!apiKey) { alert('API key is required.'); return; }
+      var r = await fetch('/api/rir/credentials', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: activeAccountId, rir: rir, api_key: apiKey, maintainer: maintainer })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        document.getElementById('rir-cred-apikey').value = '';
+        document.getElementById('rir-cred-maintainer').value = '';
+        loadRirCredentials();
+      } else {
+        alert(data.error || 'Failed to save credentials');
+      }
+    }
+
+    async function deleteRirCredential(id) {
+      if (!confirm('Delete this RIR credential?')) return;
+      await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
+      loadRirCredentials();
+    }
+
     // ─── Add Prefix Modal ──────────────────────────────────────────
     var addPrefixLoaDocumentId = null;
     var addPrefixValidationResult = null;
@@ -3172,60 +3268,281 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Post-Creation Guide ─────────────────────────────────────
+    var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false };
+
     function showPostCreationGuide(cidr, asn, token) {
+      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
       var isCustomAsn = asn !== 13335;
+      var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
+
       var html = '';
-
       html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
-
-      html += '<div class="mb-3 p-3 rounded-lg border border-cf-border font-mono text-[11px]" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
-
+      html += '<div class="mb-2"><span class="text-[10px] font-semibold" style="color:var(--text-strong)">Validation Token:</span></div>';
+      html += '<div class="mb-3 p-2 rounded-lg border border-cf-border font-mono text-[11px]" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
+      html += '<div id="pcg-rir-detect" class="mb-3 text-[10px] text-cf-gray"><span class="animate-pulse">Detecting RIR...</span></div>';
       html += '<div class="font-semibold mb-2" style="color:var(--text-strong)">Next Steps: Complete Ownership Validation</div>';
 
       if (isCustomAsn) {
-        // BYO-ASN flow — need both route object AND aut-num object
-        html += '<div class="space-y-2">';
-        html += '<div><span class="font-semibold" style="color:var(--text-strong)">1.</span> Add the validation token to the <strong>route/route6 object</strong> for this prefix at your RIR:</div>';
-        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px]" style="background:var(--input-bg)">';
-        html += (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ': ' + escHtml(cidr) + '<br>';
+        // Step 1: Route object
+        html += '<div class="space-y-3">';
+        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Create ' + routeType + ' object</div>';
+        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
+        html += routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
         html += 'descr: cf-validation: ' + escHtml(token);
         html += '</div>';
+        html += '<div id="pcg-route-actions"></div>';
+        html += '<div id="pcg-route-status" class="mt-1"></div>';
+        html += '</div>';
 
-        html += '<div><span class="font-semibold" style="color:var(--text-strong)">2.</span> Add the same token to your <strong>aut-num object</strong> at the authoritative RIR:</div>';
-        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px]" style="background:var(--input-bg)">';
+        // Step 2: aut-num object
+        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Update aut-num object</div>';
+        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += 'aut-num: AS' + asn + '<br>';
         html += 'descr: cf-validation: ' + escHtml(token);
         html += '</div>';
+        html += '<div id="pcg-autnum-actions"></div>';
+        html += '<div id="pcg-autnum-status" class="mt-1"></div>';
+        html += '</div>';
 
-        html += '<div><span class="font-semibold" style="color:var(--text-strong)">3.</span> Wait for RIR changes to propagate, then click the <strong>re-validate</strong> button on the prefix.</div>';
+        // Step 3: Re-validate
+        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 3: Validate</div>';
+        html += '<div class="text-[10px]">Wait for RIR changes to propagate, then click the <strong>re-validate</strong> button on the prefix in the table.</div>';
+        html += '</div>';
 
-        html += '<div class="mt-2 p-2 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
-        html += '<div class="text-yellow-400 font-semibold mb-1">BYO-ASN requires all four validation states to pass:</div>';
+        // Validation states info
+        html += '<div class="p-2 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
+        html += '<div class="text-yellow-400 font-semibold mb-1 text-[11px]">BYO-ASN requires all four validation states:</div>';
         html += '<div class="text-[10px] space-y-0.5">';
-        html += '<div>&bull; <strong>irr_validation_state</strong> &mdash; exact route/route6 object with correct origin ASN</div>';
+        html += '<div>&bull; <strong>irr_validation_state</strong> &mdash; exact route/route6 with correct origin</div>';
         html += '<div>&bull; <strong>rpki_validation_state</strong> &mdash; valid ROA authorizing your ASN</div>';
-        html += '<div>&bull; <strong>ownership_validation_state</strong> &mdash; cf-validation token in route/route6 object</div>';
-        html += '<div>&bull; <strong>asn_ownership_validation_state</strong> &mdash; cf-validation token in aut-num object</div>';
+        html += '<div>&bull; <strong>ownership_validation_state</strong> &mdash; token in route/route6 object</div>';
+        html += '<div>&bull; <strong>asn_ownership_validation_state</strong> &mdash; token in aut-num object</div>';
         html += '</div></div>';
 
-        html += '<div class="mt-1 text-[10px]" style="color:var(--muted)">ASN ownership normally needs to be proven only once per account. Each additional prefix still requires its own prefix and RPKI validation.</div>';
+        html += '<div class="text-[10px]" style="color:var(--muted)">ASN ownership is proven once per account. Each additional prefix needs its own prefix and RPKI validation.</div>';
         html += '</div>';
       } else {
-        // Cloudflare ASN flow — simpler
-        html += '<div class="space-y-2">';
-        html += '<div><span class="font-semibold" style="color:var(--text-strong)">1.</span> Publish the validation token in <strong>one</strong> of these ways:</div>';
-        html += '<div class="pl-3 space-y-1">';
-        html += '<div>&bull; Add <span class="font-mono text-[10px]">cf-validation: ' + escHtml(token) + '</span> to the <strong>description</strong> or <strong>remarks</strong> field of the IRR route object for this prefix</div>';
-        html += '<div>&bull; Or create a DNS TXT record for the prefix with the token value</div>';
+        // Cloudflare ASN flow
+        html += '<div class="space-y-3">';
+        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Create ' + routeType + ' object with validation token</div>';
+        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
+        html += routeType + ': ' + escHtml(cidr) + '<br>';
+        html += 'origin: AS' + asn + '<br>';
+        html += 'descr: cf-validation: ' + escHtml(token);
         html += '</div>';
-        html += '<div><span class="font-semibold" style="color:var(--text-strong)">2.</span> Wait for changes to propagate, then click the <strong>re-validate</strong> button on the prefix.</div>';
+        html += '<div id="pcg-route-actions"></div>';
+        html += '<div id="pcg-route-status" class="mt-1"></div>';
+        html += '</div>';
+
+        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Validate</div>';
+        html += '<div class="text-[10px]">Wait for changes to propagate, then click the <strong>re-validate</strong> button on the prefix in the table.</div>';
         html += '<div class="mt-1 text-[10px]" style="color:var(--muted)">Cloudflare manages IRR and ROA records for ASN 13335. You only need to prove ownership.</div>';
+        html += '</div>';
         html += '</div>';
       }
 
       document.getElementById('post-creation-guide-body').innerHTML = html;
       document.getElementById('post-creation-guide-modal').classList.remove('hidden');
+
+      // Auto-detect RIR
+      detectRirAndRenderActions(cidr, asn, token);
+    }
+
+    async function detectRirAndRenderActions(cidr, asn, token) {
+      var detectEl = document.getElementById('pcg-rir-detect');
+      try {
+        var r = await fetch('/api/rir/detect?prefix=' + encodeURIComponent(cidr));
+        var data = await r.json();
+        postCreationState.rir = data.rir || '';
+        postCreationState.rirSupported = data.supported || false;
+
+        if (data.rir && data.supported) {
+          detectEl.innerHTML = '<span class="badge-valid">' + escHtml(data.rir_name || data.rir.toUpperCase()) + '</span> detected &mdash; automated creation available';
+        } else if (data.rir) {
+          detectEl.innerHTML = '<span class="badge-warning">' + escHtml(data.rir_name || data.rir.toUpperCase()) + '</span> detected &mdash; automated creation not available for this RIR';
+        } else {
+          detectEl.innerHTML = '<span class="text-cf-gray">Could not detect RIR</span>';
+        }
+      } catch (e) {
+        detectEl.innerHTML = '<span class="text-cf-gray">RIR detection failed</span>';
+      }
+
+      renderRirActionButtons(cidr, asn, token);
+    }
+
+    function renderRirActionButtons(cidr, asn, token) {
+      var rir = postCreationState.rir;
+      var supported = postCreationState.rirSupported;
+
+      // Route object actions
+      var routeEl = document.getElementById('pcg-route-actions');
+      if (routeEl) {
+        var html = '';
+        if (supported) {
+          html += '<button onclick="pcgCreateRoute()" id="pcg-route-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
+          html += 'Create ' + (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ' at ' + rir.toUpperCase();
+          html += '</button>';
+        }
+        // Inline credential fallback
+        html += '<div class="mt-2">';
+        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different credentials' : 'Enter RIR credentials to create automatically') + '</summary>';
+        html += '<div class="mt-1 flex gap-2 items-end flex-wrap">';
+        html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="pcg-route-rir" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white">';
+        html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
+        html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
+        html += '</select></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-route-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Mnt / Org</label><input id="pcg-route-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="MNT-EXAMPLE"></div>';
+        html += '<button onclick="pcgCreateRouteInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Create</button>';
+        html += '</div></details></div>';
+        routeEl.innerHTML = html;
+      }
+
+      // aut-num actions (BYO-ASN only)
+      var autnumEl = document.getElementById('pcg-autnum-actions');
+      if (autnumEl) {
+        var html = '';
+        if (supported) {
+          html += '<button onclick="pcgUpdateAutnum()" id="pcg-autnum-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
+          html += 'Update aut-num at ' + rir.toUpperCase();
+          html += '</button>';
+        }
+        html += '<div class="mt-2">';
+        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different credentials' : 'Enter RIR credentials to update automatically') + '</summary>';
+        html += '<div class="mt-1 flex gap-2 items-end flex-wrap">';
+        html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="pcg-autnum-rir" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white">';
+        html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
+        html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
+        html += '</select></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-autnum-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Mnt / Org</label><input id="pcg-autnum-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="MNT-EXAMPLE"></div>';
+        html += '<button onclick="pcgUpdateAutnumInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Update</button>';
+        html += '</div></details></div>';
+        autnumEl.innerHTML = html;
+      }
+    }
+
+    // Create route object using saved credentials
+    async function pcgCreateRoute() {
+      var btn = document.getElementById('pcg-route-btn');
+      var statusEl = document.getElementById('pcg-route-status');
+      if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+      statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Sending to ' + postCreationState.rir.toUpperCase() + '...</span>';
+
+      var r = await fetch('/api/rir/create-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccountId,
+          prefix: postCreationState.cidr,
+          origin_asn: postCreationState.asn,
+          validation_token: postCreationState.token,
+          rir: postCreationState.rir
+        })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        statusEl.innerHTML = '<span class="badge-valid">Route object created</span>';
+        if (btn) { btn.textContent = 'Done'; btn.className = btn.className.replace('bg-cf-orange', 'bg-green-600').replace('hover:bg-orange-600', ''); }
+      } else {
+        statusEl.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Failed') + '</span>' + (data.details ? '<div class="text-[10px] text-cf-gray mt-1">' + escHtml(data.details) + '</div>' : '');
+        if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+      }
+    }
+
+    // Create route object using inline credentials
+    async function pcgCreateRouteInline() {
+      var rir = document.getElementById('pcg-route-rir').value;
+      var apiKey = document.getElementById('pcg-route-apikey').value.trim();
+      var mnt = document.getElementById('pcg-route-mnt').value.trim();
+      if (!apiKey) { alert('API key is required.'); return; }
+      if (rir === 'ripe' && !mnt) { alert('RIPE requires a maintainer (mnt-by).'); return; }
+
+      var statusEl = document.getElementById('pcg-route-status');
+      statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Creating at ' + rir.toUpperCase() + '...</span>';
+
+      var r = await fetch('/api/rir/create-route', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccountId,
+          prefix: postCreationState.cidr,
+          origin_asn: postCreationState.asn,
+          validation_token: postCreationState.token,
+          rir: rir,
+          api_key: apiKey,
+          maintainer: mnt
+        })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        statusEl.innerHTML = '<span class="badge-valid">Route object created at ' + rir.toUpperCase() + '</span>';
+      } else {
+        statusEl.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Failed') + '</span>' + (data.details ? '<div class="text-[10px] text-cf-gray mt-1">' + escHtml(data.details) + '</div>' : '');
+      }
+    }
+
+    // Update aut-num using saved credentials
+    async function pcgUpdateAutnum() {
+      var btn = document.getElementById('pcg-autnum-btn');
+      var statusEl = document.getElementById('pcg-autnum-status');
+      if (btn) { btn.disabled = true; btn.textContent = 'Updating...'; }
+      statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Updating aut-num at ' + postCreationState.rir.toUpperCase() + '...</span>';
+
+      var r = await fetch('/api/rir/update-autnum', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccountId,
+          asn: postCreationState.asn,
+          validation_token: postCreationState.token,
+          rir: postCreationState.rir
+        })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        statusEl.innerHTML = '<span class="badge-valid">aut-num updated</span>' + (data.details ? '<span class="text-[10px] text-cf-gray ml-1">' + escHtml(data.details) + '</span>' : '');
+        if (btn) { btn.textContent = 'Done'; btn.className = btn.className.replace('bg-cf-orange', 'bg-green-600').replace('hover:bg-orange-600', ''); }
+      } else {
+        statusEl.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Failed') + '</span>' + (data.details ? '<div class="text-[10px] text-cf-gray mt-1">' + escHtml(data.details) + '</div>' : '');
+        if (btn) { btn.disabled = false; btn.textContent = 'Retry'; }
+      }
+    }
+
+    // Update aut-num using inline credentials
+    async function pcgUpdateAutnumInline() {
+      var rir = document.getElementById('pcg-autnum-rir').value;
+      var apiKey = document.getElementById('pcg-autnum-apikey').value.trim();
+      var mnt = document.getElementById('pcg-autnum-mnt').value.trim();
+      if (!apiKey) { alert('API key is required.'); return; }
+
+      var statusEl = document.getElementById('pcg-autnum-status');
+      statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Updating aut-num at ' + rir.toUpperCase() + '...</span>';
+
+      var r = await fetch('/api/rir/update-autnum', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          account_id: activeAccountId,
+          asn: postCreationState.asn,
+          validation_token: postCreationState.token,
+          rir: rir,
+          api_key: apiKey,
+          maintainer: mnt
+        })
+      });
+      var data = await r.json();
+      if (data.ok) {
+        statusEl.innerHTML = '<span class="badge-valid">aut-num updated at ' + rir.toUpperCase() + '</span>' + (data.details ? '<span class="text-[10px] text-cf-gray ml-1">' + escHtml(data.details) + '</span>' : '');
+      } else {
+        statusEl.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Failed') + '</span>' + (data.details ? '<div class="text-[10px] text-cf-gray mt-1">' + escHtml(data.details) + '</div>' : '');
+      }
     }
 
     function closePostCreationGuide() {
