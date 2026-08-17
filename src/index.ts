@@ -411,6 +411,14 @@ app.post('/api/prefixes/validate-new', async (c) => {
       irrExplorer.error = 'IRR Explorer lookup failed';
     }
 
+    // Fetch saved RIR credential types for this account
+    const rirCredResult = await c.env.DB.prepare(
+      'SELECT rir FROM rir_credentials WHERE user_email = ? AND account_id = ?',
+    )
+      .bind(email, acct.account_id)
+      .all();
+    const rirCredentials = (rirCredResult.results || []).map((r: Record<string, unknown>) => r.rir as string);
+
     // Build summary
     const warnings: string[] = [];
     const errors: string[] = [];
@@ -437,8 +445,9 @@ app.post('/api/prefixes/validate-new', async (c) => {
         errors.push(`IRR record found but origin ASN does not match ${body.asn}. Update your IRR route object to reference AS${body.asn}.`);
       }
 
-      // Remind about aut-num requirement
-      warnings.push('BYO-ASN: After creating the prefix, you will need to publish the validation token in both the route/route6 object AND your aut-num object at the authoritative RIR.');
+      if (rirCredentials.length === 0) {
+        warnings.push('BYO-ASN: Add RIR credentials in Account Settings to enable automatic IRR route object and aut-num creation after prefix onboarding.');
+      }
     }
 
     const ready = errors.length === 0;
@@ -448,6 +457,7 @@ app.post('/api/prefixes/validate-new', async (c) => {
         roa,
         irr,
         irr_explorer: irrExplorer,
+        rir_credentials: rirCredentials,
         summary: { ready, warnings, errors },
       },
     });

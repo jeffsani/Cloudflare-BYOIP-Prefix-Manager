@@ -3167,41 +3167,59 @@ export function renderDashboard(userEmail: string): string {
       }
       html += '</div>';
 
-      // IRR Explorer section
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
-      html += '<div class="flex items-center gap-2 mb-1">';
-      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Explorer</span>';
-      if (result.irr_explorer.error) {
-        html += '<span class="badge-unknown">Unavailable</span>';
-      } else if (result.irr_explorer.found && result.irr_explorer.matching_asn) {
-        html += '<span class="badge-valid">Valid</span>';
-      } else if (result.irr_explorer.found && !result.irr_explorer.matching_asn) {
-        html += '<span class="badge-invalid">ASN mismatch</span>';
-      } else {
-        html += '<span class="badge-unknown">Not found</span>';
-      }
-      html += '</div>';
-      if (result.irr_explorer.error) {
-        html += '<div style="color:var(--muted)">' + escHtml(result.irr_explorer.error) + '</div>';
-      } else if (result.irr_explorer.prefixes.length > 0) {
-        for (var i = 0; i < result.irr_explorer.prefixes.length; i++) {
-          var p = result.irr_explorer.prefixes[i];
-          html += '<div style="color:var(--text-primary)">' + escHtml(p.prefix);
-          if (p.irr_origins.length > 0) html += ' &mdash; IRR origins: AS' + p.irr_origins.join(', AS');
-          if (p.irr_sources.length > 0) html += ' (' + p.irr_sources.filter(function(v,i,a){return a.indexOf(v)===i}).join(', ') + ')';
-          html += '</div>';
+      // IRR Explorer section — only show if primary IRR check didn't find records
+      if (!result.irr.found) {
+        html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+        html += '<div class="flex items-center gap-2 mb-1">';
+        html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Explorer</span>';
+        if (result.irr_explorer.error) {
+          html += '<span class="badge-unknown">Unavailable</span>';
+        } else if (result.irr_explorer.found && result.irr_explorer.matching_asn) {
+          html += '<span class="badge-valid">Valid</span>';
+        } else if (result.irr_explorer.found && !result.irr_explorer.matching_asn) {
+          html += '<span class="badge-invalid">ASN mismatch</span>';
+        } else {
+          html += '<span class="badge-unknown">Not found</span>';
         }
-      } else {
-        html += '<div style="color:var(--muted)">No records found in IRR Explorer</div>';
+        html += '</div>';
+        if (result.irr_explorer.error) {
+          html += '<div style="color:var(--muted)">' + escHtml(result.irr_explorer.error) + '</div>';
+        } else if (result.irr_explorer.prefixes.length > 0) {
+          for (var i = 0; i < result.irr_explorer.prefixes.length; i++) {
+            var p = result.irr_explorer.prefixes[i];
+            html += '<div style="color:var(--text-primary)">' + escHtml(p.prefix);
+            if (p.irr_origins.length > 0) html += ' &mdash; IRR origins: AS' + p.irr_origins.join(', AS');
+            if (p.irr_sources.length > 0) html += ' (' + p.irr_sources.filter(function(v,i,a){return a.indexOf(v)===i}).join(', ') + ')';
+            html += '</div>';
+          }
+        } else {
+          html += '<div style="color:var(--muted)">No records found in IRR Explorer</div>';
+        }
+        html += '</div>';
       }
-      html += '</div>';
 
       // Summary messages
-      if (summary.warnings.length > 0 || summary.errors.length > 0) {
+      var hasRirCreds = result.rir_credentials && result.rir_credentials.length > 0;
+      var isCustomAsn = asn !== 13335;
+      if (summary.errors.length > 0) {
         html += '<div style="padding:6px 0">';
         for (var i = 0; i < summary.errors.length; i++) {
           html += '<div style="color:#ef4444;margin-bottom:4px">&#10007; ' + escHtml(summary.errors[i]) + '</div>';
         }
+        html += '</div>';
+      }
+
+      // BYO-ASN credential-aware messaging
+      if (isCustomAsn && summary.ready) {
+        html += '<div style="padding:6px 0">';
+        if (hasRirCreds) {
+          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved credentials.</div>';
+        } else {
+          html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR credentials in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
+        }
+        html += '</div>';
+      } else if (summary.warnings.length > 0) {
+        html += '<div style="padding:6px 0">';
         for (var i = 0; i < summary.warnings.length; i++) {
           html += '<div style="color:#eab308;margin-bottom:4px">&#9888; ' + escHtml(summary.warnings[i]) + '</div>';
         }
@@ -3268,9 +3286,18 @@ export function renderDashboard(userEmail: string): string {
           loadPrefixes();
           refreshActivityLog();
 
-          // Show post-creation info about ownership validation
-          if (data.prefix && data.prefix.ownership_validation_token) {
-            showPostCreationGuide(cidr, asn, data.prefix.ownership_validation_token);
+          // Determine if we should auto-create RIR records
+          var token = data.prefix ? data.prefix.ownership_validation_token : null;
+          var prefixId = data.prefix ? data.prefix.id : null;
+          var hasRirCreds = addPrefixValidationResult && addPrefixValidationResult.rir_credentials && addPrefixValidationResult.rir_credentials.length > 0;
+          var isByoAsn = asn !== 13335;
+
+          if (token && isByoAsn && hasRirCreds) {
+            // Auto-create flow: detect RIR, create route, update aut-num, trigger validation
+            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId);
+          } else if (token) {
+            // Manual flow: show token and instructions
+            showPostCreationGuide(cidr, asn, token);
           }
         } else {
           var errEl = document.getElementById('add-prefix-error');
@@ -3289,6 +3316,153 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Post-Creation Guide ─────────────────────────────────────
     var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false };
+
+    // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
+    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId) {
+      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
+      var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
+
+      var html = '';
+      html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
+      html += '<div class="mb-3 text-[10px]" style="color:var(--muted)">Automating BYO-ASN onboarding steps...</div>';
+
+      // Step indicators
+      html += '<div class="space-y-2">';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" id="auto-step-detect"><div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Detecting RIR...</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Create ' + routeType + ' object</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-autnum"><span class="text-xs">Update aut-num object</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
+      html += '</div>';
+
+      // Fallback area for manual instructions if something fails
+      html += '<div id="auto-fallback" class="hidden mt-3"></div>';
+
+      document.getElementById('post-creation-guide-body').innerHTML = html;
+      document.getElementById('post-creation-guide-modal').classList.remove('hidden');
+
+      // Run the automated steps
+      var anyFailed = false;
+      var detectedRir = '';
+
+      // Step 1: Detect RIR
+      try {
+        var r = await fetch('/api/rir/detect?prefix=' + encodeURIComponent(cidr));
+        var d = await r.json();
+        detectedRir = d.rir || '';
+        postCreationState.rir = detectedRir;
+        postCreationState.rirSupported = d.supported || false;
+
+        if (d.supported) {
+          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">RIR detected: <strong>' + escHtml(d.rir_name || detectedRir.toUpperCase()) + '</strong></span>';
+        } else {
+          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detected (' + escHtml(d.rir_name || 'unknown') + ') but automated creation not supported</span>';
+          anyFailed = true;
+        }
+      } catch (e) {
+        document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detection failed</span>';
+        anyFailed = true;
+      }
+
+      // Step 2: Create route object
+      if (!anyFailed) {
+        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Creating ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
+        try {
+          var r = await fetch('/api/rir/create-route', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccountId,
+              prefix: cidr,
+              origin_asn: asn,
+              validation_token: token,
+              rir: detectedRir
+            })
+          });
+          var d = await r.json();
+          if (d.ok) {
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Created ' + routeType + ' at ' + detectedRir.toUpperCase() + '</span>';
+          } else {
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' creation failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
+            anyFailed = true;
+          }
+        } catch (e) {
+          document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' creation failed</span>';
+          anyFailed = true;
+        }
+      }
+
+      // Step 3: Update aut-num
+      if (!anyFailed) {
+        document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Updating aut-num at ' + detectedRir.toUpperCase() + '...</span>';
+        try {
+          var r = await fetch('/api/rir/update-autnum', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              account_id: activeAccountId,
+              asn: asn,
+              validation_token: token,
+              rir: detectedRir
+            })
+          });
+          var d = await r.json();
+          if (d.ok) {
+            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Updated aut-num (AS' + asn + ') at ' + detectedRir.toUpperCase() + '</span>';
+          } else {
+            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">aut-num update failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
+            anyFailed = true;
+          }
+        } catch (e) {
+          document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">aut-num update failed</span>';
+          anyFailed = true;
+        }
+      }
+
+      // Step 4: Trigger Cloudflare validation
+      if (!anyFailed && prefixId) {
+        document.getElementById('auto-step-validate').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Requesting Cloudflare validation...</span>';
+        try {
+          var r = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: activeAccountId })
+          });
+          var d = await r.json();
+          if (d.ok) {
+            document.getElementById('auto-step-validate').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Validation requested &mdash; may take up to 10 minutes to complete</span>';
+          } else {
+            document.getElementById('auto-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Validation request returned: ' + escHtml(d.error || 'pending') + '. You can re-validate from the prefix table.</span>';
+          }
+        } catch (e) {
+          document.getElementById('auto-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Could not trigger validation. Re-validate from the prefix table once RIR changes propagate.</span>';
+        }
+      }
+
+      // Show fallback instructions if any step failed
+      if (anyFailed) {
+        var fb = document.getElementById('auto-fallback');
+        var fbHtml = '<div class="p-3 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
+        fbHtml += '<div class="text-yellow-400 font-semibold mb-1 text-[11px]">Some steps failed. Complete them manually:</div>';
+        fbHtml += '<div class="text-[10px] space-y-1" style="color:var(--text-primary)">';
+        fbHtml += '<div class="font-semibold">Validation Token:</div>';
+        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
+        fbHtml += '<div class="mt-2">Add to your <strong>' + routeType + '</strong> object:</div>';
+        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+        fbHtml += routeType + ': ' + escHtml(cidr) + '<br>origin: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token);
+        fbHtml += '</div>';
+        fbHtml += '<div class="mt-2">Add to your <strong>aut-num</strong> object:</div>';
+        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+        fbHtml += 'aut-num: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token);
+        fbHtml += '</div>';
+        fbHtml += '<div class="mt-2">Then click <strong>re-validate</strong> on the prefix in the table.</div>';
+        fbHtml += '</div></div>';
+        fb.innerHTML = fbHtml;
+        fb.classList.remove('hidden');
+      }
+
+      // Refresh prefix list to pick up any validation state changes
+      loadPrefixes();
+    }
 
     function showPostCreationGuide(cidr, asn, token) {
       postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
