@@ -3286,8 +3286,9 @@ export function renderDashboard(userEmail: string): string {
           var isByoAsn = asn !== 13335;
 
           if (token && isByoAsn && hasRirCreds) {
-            // Auto-create flow: detect RIR, create route, update aut-num, trigger validation
-            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId);
+            // Auto-create flow: detect RIR, create route (if needed), update aut-num, trigger validation
+            var irrAlreadyExists = addPrefixValidationResult && addPrefixValidationResult.irr && addPrefixValidationResult.irr.found && addPrefixValidationResult.irr.matching_asn;
+            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists);
           } else if (token) {
             // Manual flow: show token and instructions
             showPostCreationGuide(cidr, asn, token);
@@ -3311,7 +3312,7 @@ export function renderDashboard(userEmail: string): string {
     var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false };
 
     // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
-    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId) {
+    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists) {
       postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
 
@@ -3322,7 +3323,11 @@ export function renderDashboard(userEmail: string): string {
       // Step indicators
       html += '<div class="space-y-2">';
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" id="auto-step-detect"><div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Detecting RIR...</span></div>';
-      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Create ' + routeType + ' object</span></div>';
+      if (irrAlreadyExists) {
+        html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" id="auto-step-route"><span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + routeType + ' object already exists &mdash; adding validation token</span></div>';
+      } else {
+        html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Create ' + routeType + ' object</span></div>';
+      }
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-autnum"><span class="text-xs">Update aut-num object</span></div>';
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
       html += '</div>';
@@ -3356,11 +3361,13 @@ export function renderDashboard(userEmail: string): string {
         anyFailed = true;
       }
 
-      // Step 2: Create route object
+      // Step 2: Create or update route object with validation token
       if (!anyFailed) {
-        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Creating ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
+        var routeAction = irrAlreadyExists ? 'update' : 'create';
+        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">' + (irrAlreadyExists ? 'Updating' : 'Creating') + ' ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
         try {
-          var r = await fetch('/api/rir/create-route', {
+          var routeEndpoint = irrAlreadyExists ? '/api/rir/update-route' : '/api/rir/create-route';
+          var r = await fetch(routeEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3373,13 +3380,13 @@ export function renderDashboard(userEmail: string): string {
           });
           var d = await r.json();
           if (d.ok) {
-            document.getElementById('auto-step-route').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Created ' + routeType + ' at ' + detectedRir.toUpperCase() + '</span>';
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + (irrAlreadyExists ? 'Updated' : 'Created') + ' ' + routeType + ' at ' + detectedRir.toUpperCase() + ' with validation token</span>';
           } else {
-            document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' creation failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' ' + routeAction + ' failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
             anyFailed = true;
           }
         } catch (e) {
-          document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' creation failed</span>';
+          document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' ' + routeAction + ' failed</span>';
           anyFailed = true;
         }
       }

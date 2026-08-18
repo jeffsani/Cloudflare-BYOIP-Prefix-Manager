@@ -784,6 +784,7 @@ export async function createArinRouteObject(
   originAsn: number,
   validationToken: string,
   apiKey: string,
+  maintainer: string,
 ): Promise<RirApiResult> {
   try {
     const [ip, mask] = prefix.split('/');
@@ -791,11 +792,18 @@ export async function createArinRouteObject(
     const objectType = isV6 ? 'route6' : 'route';
     const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
 
-    // RPSL payload with the validation token in descr
+    // First, try to look up admin-c and tech-c from existing org POCs via RDAP
+    // For now, use the maintainer (Org ID) to derive POC handles
+    const orgId = maintainer.replace(/^MNT-/i, '');
+
+    // RPSL payload with all required ARIN fields
     const rpslBody = [
       `${objectType}: ${prefix}`,
       `descr: cf-validation: ${validationToken}`,
       `origin: AS${originAsn}`,
+      `admin-c: ${orgId}`,
+      `tech-c: ${orgId}`,
+      `mnt-by: MNT-${orgId}`,
       `source: ARIN`,
     ].join('\n');
 
@@ -815,6 +823,75 @@ export async function createArinRouteObject(
     return { ok: false, error: `ARIN returned ${r.status}`, details: text };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN request failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Update an existing route/route6 object at ARIN IRR to add the validation token.
+ * GET the existing object, add the cf-validation descr line, PUT it back.
+ */
+export async function updateArinRouteObject(
+  prefix: string,
+  originAsn: number,
+  validationToken: string,
+  apiKey: string,
+): Promise<RirApiResult> {
+  try {
+    const [ip, mask] = prefix.split('/');
+    const isV6 = ip.includes(':');
+    const objectType = isV6 ? 'route6' : 'route';
+    const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
+
+    // Step 1: GET existing route object
+    const getResp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+      },
+    });
+
+    if (!getResp.ok) {
+      if (getResp.status === 404) {
+        return { ok: false, error: `${objectType} object not found at ARIN. It may need to be created first.` };
+      }
+      return { ok: false, error: `ARIN GET ${objectType} returned ${getResp.status}`, details: await getResp.text() };
+    }
+
+    const rpsl = await getResp.text();
+
+    // Step 2: Check if token already present
+    if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+      return { ok: true, details: 'Validation token already present in route object.' };
+    }
+
+    // Step 3: Remove any old cf-validation lines and insert the new one after the first descr line
+    let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
+    const tokenLine = `descr: cf-validation: ${validationToken}`;
+    const objectLineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
+    if (objectLineMatch) {
+      const idx = modified.indexOf(objectLineMatch[0]) + objectLineMatch[0].length;
+      modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
+    } else {
+      modified = tokenLine + '\n' + modified;
+    }
+
+    // Step 4: PUT updated object
+    const putResp = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+        'Content-Type': 'application/rpsl',
+      },
+      body: modified,
+    });
+
+    if (putResp.ok) return { ok: true };
+
+    return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: await putResp.text() };
+  } catch (e: unknown) {
+    return { ok: false, error: `ARIN route update failed: ${(e as Error).message}` };
   }
 }
 
@@ -876,6 +953,94 @@ export async function createRipeRouteObject(
     };
   } catch (e: unknown) {
     return { ok: false, error: `RIPE request failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Update an existing route/route6 object at RIPE DB to add the validation token.
+ * GET then PUT the WhoisResource JSON.
+ */
+export async function updateRipeRouteObject(
+  prefix: string,
+  originAsn: number,
+  validationToken: string,
+  apiKey: string,
+  maintainer: string,
+): Promise<RirApiResult> {
+  try {
+    const isV6 = prefix.includes(':');
+    const objectType = isV6 ? 'route6' : 'route';
+    const url = `${RIPE_DB_API}/ripe/${objectType}/${encodeURIComponent(prefix)}AS${originAsn}`;
+
+    // Step 1: GET existing object
+    const getResp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+    });
+
+    if (!getResp.ok) {
+      if (getResp.status === 404) {
+        return { ok: false, error: `${objectType} object not found at RIPE.` };
+      }
+      return { ok: false, error: `RIPE GET ${objectType} returned ${getResp.status}` };
+    }
+
+    const data = await getResp.json() as { objects?: { object?: Array<{ attributes?: { attribute?: Array<{ name: string; value: string }> } }> } };
+    const obj = data?.objects?.object?.[0];
+    if (!obj?.attributes?.attribute) {
+      return { ok: false, error: 'Could not parse existing RIPE route object' };
+    }
+
+    // Step 2: Check if token already present
+    const existing = obj.attributes.attribute;
+    const hasToken = existing.some((a: { name: string; value: string }) => a.name === 'descr' && a.value.includes(`cf-validation: ${validationToken}`));
+    if (hasToken) {
+      return { ok: true, details: 'Validation token already present.' };
+    }
+
+    // Step 3: Remove old cf-validation descr lines and add the new one
+    const filtered = existing.filter((a: { name: string; value: string }) => !(a.name === 'descr' && a.value.includes('cf-validation:')));
+    // Insert after the first descr or after the object type line
+    const insertIdx = filtered.findIndex((a: { name: string; value: string }) => a.name === 'descr');
+    const tokenAttr = { name: 'descr', value: `cf-validation: ${validationToken}` };
+    if (insertIdx >= 0) {
+      filtered.splice(insertIdx + 1, 0, tokenAttr);
+    } else {
+      filtered.splice(1, 0, tokenAttr);
+    }
+
+    // Step 4: PUT updated object
+    const putBody = {
+      objects: {
+        object: [
+          {
+            type: objectType,
+            source: { id: 'ripe' },
+            attributes: { attribute: filtered },
+          },
+        ],
+      },
+    };
+
+    const putResp = await fetch(url, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(putBody),
+    });
+
+    if (putResp.ok) return { ok: true };
+
+    const errData = await putResp.json().catch(() => null);
+    const errMsg = extractRipeError(errData);
+    return { ok: false, error: `RIPE PUT ${objectType} returned ${putResp.status}`, details: errMsg || '' };
+  } catch (e: unknown) {
+    return { ok: false, error: `RIPE route update failed: ${(e as Error).message}` };
   }
 }
 
