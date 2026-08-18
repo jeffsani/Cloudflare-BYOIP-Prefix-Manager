@@ -3172,9 +3172,11 @@ export function renderDashboard(userEmail: string): string {
       // IRR section (RIPEstat)
       html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
       html += '<div class="flex items-center gap-2 mb-1">';
-      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Records (RIPEstat)</span>';
-      if (result.irr.found && result.irr.matching_asn) {
-        html += '<span class="badge-valid">Valid</span>';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Records</span>';
+      if (result.irr.found && result.irr.matching_asn && result.irr.exact_match) {
+        html += '<span class="badge-valid">Exact match</span>';
+      } else if (result.irr.found && result.irr.matching_asn && !result.irr.exact_match) {
+        html += '<span class="badge-pending">Parent coverage only</span>';
       } else if (result.irr.found && !result.irr.matching_asn) {
         html += '<span class="badge-invalid">ASN mismatch</span>';
       } else {
@@ -3185,6 +3187,9 @@ export function renderDashboard(userEmail: string): string {
         for (var i = 0; i < result.irr.records.length; i++) {
           var r = result.irr.records[i];
           html += '<div style="color:var(--text-primary)">' + escHtml(r.prefix) + ' &mdash; origin: ' + escHtml(r.origin) + (r.source ? ' (' + escHtml(r.source) + ')' : '') + '</div>';
+        }
+        if (result.irr.found && !result.irr.exact_match) {
+          html += '<div class="mt-1 text-[10px]" style="color:#eab308">An exact route object for this prefix will be created automatically during onboarding.</div>';
         }
       } else {
         html += '<div style="color:var(--muted)">No IRR route/route6 objects found</div>';
@@ -3287,7 +3292,7 @@ export function renderDashboard(userEmail: string): string {
 
           if (token && isByoAsn && hasRirCreds) {
             // Auto-create flow: detect RIR, create route (if needed), update aut-num, trigger validation
-            var irrAlreadyExists = addPrefixValidationResult && addPrefixValidationResult.irr && addPrefixValidationResult.irr.found && addPrefixValidationResult.irr.matching_asn;
+            var irrAlreadyExists = addPrefixValidationResult && addPrefixValidationResult.irr && addPrefixValidationResult.irr.exact_match;
             showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists);
           } else if (token) {
             // Manual flow: show token and instructions

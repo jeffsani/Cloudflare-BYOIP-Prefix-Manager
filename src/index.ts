@@ -298,7 +298,14 @@ app.post('/api/prefixes', async (c) => {
       body.loa_document_id,
     );
     if (!data.success) {
-      return c.json({ error: data.errors?.[0]?.message || 'API error' }, 502);
+      const errCode = data.errors?.[0]?.message || 'API error';
+      const friendlyErrors: Record<string, string> = {
+        prefix_exists_for_cidr: `This prefix (${body.cidr}) already exists in your Cloudflare account. It may have been created as a delegation from a parent prefix. Check your existing prefixes.`,
+        invalid_cidr: `Invalid CIDR notation: ${body.cidr}`,
+        prefix_too_small: `The prefix ${body.cidr} is too small. Minimum prefix length is /24 for IPv4 and /48 for IPv6.`,
+        prefix_too_large: `The prefix ${body.cidr} is too large.`,
+      };
+      return c.json({ error: friendlyErrors[errCode] || errCode }, 502);
     }
 
     await logActivity(
@@ -384,7 +391,13 @@ app.post('/api/prefixes/validate-new', async (c) => {
     }
 
     // Process IRR results (RIPEstat)
-    const irr = { found: false, matching_asn: false, records: [] as Array<{ source: string; prefix: string; origin: string }>, databases: [] as string[] };
+    const irr = {
+      found: false,
+      matching_asn: false,
+      exact_match: false,
+      records: [] as Array<{ source: string; prefix: string; origin: string }>,
+      databases: [] as string[],
+    };
     if (irrResult.status === 'fulfilled' && irrResult.value.records.length > 0) {
       irr.found = true;
       irr.records = irrResult.value.records;
@@ -392,6 +405,12 @@ app.post('/api/prefixes/validate-new', async (c) => {
       irr.matching_asn = irr.records.some((r) => {
         const asnStr = r.origin.replace(/^AS/i, '');
         return parseInt(asnStr, 10) === body.asn;
+      });
+      // Check if any record is an exact prefix match (not just parent coverage)
+      const normalizedCidr = body.cidr.toLowerCase().replace(/::+/g, '::');
+      irr.exact_match = irr.records.some((r) => {
+        const normalizedRecord = r.prefix.toLowerCase().replace(/::+/g, '::');
+        return normalizedRecord === normalizedCidr;
       });
     }
 
@@ -427,6 +446,9 @@ app.post('/api/prefixes/validate-new', async (c) => {
         errors.push('No IRR records found. An exact route/route6 object with your ASN as the origin is required. Create one at your RIR or an IRR database (e.g., RADB).');
       } else if (!irr.matching_asn) {
         errors.push(`IRR record found but origin ASN does not match ${body.asn}. Update your IRR route object to reference AS${body.asn}.`);
+      } else if (!irr.exact_match) {
+        const parentPrefixes = irr.records.map((r) => r.prefix).join(', ');
+        warnings.push(`No exact IRR record for ${body.cidr}. Found parent/covering record (${parentPrefixes}). An exact route object for this prefix will be auto-created if RIR credentials are saved, or you can create it manually.`);
       }
 
       if (rirCredentials.length === 0) {
