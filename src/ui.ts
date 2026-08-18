@@ -123,7 +123,7 @@ export function renderDashboard(userEmail: string): string {
     .lg-path-toggle button:disabled { opacity: 0.4; cursor: not-allowed; }
     .lg-info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; color: var(--muted); cursor: help; position: relative; }
     .lg-info-icon:hover { color: #F6821F; border-color: #F6821F; }
-    .lg-info-icon .lg-info-tip { display: none; position: absolute; z-index: 60; top: calc(100% + 4px); left: 0; width: 300px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 10px; color: var(--text-primary); white-space: normal; font-weight: 400; }
+    .lg-info-icon .lg-info-tip { display: none; position: fixed; z-index: 9999; width: 300px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 10px; color: var(--text-primary); white-space: normal; font-weight: 400; pointer-events: none; }
     .lg-info-icon:hover .lg-info-tip { display: block; }
     .lg-vis-section { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
     .lg-vis-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -807,6 +807,12 @@ export function renderDashboard(userEmail: string): string {
       if (cidrHover) {
         var tip = cidrHover.querySelector('.rdap-tip');
         if (tip) positionTooltip(cidrHover, tip);
+        return;
+      }
+      var lgInfoIcon = e.target.closest('.lg-info-icon');
+      if (lgInfoIcon) {
+        var tip = lgInfoIcon.querySelector('.lg-info-tip');
+        if (tip) positionTooltip(lgInfoIcon, tip);
         return;
       }
     });
