@@ -3474,9 +3474,9 @@ export function renderDashboard(userEmail: string): string {
       if (irrAlreadyExists) {
         html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" id="auto-step-route"><span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + routeType + ' object already exists &mdash; adding validation token</span></div>';
       } else {
-        html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Create ' + routeType + ' object</span></div>';
+        html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Add validation token to ' + routeType + ' object</span></div>';
       }
-      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-autnum"><span class="text-xs">Update aut-num object</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-autnum"><span class="text-xs">Add validation token to aut-num object</span></div>';
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
       html += '</div>';
 
@@ -3512,7 +3512,7 @@ export function renderDashboard(userEmail: string): string {
       // Step 2: Create or update route object with validation token
       if (!anyFailed) {
         var routeAction = irrAlreadyExists ? 'update' : 'create';
-        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Ensuring ' + routeType + ' object at ' + detectedRir.toUpperCase() + '...</span>';
+        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Adding validation token to ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
         try {
           var routeEndpoint = '/api/rir/ensure-route';
           var r = await fetch(routeEndpoint, {
@@ -3541,7 +3541,7 @@ export function renderDashboard(userEmail: string): string {
 
       // Step 3: Update aut-num
       if (!anyFailed) {
-        document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Ensuring aut-num object at ' + detectedRir.toUpperCase() + '...</span>';
+        document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Adding validation token to aut-num at ' + detectedRir.toUpperCase() + '...</span>';
         try {
           var r = await fetch('/api/rir/ensure-autnum', {
             method: 'POST',
@@ -3628,8 +3628,7 @@ export function renderDashboard(userEmail: string): string {
         // Step 1: Route object
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Ensure ' + routeType + ' object has validation token</div>';
-        html += '<div class="text-[10px] mb-1" style="color:var(--muted)">If the object exists, it will be updated. If not, it will be created.</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Add validation token to ' + routeType + ' object</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
@@ -3641,8 +3640,7 @@ export function renderDashboard(userEmail: string): string {
 
         // Step 2: aut-num object
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Ensure aut-num object has validation token</div>';
-        html += '<div class="text-[10px] mb-1" style="color:var(--muted)">If the object exists, it will be updated. If not, it will be created.</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Add validation token to aut-num object</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += 'aut-num: AS' + asn + '<br>';
         html += 'descr: cf-validation: ' + escHtml(token);
@@ -3673,7 +3671,7 @@ export function renderDashboard(userEmail: string): string {
         // Cloudflare ASN flow
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Ensure ' + routeType + ' object has validation token</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Add validation token to ' + routeType + ' object</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
@@ -3730,7 +3728,7 @@ export function renderDashboard(userEmail: string): string {
         var html = '';
         if (supported) {
           html += '<button onclick="pcgCreateRoute()" id="pcg-route-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
-          html += 'Ensure ' + (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ' at ' + rir.toUpperCase();
+          html += 'Add token to ' + (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ' at ' + rir.toUpperCase();
           html += '</button>';
         }
         // Inline credential fallback
@@ -3754,7 +3752,7 @@ export function renderDashboard(userEmail: string): string {
         var html = '';
         if (supported) {
           html += '<button onclick="pcgUpdateAutnum()" id="pcg-autnum-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
-          html += 'Ensure aut-num at ' + rir.toUpperCase();
+          html += 'Add token to aut-num at ' + rir.toUpperCase();
           html += '</button>';
         }
         html += '<div class="mt-2">';
