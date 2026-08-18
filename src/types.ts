@@ -269,6 +269,7 @@ export interface RirCredential {
 
 export interface RirApiResult {
   ok: boolean;
+  action?: 'created' | 'updated' | 'already_present';
   error?: string;
   details?: string;
 }

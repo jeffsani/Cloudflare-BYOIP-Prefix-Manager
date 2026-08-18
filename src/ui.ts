@@ -3528,9 +3528,10 @@ export function renderDashboard(userEmail: string): string {
           });
           var d = await r.json();
           if (d.ok) {
-            document.getElementById('auto-step-route').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + (irrAlreadyExists ? 'Updated' : 'Created') + ' ' + routeType + ' at ' + detectedRir.toUpperCase() + ' with validation token</span>';
+            var routeVerb = d.action === 'created' ? 'Created' : d.action === 'already_present' ? 'Token already in' : 'Updated';
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + routeVerb + ' ' + routeType + ' at ' + detectedRir.toUpperCase() + '</span>';
           } else {
-            document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' ' + routeAction + ' failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
+            document.getElementById('auto-step-route').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">' + routeType + ' failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
             anyFailed = true;
           }
         } catch (e) {
@@ -3555,9 +3556,10 @@ export function renderDashboard(userEmail: string): string {
           });
           var d = await r.json();
           if (d.ok) {
-            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Updated aut-num (AS' + asn + ') at ' + detectedRir.toUpperCase() + '</span>';
+            var autnumVerb = d.action === 'created' ? 'Created' : d.action === 'already_present' ? 'Token already in' : 'Updated';
+            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + autnumVerb + ' aut-num (AS' + asn + ') at ' + detectedRir.toUpperCase() + '</span>';
           } else {
-            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">aut-num update failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
+            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">aut-num failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
             anyFailed = true;
           }
         } catch (e) {

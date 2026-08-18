@@ -839,7 +839,7 @@ export async function ensureArinRouteObject(
       const rpsl = await getResp.text();
 
       if (rpsl.includes(`cf-validation: ${validationToken}`)) {
-        return { ok: true, details: 'Validation token already present in route object.' };
+        return { ok: true, action: 'already_present', details: 'Validation token already present in route object.' };
       }
 
       // Remove old cf-validation lines and insert the new one
@@ -863,7 +863,7 @@ export async function ensureArinRouteObject(
         body: modified,
       });
 
-      if (putResp.ok) return { ok: true, details: 'Updated existing route object with validation token.' };
+      if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing route object with validation token.' };
       return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: await putResp.text() };
     }
 
@@ -898,7 +898,7 @@ export async function ensureArinRouteObject(
       body: rpslBody,
     });
 
-    if (postResp.ok) return { ok: true, details: 'Created new route object with validation token.' };
+    if (postResp.ok) return { ok: true, action: 'created', details: 'Created new route object with validation token.' };
     return { ok: false, error: `ARIN POST ${objectType} returned ${postResp.status}`, details: await postResp.text() };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN route operation failed: ${(e as Error).message}` };
@@ -933,7 +933,7 @@ export async function ensureArinAutnum(
       const rpsl = await getResp.text();
 
       if (rpsl.includes(`cf-validation: ${validationToken}`)) {
-        return { ok: true, details: 'Token already present in aut-num object.' };
+        return { ok: true, action: 'already_present', details: 'Token already present in aut-num object.' };
       }
 
       // Remove old cf-validation lines and insert the new one
@@ -957,7 +957,7 @@ export async function ensureArinAutnum(
         body: modified,
       });
 
-      if (putResp.ok) return { ok: true, details: 'Updated existing aut-num object with validation token.' };
+      if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing aut-num object with validation token.' };
       return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
 
@@ -991,7 +991,7 @@ export async function ensureArinAutnum(
       body: rpslBody,
     });
 
-    if (postResp.ok) return { ok: true, details: 'Created new aut-num object with validation token.' };
+    if (postResp.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
     return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: await postResp.text() };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };
