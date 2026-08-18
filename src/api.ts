@@ -772,19 +772,52 @@ export async function lookupRdap(prefix: string): Promise<RdapResult> {
 // ── RIR API functions (ARIN + RIPE) ─────────────────────────────
 
 const ARIN_IRR_API = 'https://reg.arin.net/rest/irr';
+const ARIN_WHOIS_API = 'https://whois.arin.net/rest';
 const RIPE_DB_API = 'https://rest.db.ripe.net';
 
 /**
- * Create a route or route6 object at ARIN's IRR.
- * POST /rest/irr/route/IPADDRESS/PREFIXLENGTH/ORIGINAS
- * Payload contains the descr field with the validation token.
+ * Look up admin-c and tech-c POC handles from ARIN Whois for a given Org ID.
+ * GET https://whois.arin.net/rest/org/ORGID/pocs
  */
-export async function createArinRouteObject(
+export async function lookupArinOrgPocs(orgId: string): Promise<{ adminC: string; techC: string } | null> {
+  try {
+    const r = await fetch(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}/pocs`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!r.ok) return null;
+
+    const data = await r.json() as { pocs?: { pocLinkRef?: Array<{ '@handle': string; '@function': string; '@description': string }> | { '@handle': string; '@function': string; '@description': string } } };
+    let refs = data?.pocs?.pocLinkRef;
+    if (!refs) return null;
+    if (!Array.isArray(refs)) refs = [refs];
+
+    let adminC = '';
+    let techC = '';
+    for (const ref of refs) {
+      if (ref['@function'] === 'AD' || ref['@description'] === 'Admin') {
+        if (!adminC) adminC = ref['@handle'];
+      }
+      if (ref['@function'] === 'T' || ref['@description'] === 'Tech') {
+        if (!techC) techC = ref['@handle'];
+      }
+    }
+    return (adminC || techC) ? { adminC: adminC || techC, techC: techC || adminC } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Ensure a route/route6 object exists at ARIN IRR with the validation token.
+ * 1. GET the object — if it exists, add/update the cf-validation descr line via PUT.
+ * 2. If it does not exist (404), create it via POST with all required ARIN fields.
+ */
+export async function ensureArinRouteObject(
   prefix: string,
   originAsn: number,
   validationToken: string,
   apiKey: string,
-  maintainer: string,
+  orgId: string,
 ): Promise<RirApiResult> {
   try {
     const [ip, mask] = prefix.split('/');
@@ -792,22 +825,70 @@ export async function createArinRouteObject(
     const objectType = isV6 ? 'route6' : 'route';
     const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
 
-    // First, try to look up admin-c and tech-c from existing org POCs via RDAP
-    // For now, use the maintainer (Org ID) to derive POC handles
-    const orgId = maintainer.replace(/^MNT-/i, '');
+    // Step 1: Try to GET the existing object
+    const getResp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        Authorization: `ApiKey ${apiKey}`,
+        Accept: 'application/rpsl',
+      },
+    });
 
-    // RPSL payload with all required ARIN fields
+    if (getResp.ok) {
+      // Object exists — update it
+      const rpsl = await getResp.text();
+
+      if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+        return { ok: true, details: 'Validation token already present in route object.' };
+      }
+
+      // Remove old cf-validation lines and insert the new one
+      let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
+      const tokenLine = `descr: cf-validation: ${validationToken}`;
+      const objectLineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
+      if (objectLineMatch) {
+        const idx = modified.indexOf(objectLineMatch[0]) + objectLineMatch[0].length;
+        modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
+      } else {
+        modified = tokenLine + '\n' + modified;
+      }
+
+      const putResp = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `ApiKey ${apiKey}`,
+          Accept: 'application/rpsl',
+          'Content-Type': 'application/rpsl',
+        },
+        body: modified,
+      });
+
+      if (putResp.ok) return { ok: true, details: 'Updated existing route object with validation token.' };
+      return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: await putResp.text() };
+    }
+
+    if (getResp.status !== 404) {
+      return { ok: false, error: `ARIN GET ${objectType} returned ${getResp.status}`, details: await getResp.text() };
+    }
+
+    // Step 2: Object does not exist — create it
+    // Look up POC handles from Org ID
+    const pocs = await lookupArinOrgPocs(orgId);
+    if (!pocs) {
+      return { ok: false, error: `Could not look up POC handles for Org ${orgId}. Verify the Org ID in your ARIN credentials (e.g., DC-403, not the company name).` };
+    }
+
     const rpslBody = [
       `${objectType}: ${prefix}`,
       `descr: cf-validation: ${validationToken}`,
       `origin: AS${originAsn}`,
-      `admin-c: ${orgId}`,
-      `tech-c: ${orgId}`,
+      `admin-c: ${pocs.adminC}`,
+      `tech-c: ${pocs.techC}`,
       `mnt-by: MNT-${orgId}`,
       `source: ARIN`,
     ].join('\n');
 
-    const r = await fetch(url, {
+    const postResp = await fetch(url, {
       method: 'POST',
       headers: {
         Authorization: `ApiKey ${apiKey}`,
@@ -817,32 +898,28 @@ export async function createArinRouteObject(
       body: rpslBody,
     });
 
-    if (r.ok) return { ok: true };
-
-    const text = await r.text();
-    return { ok: false, error: `ARIN returned ${r.status}`, details: text };
+    if (postResp.ok) return { ok: true, details: 'Created new route object with validation token.' };
+    return { ok: false, error: `ARIN POST ${objectType} returned ${postResp.status}`, details: await postResp.text() };
   } catch (e: unknown) {
-    return { ok: false, error: `ARIN request failed: ${(e as Error).message}` };
+    return { ok: false, error: `ARIN route operation failed: ${(e as Error).message}` };
   }
 }
 
 /**
- * Update an existing route/route6 object at ARIN IRR to add the validation token.
- * GET the existing object, add the cf-validation descr line, PUT it back.
+ * Ensure an aut-num object exists at ARIN IRR with the validation token.
+ * 1. GET the object — if it exists, add/update the cf-validation descr line via PUT.
+ * 2. If it does not exist (404), create it via POST with all required ARIN fields.
  */
-export async function updateArinRouteObject(
-  prefix: string,
-  originAsn: number,
+export async function ensureArinAutnum(
+  asn: number,
   validationToken: string,
   apiKey: string,
+  orgId: string,
 ): Promise<RirApiResult> {
   try {
-    const [ip, mask] = prefix.split('/');
-    const isV6 = ip.includes(':');
-    const objectType = isV6 ? 'route6' : 'route';
-    const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
+    const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
 
-    // Step 1: GET existing route object
+    // Step 1: Try to GET the existing object
     const getResp = await fetch(url, {
       method: 'GET',
       headers: {
@@ -851,47 +928,73 @@ export async function updateArinRouteObject(
       },
     });
 
-    if (!getResp.ok) {
-      if (getResp.status === 404) {
-        return { ok: false, error: `${objectType} object not found at ARIN. It may need to be created first.` };
+    if (getResp.ok) {
+      // Object exists — update it
+      const rpsl = await getResp.text();
+
+      if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+        return { ok: true, details: 'Token already present in aut-num object.' };
       }
-      return { ok: false, error: `ARIN GET ${objectType} returned ${getResp.status}`, details: await getResp.text() };
+
+      // Remove old cf-validation lines and insert the new one
+      let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
+      const tokenLine = `descr: cf-validation: ${validationToken}`;
+      const autNumLineMatch = modified.match(/^aut-num:\s*AS\d+.*$/m);
+      if (autNumLineMatch) {
+        const idx = modified.indexOf(autNumLineMatch[0]) + autNumLineMatch[0].length;
+        modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
+      } else {
+        modified = tokenLine + '\n' + modified;
+      }
+
+      const putResp = await fetch(url, {
+        method: 'PUT',
+        headers: {
+          Authorization: `ApiKey ${apiKey}`,
+          Accept: 'application/rpsl',
+          'Content-Type': 'application/rpsl',
+        },
+        body: modified,
+      });
+
+      if (putResp.ok) return { ok: true, details: 'Updated existing aut-num object with validation token.' };
+      return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
 
-    const rpsl = await getResp.text();
-
-    // Step 2: Check if token already present
-    if (rpsl.includes(`cf-validation: ${validationToken}`)) {
-      return { ok: true, details: 'Validation token already present in route object.' };
+    if (getResp.status !== 404) {
+      return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
     }
 
-    // Step 3: Remove any old cf-validation lines and insert the new one after the first descr line
-    let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
-    const tokenLine = `descr: cf-validation: ${validationToken}`;
-    const objectLineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
-    if (objectLineMatch) {
-      const idx = modified.indexOf(objectLineMatch[0]) + objectLineMatch[0].length;
-      modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
-    } else {
-      modified = tokenLine + '\n' + modified;
+    // Step 2: Object does not exist — create it
+    const pocs = await lookupArinOrgPocs(orgId);
+    if (!pocs) {
+      return { ok: false, error: `Could not look up POC handles for Org ${orgId}. Verify the Org ID in your ARIN credentials.` };
     }
 
-    // Step 4: PUT updated object
-    const putResp = await fetch(url, {
-      method: 'PUT',
+    const rpslBody = [
+      `aut-num: AS${asn}`,
+      `as-name: AS${asn}`,
+      `descr: cf-validation: ${validationToken}`,
+      `admin-c: ${pocs.adminC}`,
+      `tech-c: ${pocs.techC}`,
+      `mnt-by: MNT-${orgId}`,
+      `source: ARIN`,
+    ].join('\n');
+
+    const postResp = await fetch(url, {
+      method: 'POST',
       headers: {
         Authorization: `ApiKey ${apiKey}`,
         Accept: 'application/rpsl',
         'Content-Type': 'application/rpsl',
       },
-      body: modified,
+      body: rpslBody,
     });
 
-    if (putResp.ok) return { ok: true };
-
-    return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: await putResp.text() };
+    if (postResp.ok) return { ok: true, details: 'Created new aut-num object with validation token.' };
+    return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: await postResp.text() };
   } catch (e: unknown) {
-    return { ok: false, error: `ARIN route update failed: ${(e as Error).message}` };
+    return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };
   }
 }
 
@@ -1041,71 +1144,6 @@ export async function updateRipeRouteObject(
     return { ok: false, error: `RIPE PUT ${objectType} returned ${putResp.status}`, details: errMsg || '' };
   } catch (e: unknown) {
     return { ok: false, error: `RIPE route update failed: ${(e as Error).message}` };
-  }
-}
-
-/**
- * Fetch an existing aut-num object from ARIN and add a descr line with the validation token.
- * GET then PUT /rest/irr/aut-num/ASN
- */
-export async function updateArinAutnum(
-  asn: number,
-  validationToken: string,
-  apiKey: string,
-): Promise<RirApiResult> {
-  try {
-    const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
-
-    // Step 1: GET existing aut-num
-    const getResp = await fetch(url, {
-      method: 'GET',
-      headers: {
-        Authorization: `ApiKey ${apiKey}`,
-        Accept: 'application/rpsl',
-      },
-    });
-
-    if (!getResp.ok) {
-      if (getResp.status === 404) {
-        return { ok: false, error: 'aut-num object not found at ARIN. You may need to create it first via ARIN Online.' };
-      }
-      return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
-    }
-
-    const rpsl = await getResp.text();
-
-    // Step 2: Check if token already present
-    if (rpsl.includes(`cf-validation: ${validationToken}`)) {
-      return { ok: true, details: 'Token already present in aut-num object.' };
-    }
-
-    // Step 3: Insert descr line after the aut-num: line
-    const tokenLine = `descr: cf-validation: ${validationToken}`;
-    let modified: string;
-    const autNumLineMatch = rpsl.match(/^aut-num:\s*AS\d+.*$/m);
-    if (autNumLineMatch) {
-      const idx = rpsl.indexOf(autNumLineMatch[0]) + autNumLineMatch[0].length;
-      modified = rpsl.slice(0, idx) + '\n' + tokenLine + rpsl.slice(idx);
-    } else {
-      modified = tokenLine + '\n' + rpsl;
-    }
-
-    // Step 4: PUT updated object
-    const putResp = await fetch(url, {
-      method: 'PUT',
-      headers: {
-        Authorization: `ApiKey ${apiKey}`,
-        Accept: 'application/rpsl',
-        'Content-Type': 'application/rpsl',
-      },
-      body: modified,
-    });
-
-    if (putResp.ok) return { ok: true };
-
-    return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
-  } catch (e: unknown) {
-    return { ok: false, error: `ARIN aut-num update failed: ${(e as Error).message}` };
   }
 }
 

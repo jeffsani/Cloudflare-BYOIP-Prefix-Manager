@@ -25,11 +25,10 @@ import {
   createPrefix,
   uploadLoaDocument,
   lookupIrrRecords,
-  createArinRouteObject,
+  ensureArinRouteObject,
   createRipeRouteObject,
-  updateArinRouteObject,
   updateRipeRouteObject,
-  updateArinAutnum,
+  ensureArinAutnum,
   updateRipeAutnum,
   normalizeRirName,
 } from './api';
@@ -1152,10 +1151,24 @@ app.delete('/api/rir/credentials/:id', async (c) => {
   return c.json({ ok: true });
 });
 
-// ─── RIR Route Object Management ───────────────────────────────────
+// ─── RIR Route / Aut-num Object Management ────────────────────────
 
-// Create route/route6 object at ARIN or RIPE
-app.post('/api/rir/create-route', async (c) => {
+// Helper to resolve RIR credentials from request body or DB
+async function resolveRirCreds(
+  db: D1Database, email: string, accountId: string, rir: string,
+  bodyKey?: string, bodyMnt?: string,
+): Promise<{ apiKey: string; maintainer: string } | null> {
+  if (bodyKey) return { apiKey: bodyKey, maintainer: bodyMnt || '' };
+  const stored = await db.prepare(
+    'SELECT api_key, maintainer FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
+  ).bind(email, accountId, rir).first<{ api_key: string; maintainer: string }>();
+  if (!stored?.api_key) return null;
+  return { apiKey: stored.api_key, maintainer: stored.maintainer || '' };
+}
+
+// Ensure route/route6 object at ARIN or RIPE with validation token
+// Checks if object exists first: updates if yes, creates if no
+app.post('/api/rir/ensure-route', async (c) => {
   const email = c.get('userEmail') as string;
   const body = await c.req.json<{
     account_id: string;
@@ -1173,113 +1186,45 @@ app.post('/api/rir/create-route', async (c) => {
 
   const rir = body.rir.toLowerCase();
   if (rir !== 'arin' && rir !== 'ripe') {
-    return c.json({ error: 'Automated route creation is only supported for ARIN and RIPE' }, 400);
+    return c.json({ error: 'Automated route management is only supported for ARIN and RIPE' }, 400);
   }
 
-  // Use provided credentials or look up stored ones
-  let apiKey = body.api_key || '';
-  let maintainer = body.maintainer || '';
-
-  if (!apiKey) {
-    const stored = await c.env.DB.prepare(
-      'SELECT api_key, maintainer FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
-    )
-      .bind(email, body.account_id, rir)
-      .first<{ api_key: string; maintainer: string }>();
-
-    if (!stored?.api_key) {
-      return c.json({ error: `No ${rir.toUpperCase()} credentials found. Provide api_key or save credentials in Settings.` }, 400);
-    }
-    apiKey = stored.api_key;
-    if (!maintainer && stored.maintainer) maintainer = stored.maintainer;
+  const creds = await resolveRirCreds(c.env.DB, email, body.account_id, rir, body.api_key, body.maintainer);
+  if (!creds) {
+    return c.json({ error: `No ${rir.toUpperCase()} credentials found. Save credentials in Settings first.` }, 400);
   }
 
   let result;
   if (rir === 'arin') {
-    if (!maintainer) {
-      return c.json({ error: 'ARIN requires a maintainer (Org ID). Provide maintainer or save it in Settings.' }, 400);
+    if (!creds.maintainer) {
+      return c.json({ error: 'ARIN requires an Org ID. Save your ARIN Org ID (e.g., DC-403) in Settings.' }, 400);
     }
-    result = await createArinRouteObject(body.prefix, body.origin_asn, body.validation_token, apiKey, maintainer);
+    result = await ensureArinRouteObject(body.prefix, body.origin_asn, body.validation_token, creds.apiKey, creds.maintainer);
   } else {
-    if (!maintainer) {
-      return c.json({ error: 'RIPE requires a maintainer (mnt-by). Provide maintainer or save it in Settings.' }, 400);
+    if (!creds.maintainer) {
+      return c.json({ error: 'RIPE requires a maintainer (mnt-by). Save it in Settings.' }, 400);
     }
-    result = await createRipeRouteObject(body.prefix, body.origin_asn, body.validation_token, apiKey, maintainer);
+    // For RIPE: try update first, fall back to create
+    result = await updateRipeRouteObject(body.prefix, body.origin_asn, body.validation_token, creds.apiKey, creds.maintainer);
+    if (!result.ok && result.error?.includes('not found')) {
+      result = await createRipeRouteObject(body.prefix, body.origin_asn, body.validation_token, creds.apiKey, creds.maintainer);
+    }
   }
 
   if (result.ok) {
     await c.env.DB.prepare(
       `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
     )
-      .bind(email, 'rir_create_route', `Created ${body.prefix.includes(':') ? 'route6' : 'route'} at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn}`)
+      .bind(email, 'rir_ensure_route', `Ensured ${body.prefix.includes(':') ? 'route6' : 'route'} at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn}`)
       .run();
   }
 
   return c.json(result);
 });
 
-// Update existing route/route6 object at ARIN or RIPE (add validation token to existing object)
-app.post('/api/rir/update-route', async (c) => {
-  const email = c.get('userEmail') as string;
-  const body = await c.req.json<{
-    account_id: string;
-    prefix: string;
-    origin_asn: number;
-    validation_token: string;
-    rir: string;
-    api_key?: string;
-    maintainer?: string;
-  }>();
-
-  if (!body.account_id || !body.prefix || !body.origin_asn || !body.validation_token || !body.rir) {
-    return c.json({ error: 'account_id, prefix, origin_asn, validation_token, and rir are required' }, 400);
-  }
-
-  const rir = body.rir.toLowerCase();
-  if (rir !== 'arin' && rir !== 'ripe') {
-    return c.json({ error: 'Automated route update is only supported for ARIN and RIPE' }, 400);
-  }
-
-  let apiKey = body.api_key || '';
-  let maintainer = body.maintainer || '';
-
-  if (!apiKey) {
-    const stored = await c.env.DB.prepare(
-      'SELECT api_key, maintainer FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
-    )
-      .bind(email, body.account_id, rir)
-      .first<{ api_key: string; maintainer: string }>();
-
-    if (!stored?.api_key) {
-      return c.json({ error: `No ${rir.toUpperCase()} credentials found. Provide api_key or save credentials in Settings.` }, 400);
-    }
-    apiKey = stored.api_key;
-    if (!maintainer && stored.maintainer) maintainer = stored.maintainer;
-  }
-
-  let result;
-  if (rir === 'arin') {
-    result = await updateArinRouteObject(body.prefix, body.origin_asn, body.validation_token, apiKey);
-  } else {
-    if (!maintainer) {
-      return c.json({ error: 'RIPE requires a maintainer (mnt-by).' }, 400);
-    }
-    result = await updateRipeRouteObject(body.prefix, body.origin_asn, body.validation_token, apiKey, maintainer);
-  }
-
-  if (result.ok) {
-    await c.env.DB.prepare(
-      `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
-    )
-      .bind(email, 'rir_update_route', `Updated ${body.prefix.includes(':') ? 'route6' : 'route'} at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn} with validation token`)
-      .run();
-  }
-
-  return c.json(result);
-});
-
-// Update aut-num object at ARIN or RIPE (add validation token)
-app.post('/api/rir/update-autnum', async (c) => {
+// Ensure aut-num object at ARIN or RIPE with validation token
+// Checks if object exists first: updates if yes, creates if no
+app.post('/api/rir/ensure-autnum', async (c) => {
   const email = c.get('userEmail') as string;
   const body = await c.req.json<{
     account_id: string;
@@ -1296,38 +1241,29 @@ app.post('/api/rir/update-autnum', async (c) => {
 
   const rir = body.rir.toLowerCase();
   if (rir !== 'arin' && rir !== 'ripe') {
-    return c.json({ error: 'Automated aut-num update is only supported for ARIN and RIPE' }, 400);
+    return c.json({ error: 'Automated aut-num management is only supported for ARIN and RIPE' }, 400);
   }
 
-  let apiKey = body.api_key || '';
-  let maintainer = body.maintainer || '';
-
-  if (!apiKey) {
-    const stored = await c.env.DB.prepare(
-      'SELECT api_key, maintainer FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
-    )
-      .bind(email, body.account_id, rir)
-      .first<{ api_key: string; maintainer: string }>();
-
-    if (!stored?.api_key) {
-      return c.json({ error: `No ${rir.toUpperCase()} credentials found. Provide api_key or save credentials in Settings.` }, 400);
-    }
-    apiKey = stored.api_key;
-    if (!maintainer && stored.maintainer) maintainer = stored.maintainer;
+  const creds = await resolveRirCreds(c.env.DB, email, body.account_id, rir, body.api_key, body.maintainer);
+  if (!creds) {
+    return c.json({ error: `No ${rir.toUpperCase()} credentials found. Save credentials in Settings first.` }, 400);
   }
 
   let result;
   if (rir === 'arin') {
-    result = await updateArinAutnum(body.asn, body.validation_token, apiKey);
+    if (!creds.maintainer) {
+      return c.json({ error: 'ARIN requires an Org ID. Save your ARIN Org ID (e.g., DC-403) in Settings.' }, 400);
+    }
+    result = await ensureArinAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
   } else {
-    result = await updateRipeAutnum(body.asn, body.validation_token, apiKey, maintainer);
+    result = await updateRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
   }
 
   if (result.ok) {
     await c.env.DB.prepare(
       `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
     )
-      .bind(email, 'rir_update_autnum', `Updated aut-num at ${rir.toUpperCase()} for AS${body.asn}`)
+      .bind(email, 'rir_ensure_autnum', `Ensured aut-num at ${rir.toUpperCase()} for AS${body.asn}`)
       .run();
   }
 

@@ -994,7 +994,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<div class="flex gap-2 items-end flex-wrap">';
         html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="acct-rir-sel-' + escAttr(accountId) + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="acct-rir-key-' + escAttr(accountId) + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">Org / Maintainer</label><input id="acct-rir-mnt-' + escAttr(accountId) + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. MNT-EXAMPLE"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="acct-rir-mnt-' + escAttr(accountId) + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
         html += '<button onclick="saveAccountRirCredential(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
         html += '</div>';
 
@@ -3458,9 +3458,9 @@ export function renderDashboard(userEmail: string): string {
       // Step 2: Create or update route object with validation token
       if (!anyFailed) {
         var routeAction = irrAlreadyExists ? 'update' : 'create';
-        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">' + (irrAlreadyExists ? 'Updating' : 'Creating') + ' ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
+        document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Ensuring ' + routeType + ' object at ' + detectedRir.toUpperCase() + '...</span>';
         try {
-          var routeEndpoint = irrAlreadyExists ? '/api/rir/update-route' : '/api/rir/create-route';
+          var routeEndpoint = '/api/rir/ensure-route';
           var r = await fetch(routeEndpoint, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -3487,9 +3487,9 @@ export function renderDashboard(userEmail: string): string {
 
       // Step 3: Update aut-num
       if (!anyFailed) {
-        document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Updating aut-num at ' + detectedRir.toUpperCase() + '...</span>';
+        document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Ensuring aut-num object at ' + detectedRir.toUpperCase() + '...</span>';
         try {
-          var r = await fetch('/api/rir/update-autnum', {
+          var r = await fetch('/api/rir/ensure-autnum', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -3686,7 +3686,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
         html += '</select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-route-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">Mnt / Org</label><input id="pcg-route-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="MNT-EXAMPLE"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-route-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
         html += '<button onclick="pcgCreateRouteInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Create</button>';
         html += '</div></details></div>';
         routeEl.innerHTML = html;
@@ -3709,7 +3709,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
         html += '</select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-autnum-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">Mnt / Org</label><input id="pcg-autnum-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="MNT-EXAMPLE"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-autnum-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
         html += '<button onclick="pcgUpdateAutnumInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Update</button>';
         html += '</div></details></div>';
         autnumEl.innerHTML = html;
@@ -3723,7 +3723,7 @@ export function renderDashboard(userEmail: string): string {
       if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Sending to ' + postCreationState.rir.toUpperCase() + '...</span>';
 
-      var r = await fetch('/api/rir/create-route', {
+      var r = await fetch('/api/rir/ensure-route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3755,7 +3755,7 @@ export function renderDashboard(userEmail: string): string {
       var statusEl = document.getElementById('pcg-route-status');
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Creating at ' + rir.toUpperCase() + '...</span>';
 
-      var r = await fetch('/api/rir/create-route', {
+      var r = await fetch('/api/rir/ensure-route', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3783,7 +3783,7 @@ export function renderDashboard(userEmail: string): string {
       if (btn) { btn.disabled = true; btn.textContent = 'Updating...'; }
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Updating aut-num at ' + postCreationState.rir.toUpperCase() + '...</span>';
 
-      var r = await fetch('/api/rir/update-autnum', {
+      var r = await fetch('/api/rir/ensure-autnum', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -3813,7 +3813,7 @@ export function renderDashboard(userEmail: string): string {
       var statusEl = document.getElementById('pcg-autnum-status');
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Updating aut-num at ' + rir.toUpperCase() + '...</span>';
 
-      var r = await fetch('/api/rir/update-autnum', {
+      var r = await fetch('/api/rir/ensure-autnum', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
