@@ -28,6 +28,7 @@ export interface CfPrefix {
   irr_validation_state: string;
   rpki_validation_state: string;
   ownership_validation_state: string;
+  ownership_validation_token?: string;
   on_demand_enabled: boolean;
   on_demand_locked: boolean;
   created_at: string;

@@ -3408,11 +3408,13 @@ export function renderDashboard(userEmail: string): string {
           var hasRirCreds = addPrefixValidationResult && addPrefixValidationResult.rir_credentials && addPrefixValidationResult.rir_credentials.length > 0;
           var isByoAsn = asn !== 13335;
 
-          if (token && isByoAsn && hasRirCreds) {
-            // Auto-create flow: detect RIR, create route (if needed), update aut-num, trigger validation
+          console.log('[add-prefix] token:', token, 'isByoAsn:', isByoAsn, 'hasRirCreds:', hasRirCreds, 'validationResult:', addPrefixValidationResult);
+
+          if (isByoAsn && hasRirCreds) {
+            // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
             var irrAlreadyExists = addPrefixValidationResult && addPrefixValidationResult.irr && addPrefixValidationResult.irr.exact_match;
             showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists);
-          } else if (token) {
+          } else if (isByoAsn && token) {
             // Manual flow: show token and instructions
             showPostCreationGuide(cidr, asn, token);
           }
@@ -3436,11 +3438,34 @@ export function renderDashboard(userEmail: string): string {
 
     // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
     async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists) {
+      // If token is missing, try to fetch it from the prefix details
+      if (!token && prefixId) {
+        try {
+          var prefixResp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '?account_id=' + encodeURIComponent(activeAccountId));
+          var prefixData = await prefixResp.json();
+          if (prefixData.prefix) {
+            token = prefixData.prefix.ownership_validation_token || null;
+          }
+          console.log('[auto-create] fetched token from prefix:', token);
+        } catch (e) {
+          console.error('[auto-create] failed to fetch prefix details:', e);
+        }
+      }
+
+      if (!token) {
+        // Cannot proceed without a token - fall back to manual guide
+        console.warn('[auto-create] No validation token available, falling back to manual guide');
+        showPostCreationGuide(cidr, asn, '(token unavailable - check prefix details)');
+        return;
+      }
+
       postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
 
       var html = '';
       html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
+      html += '<div class="mb-3"><strong>Validation Token:</strong></div>';
+      html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-3" style="background:var(--card-bg)">' + escHtml(token) + '</div>';
       html += '<div class="mb-3 text-[10px]" style="color:var(--muted)">Automating BYO-ASN onboarding steps...</div>';
 
       // Step indicators
