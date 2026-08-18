@@ -3231,6 +3231,84 @@ export function renderDashboard(userEmail: string): string {
       container.classList.remove('hidden');
     }
 
+    // Check if a CIDR falls within any existing onboarded prefix
+    function findParentPrefix(cidr) {
+      var parts = cidr.split('/');
+      var ip = parts[0];
+      var mask = parseInt(parts[1], 10);
+      var isV6 = ip.indexOf(':') !== -1;
+
+      for (var i = 0; i < allPrefixes.length; i++) {
+        var p = allPrefixes[i];
+        var pParts = p.cidr.split('/');
+        var pIp = pParts[0];
+        var pMask = parseInt(pParts[1], 10);
+        var pIsV6 = pIp.indexOf(':') !== -1;
+
+        // Must be same address family and parent must have a shorter (or equal) mask
+        if (isV6 !== pIsV6) continue;
+        if (pMask >= mask && pMask !== mask) continue;
+        if (pMask > mask) continue;
+
+        // Check containment: the new prefix must fall within the parent
+        if (isV6) {
+          if (ipv6Contains(pIp, pMask, ip, mask)) return p;
+        } else {
+          if (ipv4Contains(pIp, pMask, ip, mask)) return p;
+        }
+      }
+      return null;
+    }
+
+    function ipv4Contains(parentIp, parentMask, childIp, childMask) {
+      if (childMask < parentMask) return false;
+      var pNum = ipv4ToNum(parentIp);
+      var cNum = ipv4ToNum(childIp);
+      var maskBits = (0xFFFFFFFF << (32 - parentMask)) >>> 0;
+      return (pNum & maskBits) === (cNum & maskBits);
+    }
+
+    function ipv4ToNum(ip) {
+      var parts = ip.split('.');
+      return ((parseInt(parts[0]) << 24) | (parseInt(parts[1]) << 16) | (parseInt(parts[2]) << 8) | parseInt(parts[3])) >>> 0;
+    }
+
+    function ipv6Contains(parentIp, parentMask, childIp, childMask) {
+      if (childMask < parentMask) return false;
+      var pBytes = ipv6ToBytes(parentIp);
+      var cBytes = ipv6ToBytes(childIp);
+      // Compare the first parentMask bits
+      var fullBytes = Math.floor(parentMask / 8);
+      for (var i = 0; i < fullBytes; i++) {
+        if (pBytes[i] !== cBytes[i]) return false;
+      }
+      var remainingBits = parentMask % 8;
+      if (remainingBits > 0) {
+        var mask = (0xFF << (8 - remainingBits)) & 0xFF;
+        if ((pBytes[fullBytes] & mask) !== (cBytes[fullBytes] & mask)) return false;
+      }
+      return true;
+    }
+
+    function ipv6ToBytes(ip) {
+      // Expand :: and parse into 16 bytes
+      var halves = ip.split('::');
+      var left = halves[0] ? halves[0].split(':') : [];
+      var right = halves.length > 1 && halves[1] ? halves[1].split(':') : [];
+      var groups = [];
+      for (var i = 0; i < left.length; i++) groups.push(left[i]);
+      var missing = 8 - left.length - right.length;
+      for (var i = 0; i < missing; i++) groups.push('0');
+      for (var i = 0; i < right.length; i++) groups.push(right[i]);
+      var bytes = [];
+      for (var i = 0; i < 8; i++) {
+        var val = parseInt(groups[i] || '0', 16);
+        bytes.push((val >> 8) & 0xFF);
+        bytes.push(val & 0xFF);
+      }
+      return bytes;
+    }
+
     async function submitNewPrefix() {
       var clientError = validateNewPrefix();
       if (clientError) {
@@ -3257,6 +3335,17 @@ export function renderDashboard(userEmail: string): string {
         } else if (!addPrefixValidationResult.summary.ready) {
           if (!confirm('Validation found issues with IRR/ROA records. The prefix may be rejected by Cloudflare. Continue anyway?')) return;
         }
+      }
+
+      // Check if this prefix falls within an existing parent prefix
+      var parentPrefix = findParentPrefix(cidr);
+      if (parentPrefix) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.innerHTML = 'This prefix falls within an existing parent prefix <strong>' + escHtml(parentPrefix.cidr) + '</strong>. ' +
+          'Use the <strong>Add Child Prefix</strong> button on the parent prefix row to create it as a delegation. ' +
+          '<a href="#" onclick="event.preventDefault();closeAddPrefixModal();openChildPrefixModal(\\\'' + escAttr(parentPrefix.id) + '\\\',\\\'' + escAttr(parentPrefix.cidr) + '\\\')" style="color:#F6821F;font-weight:500">Create child prefix now</a>';
+        errEl.classList.remove('hidden');
+        return;
       }
 
       var btn = document.getElementById('add-prefix-submit-btn');
@@ -3300,7 +3389,7 @@ export function renderDashboard(userEmail: string): string {
           }
         } else {
           var errEl = document.getElementById('add-prefix-error');
-          errEl.textContent = data.error || 'Failed to create prefix';
+          errEl.textContent = (data.error || 'Failed to create prefix') + (data.details ? ' (' + data.details + ')' : '');
           errEl.classList.remove('hidden');
         }
       } catch (e) {

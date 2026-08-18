@@ -299,13 +299,15 @@ app.post('/api/prefixes', async (c) => {
     );
     if (!data.success) {
       const errCode = data.errors?.[0]?.message || 'API error';
+      const errDetail = data.errors?.map((e: { code?: number; message?: string }) => `[${e.code || ''}] ${e.message || ''}`).join('; ') || '';
+      console.error('Cloudflare prefix creation failed:', JSON.stringify(data.errors), 'cidr:', body.cidr, 'asn:', body.asn);
       const friendlyErrors: Record<string, string> = {
-        prefix_exists_for_cidr: `This prefix (${body.cidr}) already exists in your Cloudflare account. It may have been created as a delegation from a parent prefix. Check your existing prefixes.`,
+        prefix_exists_for_cidr: `Cloudflare reports this prefix (${body.cidr}) already exists. This could mean it exists in another account, or a parent/overlapping prefix covers it. Check all accounts or contact Cloudflare support.`,
         invalid_cidr: `Invalid CIDR notation: ${body.cidr}`,
         prefix_too_small: `The prefix ${body.cidr} is too small. Minimum prefix length is /24 for IPv4 and /48 for IPv6.`,
         prefix_too_large: `The prefix ${body.cidr} is too large.`,
       };
-      return c.json({ error: friendlyErrors[errCode] || errCode }, 502);
+      return c.json({ error: friendlyErrors[errCode] || errCode, details: errDetail }, 502);
     }
 
     await logActivity(
