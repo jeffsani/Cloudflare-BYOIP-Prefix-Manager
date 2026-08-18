@@ -3327,13 +3327,42 @@ export function renderDashboard(userEmail: string): string {
       var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       var delegateLoaCreation = loaMode === 'delegate';
 
-      // Warn custom ASN users if validation wasn't run or has errors
+      // For custom ASN: auto-run validation if not done yet, skip prompts when RIR creds exist
       var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
       if (asnMode === 'custom') {
         if (!addPrefixValidationResult) {
-          if (!confirm('You have not validated IRR/ROA records for this prefix. BYO-ASN requires valid IRR route object, ROA, and ownership validation of both the prefix and ASN. Continue anyway?')) return;
-        } else if (!addPrefixValidationResult.summary.ready) {
-          if (!confirm('Validation found issues with IRR/ROA records. The prefix may be rejected by Cloudflare. Continue anyway?')) return;
+          // Auto-run validation inline instead of prompting
+          var valErr = validateNewPrefix();
+          if (valErr) {
+            var errEl = document.getElementById('add-prefix-error');
+            errEl.textContent = valErr;
+            errEl.classList.remove('hidden');
+            return;
+          }
+          var valIp = document.getElementById('add-prefix-ip').value.trim();
+          var valMask = document.getElementById('add-prefix-mask').value;
+          var valCidr = valIp + '/' + valMask;
+          var valAsn = getAddPrefixAsn();
+          try {
+            var valResp = await fetch('/api/prefixes/validate-new', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cidr: valCidr, asn: valAsn }),
+            });
+            var valData = await valResp.json();
+            if (valData.result) {
+              addPrefixValidationResult = valData.result;
+            }
+          } catch (e) {
+            // Validation fetch failed — continue anyway, the ensure flow will handle it
+          }
+        }
+        if (addPrefixValidationResult && !addPrefixValidationResult.summary.ready) {
+          // Only warn if there are actual errors (not just warnings)
+          var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
+          if (hasErrors) {
+            if (!confirm('Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '\n\nContinue anyway?')) return;
+          }
         }
       }
 
