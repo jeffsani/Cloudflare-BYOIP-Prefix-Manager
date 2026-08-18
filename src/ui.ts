@@ -506,7 +506,7 @@ export function renderDashboard(userEmail: string): string {
   </div>
 
   <!-- Add Service Binding Modal -->
-  <div id="binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeBindingModal()">
+  <div id="binding-modal" class="hidden modal-overlay">
     <div class="modal-content" style="max-width:480px">
       <div class="p-4 border-b border-cf-border">
         <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Service Binding</h3>
@@ -531,7 +531,7 @@ export function renderDashboard(userEmail: string): string {
         <div id="binding-validation" class="text-[10px] mb-3 hidden"></div>
         <div id="binding-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="closeBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="confirmCloseBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="binding-submit-btn" onclick="submitBinding()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Binding</button>
         </div>
       </div>
@@ -539,7 +539,7 @@ export function renderDashboard(userEmail: string): string {
   </div>
 
   <!-- Add Child Prefix Modal -->
-  <div id="child-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeChildPrefixModal()">
+  <div id="child-prefix-modal" class="hidden modal-overlay">
     <div class="modal-content" style="max-width:480px">
       <div class="p-4 border-b border-cf-border">
         <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Child Prefix</h3>
@@ -557,7 +557,7 @@ export function renderDashboard(userEmail: string): string {
         </div>
         <div id="child-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="closeChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="confirmCloseChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="child-prefix-submit-btn" onclick="submitChildPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Child Prefix</button>
         </div>
       </div>
@@ -565,7 +565,7 @@ export function renderDashboard(userEmail: string): string {
   </div>
 
   <!-- Delegate Prefix Modal -->
-  <div id="delegation-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDelegationModal()">
+  <div id="delegation-modal" class="hidden modal-overlay">
     <div class="modal-content" style="max-width:480px">
       <div class="p-4 border-b border-cf-border">
         <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delegate Prefix</h3>
@@ -591,7 +591,7 @@ export function renderDashboard(userEmail: string): string {
         </div>
         <div id="delegation-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="closeDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="confirmCloseDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delegation-submit-btn" onclick="submitDelegation()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Delegation</button>
         </div>
       </div>
@@ -635,7 +635,7 @@ export function renderDashboard(userEmail: string): string {
   </div>
 
   <!-- Add Prefix Modal -->
-  <div id="add-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAddPrefixModal()">
+  <div id="add-prefix-modal" class="hidden modal-overlay">
     <div class="modal-content" style="max-width:560px">
       <div class="p-4 border-b border-cf-border">
         <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Prefix</h3>
@@ -725,7 +725,7 @@ export function renderDashboard(userEmail: string): string {
             Validate IRR / ROA
           </button>
           <div class="flex gap-2">
-            <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+            <button onclick="confirmCloseAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
             <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
           </div>
         </div>
@@ -986,11 +986,26 @@ export function renderDashboard(userEmail: string): string {
         if (creds.length > 0) {
           html += '<div class="space-y-1 mb-2">';
           creds.forEach(function(c) {
-            html += '<div class="flex items-center gap-3 p-2 rounded border border-cf-border">';
+            var credRowId = 'rir-cred-row-' + c.id;
+            html += '<div id="' + credRowId + '">';
+            // Display row
+            html += '<div id="' + credRowId + '-display" class="flex items-center gap-3 p-2 rounded border border-cf-border">';
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
             html += '<span class="font-mono">' + escHtml(c.api_key) + '</span>';
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
-            html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="ml-auto text-red-400 hover:text-red-300">Delete</button>';
+            html += '<button onclick="editRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Edit</button>';
+            html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>';
+            html += '</div>';
+            // Edit row (hidden)
+            html += '<div id="' + credRowId + '-edit" class="hidden p-2 rounded border border-cf-orange" style="background:var(--input-bg)">';
+            html += '<div class="flex gap-2 items-end flex-wrap">';
+            html += '<div><label class="block text-[10px] text-cf-gray">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
+            html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
+            html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
+            html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
+            html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>';
+            html += '</div>';
+            html += '</div>';
             html += '</div>';
           });
           html += '</div>';
@@ -1032,6 +1047,38 @@ export function renderDashboard(userEmail: string): string {
       if (!confirm('Delete this RIR credential?')) return;
       await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
       loadAccountRirCredentials(accountId);
+    }
+
+    function editRirCredential(id, accountId, rir, maintainer) {
+      var display = document.getElementById('rir-cred-row-' + id + '-display');
+      var edit = document.getElementById('rir-cred-row-' + id + '-edit');
+      if (display) display.classList.add('hidden');
+      if (edit) edit.classList.remove('hidden');
+    }
+
+    function cancelEditRirCredential(id) {
+      var display = document.getElementById('rir-cred-row-' + id + '-display');
+      var edit = document.getElementById('rir-cred-row-' + id + '-edit');
+      if (edit) edit.classList.add('hidden');
+      if (display) display.classList.remove('hidden');
+    }
+
+    async function saveEditRirCredential(id, accountId, rir) {
+      var apiKey = document.getElementById('rir-edit-key-' + id).value.trim();
+      var maintainer = document.getElementById('rir-edit-mnt-' + id).value.trim();
+      var body = { maintainer: maintainer };
+      if (apiKey) body.api_key = apiKey;
+      var r = await fetch('/api/rir/credentials/' + id, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      var data = await r.json();
+      if (data.ok) {
+        loadAccountRirCredentials(accountId);
+      } else {
+        alert(data.error || 'Failed to update credentials');
+      }
     }
 
     async function testNewAccountToken() {
@@ -2141,6 +2188,16 @@ export function renderDashboard(userEmail: string): string {
       childPrefixModalContext = null;
     }
 
+    function isChildPrefixDirty() {
+      var ip = document.getElementById('child-prefix-ip');
+      return ip && ip.value.trim() !== '' && ip.defaultValue !== ip.value;
+    }
+
+    function confirmCloseChildPrefixModal() {
+      if (isChildPrefixDirty() && !confirm('You have unsaved changes. Discard them?')) return;
+      closeChildPrefixModal();
+    }
+
     function validateChildPrefix() {
       if (!childPrefixModalContext) return null;
       var parentCidr = childPrefixModalContext.parentCidr;
@@ -2373,6 +2430,17 @@ export function renderDashboard(userEmail: string): string {
     function closeBindingModal() {
       document.getElementById('binding-modal').classList.add('hidden');
       bindingModalContext = null;
+    }
+
+    function isBindingDirty() {
+      var svc = document.getElementById('binding-service');
+      var ip = document.getElementById('binding-ip');
+      return (svc && svc.value !== '') || (ip && ip.value.trim() !== '' && !ip.disabled);
+    }
+
+    function confirmCloseBindingModal() {
+      if (isBindingDirty() && !confirm('You have unsaved changes. Discard them?')) return;
+      closeBindingModal();
     }
 
     function validateBinding() {
@@ -2636,6 +2704,17 @@ export function renderDashboard(userEmail: string): string {
       delegationModalContext = null;
     }
 
+    function isDelegationDirty() {
+      var acctId = document.getElementById('delegation-account-id');
+      var desc = document.getElementById('delegation-description');
+      return (acctId && acctId.value.trim() !== '') || (desc && desc.value.trim() !== '');
+    }
+
+    function confirmCloseDelegationModal() {
+      if (isDelegationDirty() && !confirm('You have unsaved changes. Discard them?')) return;
+      closeDelegationModal();
+    }
+
     function validateDelegation() {
       if (!delegationModalContext) return 'No context';
       var parentCidr = delegationModalContext.parentCidr;
@@ -2888,6 +2967,26 @@ export function renderDashboard(userEmail: string): string {
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
       addPrefixIpFamily = null;
+    }
+
+    function isAddPrefixDirty() {
+      var ip = document.getElementById('add-prefix-ip');
+      var desc = document.getElementById('add-prefix-description');
+      var customAsn = document.getElementById('add-prefix-custom-asn');
+      var asnCustom = document.querySelector('input[name="add-prefix-asn-mode"][value="custom"]');
+      var loaUpload = document.querySelector('input[name="add-prefix-loa-mode"][value="upload"]');
+      if (ip && ip.value.trim() !== '') return true;
+      if (desc && desc.value.trim() !== '') return true;
+      if (asnCustom && asnCustom.checked && customAsn && customAsn.value.trim() !== '') return true;
+      if (loaUpload && loaUpload.checked) return true;
+      if (addPrefixLoaDocumentId) return true;
+      if (addPrefixValidationResult) return true;
+      return false;
+    }
+
+    function confirmCloseAddPrefixModal() {
+      if (isAddPrefixDirty() && !confirm('You have unsaved changes. Discard them?')) return;
+      closeAddPrefixModal();
     }
 
     function setAddPrefixFamily(family) {

@@ -1139,6 +1139,36 @@ app.post('/api/rir/credentials', async (c) => {
   return c.json({ ok: true });
 });
 
+// Patch (partial update) RIR credentials
+app.patch('/api/rir/credentials/:id', async (c) => {
+  const email = c.get('userEmail') as string;
+  const id = c.req.param('id');
+  const body = await c.req.json<{ api_key?: string; maintainer?: string }>();
+
+  const sets: string[] = [];
+  const vals: string[] = [];
+  if (body.api_key !== undefined && body.api_key !== '') {
+    sets.push('api_key = ?');
+    vals.push(body.api_key);
+  }
+  if (body.maintainer !== undefined) {
+    sets.push('maintainer = ?');
+    vals.push(body.maintainer);
+  }
+  if (sets.length === 0) {
+    return c.json({ error: 'Nothing to update' }, 400);
+  }
+  sets.push("updated_at = datetime('now')");
+
+  await c.env.DB.prepare(
+    `UPDATE rir_credentials SET ${sets.join(', ')} WHERE id = ? AND user_email = ?`,
+  )
+    .bind(...vals, id, email)
+    .run();
+
+  return c.json({ ok: true });
+});
+
 // Delete RIR credentials
 app.delete('/api/rir/credentials/:id', async (c) => {
   const email = c.get('userEmail') as string;
