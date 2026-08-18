@@ -3574,7 +3574,8 @@ export function renderDashboard(userEmail: string): string {
         // Step 1: Route object
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Create ' + routeType + ' object</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Ensure ' + routeType + ' object has validation token</div>';
+        html += '<div class="text-[10px] mb-1" style="color:var(--muted)">If the object exists, it will be updated. If not, it will be created.</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
@@ -3586,7 +3587,8 @@ export function renderDashboard(userEmail: string): string {
 
         // Step 2: aut-num object
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Update aut-num object</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Ensure aut-num object has validation token</div>';
+        html += '<div class="text-[10px] mb-1" style="color:var(--muted)">If the object exists, it will be updated. If not, it will be created.</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += 'aut-num: AS' + asn + '<br>';
         html += 'descr: cf-validation: ' + escHtml(token);
@@ -3617,7 +3619,7 @@ export function renderDashboard(userEmail: string): string {
         // Cloudflare ASN flow
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
-        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Create ' + routeType + ' object with validation token</div>';
+        html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Ensure ' + routeType + ' object has validation token</div>';
         html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
@@ -3674,7 +3676,7 @@ export function renderDashboard(userEmail: string): string {
         var html = '';
         if (supported) {
           html += '<button onclick="pcgCreateRoute()" id="pcg-route-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
-          html += 'Create ' + (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ' at ' + rir.toUpperCase();
+          html += 'Ensure ' + (cidr.indexOf(':') !== -1 ? 'route6' : 'route') + ' at ' + rir.toUpperCase();
           html += '</button>';
         }
         // Inline credential fallback
@@ -3687,7 +3689,7 @@ export function renderDashboard(userEmail: string): string {
         html += '</select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-route-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-route-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
-        html += '<button onclick="pcgCreateRouteInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Create</button>';
+        html += '<button onclick="pcgCreateRouteInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Submit</button>';
         html += '</div></details></div>';
         routeEl.innerHTML = html;
       }
@@ -3698,7 +3700,7 @@ export function renderDashboard(userEmail: string): string {
         var html = '';
         if (supported) {
           html += '<button onclick="pcgUpdateAutnum()" id="pcg-autnum-btn" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">';
-          html += 'Update aut-num at ' + rir.toUpperCase();
+          html += 'Ensure aut-num at ' + rir.toUpperCase();
           html += '</button>';
         }
         html += '<div class="mt-2">';
@@ -3710,7 +3712,7 @@ export function renderDashboard(userEmail: string): string {
         html += '</select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-autnum-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-autnum-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
-        html += '<button onclick="pcgUpdateAutnumInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Update</button>';
+        html += '<button onclick="pcgUpdateAutnumInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Submit</button>';
         html += '</div></details></div>';
         autnumEl.innerHTML = html;
       }
