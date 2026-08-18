@@ -3354,14 +3354,14 @@ export function renderDashboard(userEmail: string): string {
               addPrefixValidationResult = valData.result;
             }
           } catch (e) {
-            // Validation fetch failed — continue anyway, the ensure flow will handle it
+            // Validation fetch failed - continue anyway, the ensure flow will handle it
           }
         }
         if (addPrefixValidationResult && !addPrefixValidationResult.summary.ready) {
           // Only warn if there are actual errors (not just warnings)
           var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
           if (hasErrors) {
-            if (!confirm('Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '\n\nContinue anyway?')) return;
+            if (!confirm('Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '\\n\\nContinue anyway?')) return;
           }
         }
       }
