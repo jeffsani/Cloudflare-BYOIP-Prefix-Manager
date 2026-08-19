@@ -3403,8 +3403,10 @@ export function renderDashboard(userEmail: string): string {
         html += '</div>';
       }
 
-      // RPKI Portal link
-      html += '<div style="padding-top:6px"><a href="https://rpki.cloudflare.com/" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>';
+      // RPKI Portal link with pre-populated ASN and prefix
+      var rpkiCidr = document.getElementById('add-prefix-ip').value.trim() + '/' + document.getElementById('add-prefix-mask').value;
+      var rpkiPortalUrl = 'https://rpki.cloudflare.com/?view=validator&validateRoute=' + encodeURIComponent(asn + '_' + rpkiCidr);
+      html += '<div style="padding-top:6px"><a href="' + rpkiPortalUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>';
 
       detailsEl.innerHTML = html;
       container.classList.remove('hidden');
@@ -4185,8 +4187,14 @@ export function renderDashboard(userEmail: string): string {
         rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:2px;color:var(--muted)">No ROA entries found in global routing tables.</div>');
       }
 
-      // Link to RPKI Portal
-      rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><a href="https://rpki.cloudflare.com/" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>');
+      // Link to RPKI Portal with pre-populated ASN and prefix
+      var rpkiPortalHref = 'https://rpki.cloudflare.com/';
+      if (result && result.prefix_origins && result.prefix_origins.length > 0 && result.prefix_origins[0].origin) {
+        rpkiPortalHref += '?view=validator&validateRoute=' + encodeURIComponent(result.prefix_origins[0].origin + '_' + cidr);
+      } else if (cidr) {
+        rpkiPortalHref += '?view=validator&prefix=' + encodeURIComponent(cidr);
+      }
+      rows.push('<div style="border-top:1px solid var(--border);padding-top:6px;margin-top:6px"><a href="' + rpkiPortalHref + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>');
 
       return rows.join('');
     }
