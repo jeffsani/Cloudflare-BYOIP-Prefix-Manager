@@ -38,7 +38,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 | Layer | Technology |
 |-------|-----------|
 | Runtime | Cloudflare Workers |
-| Framework | [Hono](https://hono.dev/) v4.6+ |
+| Framework | [Hono](https://hono.dev/) v4.6+ with [chanfana](https://chanfana.pages.dev/) OpenAPI |
 | Frontend | Server-rendered HTML + vanilla JS |
 | CSS | Tailwind CSS (CDN) + CSS custom properties |
 | Database | Cloudflare D1 (SQLite) |
@@ -133,11 +133,28 @@ network-tools/
 ├── schema.sql                  — Full schema (user_accounts + account_tokens + activity_log)
 ├── migrate-multi-token.sql     — Migration for existing deployments
 └── src/
-    ├── index.ts    — Hono app, API routes, token pool logic
-    ├── ui.ts       — Server-rendered HTML dashboard (925+ lines)
-    ├── auth.ts     — CF Access JWT middleware
-    ├── types.ts    — TypeScript interfaces
-    └── api.ts      — Cloudflare API helpers
+    ├── index.ts                — Hono app, chanfana OpenAPI setup, route registration
+    ├── helpers.ts              — Shared helpers (getToken, logActivity, resolveAccount)
+    ├── ui.ts                   — Server-rendered HTML dashboard
+    ├── auth.ts                 — CF Access JWT middleware
+    ├── types.ts                — TypeScript interfaces
+    ├── api.ts                  — Cloudflare API helpers
+    ├── schemas/                — Zod schemas for request/response validation & OpenAPI generation
+    │   ├── common.ts           — Shared schemas (error responses, account_id query)
+    │   ├── accounts.ts         — Account & token schemas
+    │   ├── prefixes.ts         — Prefix, BGP, binding, delegation schemas
+    │   ├── rir.ts              — RIR credential & operation schemas
+    │   ├── lookups.ts          — Looking glass, RDAP, RPKI, visibility schemas
+    │   └── activity.ts         — Activity log schema
+    └── endpoints/              — chanfana OpenAPIRoute classes (one file per domain)
+        ├── settings.ts         — Account settings endpoints
+        ├── prefixes.ts         — Prefix management endpoints
+        ├── bgp.ts              — BGP sub-prefix endpoints
+        ├── bindings.ts         — Service binding endpoints
+        ├── delegations.ts      — Delegation endpoints
+        ├── services.ts         — Services endpoint
+        ├── rir.ts              — RIR credentials & operations endpoints
+        └── lookups.ts          — Looking glass, RDAP, RPKI, visibility, activity endpoints
 ```
 
 ## Database Schema
@@ -151,38 +168,53 @@ Stores API tokens per account. Multiple tokens per account enable round-robin lo
 ### `activity_log`
 Tracks advertisement toggle actions (advertise/withdraw) with user email, action, details, and timestamp.
 
-## API Endpoints
+## API Documentation
+
+The API is fully documented with an auto-generated **OpenAPI 3.1** specification, powered by [chanfana](https://chanfana.pages.dev/) with [Zod](https://zod.dev/) schemas for request/response validation.
+
+### Interactive Docs (Swagger UI)
+
+Browse and test all API endpoints interactively:
+
+- **Swagger UI:** [`/api/docs`](https://network-tools.example.com/api/docs)
+- **OpenAPI JSON:** [`/api/openapi.json`](https://network-tools.example.com/api/openapi.json)
+
+The OpenAPI spec can be imported into tools like Postman, Insomnia, or used for client code generation.
+
+### Exporting the Schema
+
+Download the OpenAPI spec for offline use or CI/CD integration:
+
+```bash
+# Download the schema
+curl -o openapi.json https://network-tools.example.com/api/openapi.json
+
+# Or during local development
+curl -o openapi.json http://localhost:8787/api/openapi.json
+```
+
+### API Endpoint Summary
+
+The API is organized into the following groups (see Swagger UI for full request/response schemas):
+
+| Group | Endpoints | Description |
+|-------|-----------|-------------|
+| **Account Settings** | 5 | Manage Cloudflare accounts, test API tokens |
+| **Prefixes** | 7 | BYOIP prefix CRUD, validation, bulk toggle, stats |
+| **BGP Prefixes** | 4 | BGP sub-prefix management and advertisement toggle |
+| **Service Bindings** | 3 | Bind/unbind Cloudflare services to prefixes |
+| **Delegations** | 4 | Delegate prefix CIDRs to other accounts |
+| **Services** | 1 | List available Cloudflare services |
+| **RIR Credentials** | 5 | Manage ARIN/RIPE credentials for automated IRR |
+| **RIR Operations** | 3 | Create/update route objects and aut-num at ARIN/RIPE |
+| **Lookups** | 4 | BGP looking glass, RDAP, RPKI, RIPEstat visibility |
+| **Activity** | 1 | Activity log (last 50 entries) |
+
+Additional plain routes (not in OpenAPI spec):
 
 | Method | Path | Description |
 |--------|------|-------------|
 | `GET` | `/` | Dashboard HTML |
 | `GET` | `/health` | Health check |
 | `GET` | `/api/me` | Current user email |
-| `GET` | `/api/settings` | List accounts (with token counts) |
-| `POST` | `/api/settings` | Add/update account (label + account_id) |
-| `DELETE` | `/api/settings/:id` | Delete account (cascades to tokens) |
-| `PUT` | `/api/settings/:id/default` | Set default account |
-| `GET` | `/api/tokens` | List tokens for an account (masked) |
-| `POST` | `/api/tokens` | Add token to an account |
-| `DELETE` | `/api/tokens/:id` | Delete a token |
-| `POST` | `/api/test-token` | Validate token permissions |
-| `POST` | `/api/prefixes` | Create new BYOIP prefix |
-| `POST` | `/api/prefixes/validate-new` | Pre-submission IRR/ROA validation |
-| `POST` | `/api/loa-upload` | Upload LOA document (PDF) |
-| `GET` | `/api/rir/credentials` | List saved RIR credentials (masked) |
-| `POST` | `/api/rir/credentials` | Save/update RIR credentials (ARIN/RIPE) |
-| `DELETE` | `/api/rir/credentials/:id` | Delete RIR credentials |
-| `POST` | `/api/rir/create-route` | Create route/route6 at ARIN or RIPE |
-| `POST` | `/api/rir/update-autnum` | Update aut-num at ARIN or RIPE |
-| `GET` | `/api/rir/detect` | Auto-detect RIR for a prefix via RDAP |
-| `GET` | `/api/prefixes` | List BYOIP prefixes |
-| `GET` | `/api/prefixes/:id/bgp` | List BGP sub-prefixes |
-| `POST` | `/api/prefixes/:id/bgp` | Create BGP child prefix |
-| `DELETE` | `/api/prefixes/:pid/bgp/:bid` | Delete BGP child prefix |
-| `GET` | `/api/prefixes/:id/bindings` | List service bindings |
-| `POST` | `/api/prefixes/:id/bindings` | Create service binding |
-| `DELETE` | `/api/prefixes/:pid/bindings/:bid` | Delete service binding |
-| `GET` | `/api/services` | List available services |
-| `POST` | `/api/prefixes/:pid/bgp/:bid/toggle` | Toggle BGP advertisement |
-| `POST` | `/api/looking-glass` | BGP route lookup (Radar API) |
-| `GET` | `/api/activity` | Activity log (last 50 entries) |
+| `POST` | `/api/loa-upload` | Upload LOA document (multipart/form-data) |

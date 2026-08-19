@@ -12,7 +12,8 @@ type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
  * boundary is CF Access itself.
  */
 export async function accessAuthMiddleware(c: Context<AppEnv>, next: Next) {
-  if (c.req.path === '/health' || c.req.path === '/favicon.ico') {
+  if (c.req.path === '/health' || c.req.path === '/favicon.ico' ||
+      c.req.path === '/api/openapi.json' || c.req.path === '/api/docs') {
     return next();
   }
 
