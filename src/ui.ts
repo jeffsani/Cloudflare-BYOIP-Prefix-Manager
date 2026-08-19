@@ -3788,7 +3788,8 @@ export function renderDashboard(userEmail: string): string {
               account_id: activeAccountId,
               asn: asn,
               validation_token: token,
-              rir: detectedRir
+              rir: detectedRir,
+              prefix: cidr
             })
           });
           var d = await r.json();
@@ -5259,13 +5260,18 @@ export function renderDashboard(userEmail: string): string {
         'withdraw': { label: 'Withdrawn', css: 'al-badge-red' },
         'bulk_advertise': { label: 'Bulk Advertised', css: 'al-badge-green' },
         'bulk_withdraw': { label: 'Bulk Withdrawn', css: 'al-badge-red' },
+        'create_prefix': { label: 'Create Prefix', css: 'al-badge-blue' },
+        'delete_prefix': { label: 'Delete Prefix', css: 'al-badge-red' },
         'create_bgp_prefix': { label: 'Created BGP Prefix', css: 'al-badge-blue' },
+        'delete_bgp_prefix': { label: 'Delete BGP Prefix', css: 'al-badge-red' },
         'create_binding': { label: 'Created Binding', css: 'al-badge-blue' },
         'delete_binding': { label: 'Deleted Binding', css: 'al-badge-red' },
         'create_delegation': { label: 'Created Delegation', css: 'al-badge-blue' },
         'delete_delegation': { label: 'Deleted Delegation', css: 'al-badge-red' },
         'update_description': { label: 'Updated Description', css: 'al-badge-gray' },
-        'validate': { label: 'Validated', css: 'al-badge-yellow' }
+        'rir_ensure_route': { label: 'Prefix Validation', css: 'al-badge-yellow' },
+        'rir_ensure_autnum': { label: 'Prefix Validation', css: 'al-badge-yellow' },
+        'validate': { label: 'IRR Validation', css: 'al-badge-yellow' }
       };
       var info = map[action] || { label: action, css: 'al-badge-gray' };
       return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';

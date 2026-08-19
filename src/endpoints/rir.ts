@@ -324,7 +324,7 @@ export class EnsureRoute extends OpenAPIRoute {
       await c.env.DB.prepare(
         `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
       )
-        .bind(email, 'rir_ensure_route', `Ensured ${body.prefix.includes(':') ? 'route6' : 'route'} at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn}`)
+        .bind(email, 'rir_ensure_route', `Validated ${body.prefix.includes(':') ? 'route6' : 'route'} token at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn} onboarding`)
         .run();
     }
 
@@ -382,7 +382,7 @@ export class EnsureAutnum extends OpenAPIRoute {
       await c.env.DB.prepare(
         `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
       )
-        .bind(email, 'rir_ensure_autnum', `Ensured aut-num at ${rir.toUpperCase()} for AS${body.asn}`)
+        .bind(email, 'rir_ensure_autnum', `Validated aut-num token at ${rir.toUpperCase()} for ${body.prefix ? `${body.prefix} ` : ''}AS${body.asn} onboarding`)
         .run();
     }
 

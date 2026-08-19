@@ -50,6 +50,7 @@ export const EnsureAutnumRequestSchema = z.object({
   asn: z.number({ message: 'asn is required' }),
   validation_token: z.string().min(1, 'validation_token is required'),
   rir: z.string().min(1, 'rir is required'),
+  prefix: z.string().optional(),
   api_key: z.string().optional(),
   maintainer: z.string().optional(),
 });
