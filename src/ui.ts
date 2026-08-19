@@ -1496,6 +1496,7 @@ export function renderDashboard(userEmail: string): string {
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
       var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
       var isChecked = selectedPrefixes.has(p.id);
+      var canBulkToggle = !p.on_demand_locked && p.approved !== 'P';
 
       // Parent-level toggle button
       var parentToggleHtml = '';
@@ -1522,7 +1523,7 @@ export function renderDashboard(userEmail: string): string {
         '</span>';
 
       return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + p.id + '\\')">' +
-        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked ? 'checked' : '') + ' onchange="updateBulkSelection()" style="cursor:pointer;accent-color:#F6821F"></td>' +
+        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked && canBulkToggle ? 'checked' : '') + (canBulkToggle ? '' : ' disabled title="Cannot toggle: ' + (p.approved === 'P' ? 'pending approval' : 'locked') + '"') + ' onchange="updateBulkSelection()" style="cursor:' + (canBulkToggle ? 'pointer' : 'not-allowed') + ';accent-color:#F6821F' + (canBulkToggle ? '' : ';opacity:0.4') + '"></td>' +
         '<td class="px-3 py-2.5"><span class="' + chevClass + '" style="font-size:16px">&#9656;</span></td>' +
         '<td class="px-2 py-2.5">' + lockIcon + delegationIcon + '</td>' +
         '<td class="px-3 py-2.5 font-mono font-medium" style="color:var(--text-strong)"><span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(p.cidr) + '\\',this)">' + escHtml(p.cidr) + '<span class="rdap-tip"></span></span></td>' +
@@ -1849,7 +1850,7 @@ export function renderDashboard(userEmail: string): string {
       var checkboxes = document.querySelectorAll('.prefix-checkbox');
       var pageIds = getCurrentPageIds();
       if (checkbox.checked) {
-        checkboxes.forEach(function(cb) { cb.checked = true; selectedPrefixes.add(cb.value); });
+        checkboxes.forEach(function(cb) { if (!cb.disabled) { cb.checked = true; selectedPrefixes.add(cb.value); } });
       } else {
         checkboxes.forEach(function(cb) { cb.checked = false; });
         pageIds.forEach(function(id) { selectedPrefixes.delete(id); });
@@ -1863,8 +1864,8 @@ export function renderDashboard(userEmail: string): string {
       var checkboxes = document.querySelectorAll('.prefix-checkbox:checked');
       checkboxes.forEach(function(cb) { selectedPrefixes.add(cb.value); });
       updateBulkBar();
-      // Update select-all checkbox state
-      var allCbs = document.querySelectorAll('.prefix-checkbox');
+      // Update select-all checkbox state (only count enabled checkboxes)
+      var allCbs = document.querySelectorAll('.prefix-checkbox:not(:disabled)');
       var selectAllCb = document.getElementById('select-all-checkbox');
       if (selectAllCb) {
         selectAllCb.checked = allCbs.length > 0 && checkboxes.length === allCbs.length;

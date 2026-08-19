@@ -528,8 +528,24 @@ export class BulkToggle extends OpenAPIRoute {
         errors: string[];
       }> = [];
 
+      // Fetch all prefixes once to check approval status
+      const allPrefixData = await listPrefixes(acct.account_id, token);
+      const prefixApprovalMap = new Map<string, string>();
+      if (allPrefixData.success && allPrefixData.result) {
+        for (const p of allPrefixData.result) {
+          prefixApprovalMap.set(p.id, p.approved);
+        }
+      }
+
       for (const prefixId of body.prefix_ids) {
         const result = { prefix_id: prefixId, cidr: '', toggled: 0, skipped: 0, errors: [] as string[] };
+
+        // Skip prefixes that are still pending approval
+        if (prefixApprovalMap.get(prefixId) === 'P') {
+          result.skipped++;
+          results.push(result);
+          continue;
+        }
 
         try {
           // Fetch BGP sub-prefixes for this prefix
