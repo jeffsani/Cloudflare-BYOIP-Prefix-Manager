@@ -808,6 +808,76 @@ export async function lookupArinOrgPocs(orgId: string): Promise<{ adminC: string
 }
 
 /**
+ * Validate ARIN credentials: check Org ID resolves to POC handles, and optionally test API key
+ * against the IRR API.
+ */
+export async function validateArinCredentials(
+  orgId: string,
+  apiKey?: string,
+): Promise<{ valid: boolean; orgName?: string; adminC?: string; techC?: string; apiKeyValid?: boolean; error?: string }> {
+  // Step 1: Validate Org ID via Whois
+  try {
+    const orgResp = await fetch(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!orgResp.ok) {
+      return { valid: false, error: `Org ID '${orgId}' not found at ARIN (HTTP ${orgResp.status}). Check the Org ID is correct (e.g., DC-403).` };
+    }
+    const orgData = await orgResp.json() as { org?: { orgName?: { $?: string }; handle?: { $?: string } } };
+    const orgName = orgData?.org?.orgName?.['$'] || '';
+
+    // Step 2: Look up POC handles
+    const pocs = await lookupArinOrgPocs(orgId);
+    if (!pocs) {
+      return { valid: false, orgName, error: `Org '${orgId}' (${orgName}) found but no Admin/Tech POC handles. Ensure your org has Admin and Tech contacts registered at ARIN.` };
+    }
+
+    // Step 3: Optionally test API key against IRR
+    let apiKeyValid: boolean | undefined;
+    if (apiKey) {
+      try {
+        const testResp = await fetch(`${ARIN_IRR_API}/route/0.0.0.0/0/AS0`, {
+          method: 'GET',
+          headers: {
+            Authorization: `ApiKey ${apiKey}`,
+            Accept: 'application/rpsl',
+          },
+        });
+        // 404 = key is valid (object doesn't exist, but auth succeeded)
+        // 401/403 = bad key
+        apiKeyValid = testResp.status !== 401 && testResp.status !== 403;
+      } catch {
+        apiKeyValid = undefined;
+      }
+    }
+
+    return { valid: true, orgName, adminC: pocs.adminC, techC: pocs.techC, apiKeyValid };
+  } catch (e: unknown) {
+    return { valid: false, error: `ARIN validation failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Validate RIPE credentials: test API key by checking a known object.
+ */
+export async function validateRipeCredentials(
+  apiKey: string,
+  maintainer: string,
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    // Check if the maintainer object exists in RIPE DB (public, no auth needed)
+    const r = await fetch(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (r.status === 404) return { valid: false, error: `Maintainer '${maintainer}' not found in RIPE database.` };
+    if (r.ok) return { valid: true };
+    return { valid: false, error: `RIPE returned HTTP ${r.status}.` };
+  } catch (e: unknown) {
+    return { valid: false, error: `RIPE validation failed: ${(e as Error).message}` };
+  }
+}
+
+/**
  * Ensure a route/route6 object exists at ARIN IRR with the validation token.
  * 1. GET the object — if it exists, add/update the cf-validation descr line via PUT.
  * 2. If it does not exist (404), create it via POST with all required ARIN fields.
@@ -875,7 +945,10 @@ export async function ensureArinRouteObject(
     // Look up POC handles from Org ID
     const pocs = await lookupArinOrgPocs(orgId);
     if (!pocs) {
-      return { ok: false, error: `Could not look up POC handles for Org ${orgId}. Verify the Org ID in your ARIN credentials (e.g., DC-403, not the company name).` };
+      // Get detailed error for better debugging
+      const validation = await validateArinCredentials(orgId);
+      const detail = validation.error || 'No Admin/Tech POC handles found.';
+      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
     }
 
     const rpslBody = [
@@ -968,7 +1041,9 @@ export async function ensureArinAutnum(
     // Step 2: Object does not exist — create it
     const pocs = await lookupArinOrgPocs(orgId);
     if (!pocs) {
-      return { ok: false, error: `Could not look up POC handles for Org ${orgId}. Verify the Org ID in your ARIN credentials.` };
+      const validation = await validateArinCredentials(orgId);
+      const detail = validation.error || 'No Admin/Tech POC handles found.';
+      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
     }
 
     const rpslBody = [

@@ -1003,9 +1003,11 @@ export function renderDashboard(userEmail: string): string {
             html += '<div><label class="block text-[10px] text-cf-gray">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
             html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
             html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
+            html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-blue-500 text-blue-400 text-[10px] font-medium rounded hover:bg-blue-500 hover:text-white transition">Validate</button>';
             html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
             html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>';
             html += '</div>';
+            html += '<div id="rir-edit-validate-result-' + c.id + '" class="text-[10px] mt-1"></div>';
             html += '</div>';
             html += '</div>';
           });
@@ -1017,8 +1019,10 @@ export function renderDashboard(userEmail: string): string {
         html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="acct-rir-sel-' + escAttr(accountId) + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="acct-rir-key-' + escAttr(accountId) + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="acct-rir-mnt-' + escAttr(accountId) + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
+        html += '<button onclick="validateRirCredentialInput(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 border border-blue-500 text-blue-400 text-[10px] font-medium rounded hover:bg-blue-500 hover:text-white transition">Validate</button>';
         html += '<button onclick="saveAccountRirCredential(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
         html += '</div>';
+        html += '<div id="acct-rir-validate-result-' + escAttr(accountId) + '" class="text-[10px] mt-1"></div>';
 
         el.innerHTML = html;
       } catch (e) {
@@ -1079,6 +1083,70 @@ export function renderDashboard(userEmail: string): string {
         loadAccountRirCredentials(accountId);
       } else {
         alert(data.error || 'Failed to update credentials');
+      }
+    }
+
+    async function validateRirCredentialInput(accountId) {
+      var rir = document.getElementById('acct-rir-sel-' + accountId).value;
+      var apiKey = document.getElementById('acct-rir-key-' + accountId).value.trim();
+      var maintainer = document.getElementById('acct-rir-mnt-' + accountId).value.trim();
+      var resultEl = document.getElementById('acct-rir-validate-result-' + accountId);
+      if (!resultEl) return;
+      if (!maintainer && rir === 'arin') { resultEl.innerHTML = '<span class="text-red-400">Org ID is required for ARIN.</span>'; return; }
+      if (!maintainer && rir === 'ripe') { resultEl.innerHTML = '<span class="text-red-400">Maintainer is required for RIPE.</span>'; return; }
+      resultEl.innerHTML = '<span class="animate-pulse text-cf-gray">Validating...</span>';
+      try {
+        var body = { rir: rir, maintainer: maintainer };
+        if (apiKey) body.api_key = apiKey;
+        var r = await fetch('/api/rir/credentials/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await r.json();
+        if (data.valid) {
+          var msg = '<span class="text-green-400">&#10003; Valid</span>';
+          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
+          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ', Tech: ' + escHtml(data.techC) + ')</span>';
+          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
+          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
+          resultEl.innerHTML = msg;
+        } else {
+          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
+        }
+      } catch (e) {
+        resultEl.innerHTML = '<span class="text-red-400">Validation request failed: ' + escHtml(String(e)) + '</span>';
+      }
+    }
+
+    async function validateEditRirCredential(id) {
+      var apiKey = document.getElementById('rir-edit-key-' + id).value.trim();
+      var maintainer = document.getElementById('rir-edit-mnt-' + id).value.trim();
+      var rir = document.getElementById('rir-edit-validate-' + id).getAttribute('data-rir');
+      var resultEl = document.getElementById('rir-edit-validate-result-' + id);
+      if (!resultEl) return;
+      resultEl.innerHTML = '<span class="animate-pulse text-cf-gray">Validating...</span>';
+      try {
+        var body = { rir: rir, maintainer: maintainer };
+        if (apiKey) body.api_key = apiKey;
+        var r = await fetch('/api/rir/credentials/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        var data = await r.json();
+        if (data.valid) {
+          var msg = '<span class="text-green-400">&#10003; Valid</span>';
+          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
+          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ')</span>';
+          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
+          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
+          resultEl.innerHTML = msg;
+        } else {
+          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
+        }
+      } catch (e) {
+        resultEl.innerHTML = '<span class="text-red-400">Validation request failed</span>';
       }
     }
 

@@ -31,6 +31,8 @@ import {
   ensureArinAutnum,
   updateRipeAutnum,
   normalizeRirName,
+  validateArinCredentials,
+  validateRipeCredentials,
 } from './api';
 
 type AppEnv = { Bindings: Env; Variables: { userEmail: string } };
@@ -1180,6 +1182,28 @@ app.delete('/api/rir/credentials/:id', async (c) => {
     .run();
 
   return c.json({ ok: true });
+});
+
+// Validate RIR credentials (test Org ID + API key before saving)
+app.post('/api/rir/credentials/validate', async (c) => {
+  const body = await c.req.json<{ rir: string; api_key?: string; maintainer?: string }>();
+  const rir = (body.rir || '').toLowerCase();
+
+  if (rir === 'arin') {
+    if (!body.maintainer) {
+      return c.json({ valid: false, error: 'Org ID is required for ARIN.' });
+    }
+    const result = await validateArinCredentials(body.maintainer, body.api_key);
+    return c.json(result);
+  } else if (rir === 'ripe') {
+    if (!body.api_key || !body.maintainer) {
+      return c.json({ valid: false, error: 'API key and maintainer are required for RIPE.' });
+    }
+    const result = await validateRipeCredentials(body.api_key, body.maintainer);
+    return c.json(result);
+  } else {
+    return c.json({ valid: false, error: 'RIR must be "arin" or "ripe".' });
+  }
 });
 
 // ─── RIR Route / Aut-num Object Management ────────────────────────
