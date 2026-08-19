@@ -1,14 +1,14 @@
 {
-  "name": "network-tools",
+  "name": "prefix-mgr",
   "version": "1.0.0",
   "private": true,
-  "description": "Network Tools — BYOIP Prefix Manager for Cloudflare Workers",
+  "description": "Prefix Manager — BYOIP Prefix Manager for Cloudflare Workers",
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "db:create": "wrangler d1 create network-tools-db",
-    "db:init": "wrangler d1 execute network-tools-db --local --file=schema.sql",
-    "db:init:remote": "wrangler d1 execute network-tools-db --remote --file=schema.sql",
+    "db:create": "wrangler d1 create prefix-mgr-db",
+    "db:init": "wrangler d1 execute prefix-mgr-db --local --file=schema.sql",
+    "db:init:remote": "wrangler d1 execute prefix-mgr-db --remote --file=schema.sql",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

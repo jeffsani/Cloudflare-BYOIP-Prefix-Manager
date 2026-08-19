@@ -79,7 +79,7 @@ const openapi = fromHono(app, {
   openapi_url: '/api/openapi.json',
   schema: {
     info: {
-      title: 'Network Tools — BYOIP Prefix Manager API',
+      title: 'Prefix Manager — BYOIP Prefix Manager API',
       version: '1.0.0',
       description: 'API for managing BYOIP (Bring Your Own IP) prefixes across Cloudflare accounts. Provides prefix lifecycle management, BGP advertisement control, service bindings, delegations, IRR/RPKI validation, and looking glass functionality.',
     },

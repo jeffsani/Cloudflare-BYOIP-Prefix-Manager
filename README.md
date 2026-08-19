@@ -1,10 +1,10 @@
-# Network Tools — BYOIP Prefix Manager
+# Prefix Manager — BYOIP Prefix Manager
 
 A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts. Built with Hono, server-rendered HTML, and vanilla JavaScript.
 
-**Live:** [network-tools.example.com](https://network-tools.example.com) (Cloudflare Access — Google IdP)
+**Live:** [prefix-mgr.example.com](https://prefix-mgr.example.com) (Cloudflare Access — Google IdP)
 
-![Network Tools Dashboard](src/network-tools.png)
+![Prefix Manager Dashboard](src/network-tools.png)
 
 ## Features
 
@@ -58,7 +58,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 ```bash
 git clone https://github.com/YOUR_ORG/prefix-mgr.git
-cd network-tools
+cd prefix-mgr
 npm install
 ```
 
@@ -83,7 +83,7 @@ npm run db:init:remote   # production
 
 If upgrading from an earlier version (before multi-token support):
 ```bash
-npx wrangler d1 execute network-tools-db --remote --file=migrate-multi-token.sql
+npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-multi-token.sql
 ```
 
 ### 4. Local development
@@ -126,7 +126,7 @@ In development (`ENVIRONMENT != "production"`), auth is bypassed with `dev@local
 ## Project Structure
 
 ```
-network-tools/
+prefix-mgr/
 ├── package.json
 ├── tsconfig.json
 ├── wrangler.toml.example
@@ -176,8 +176,8 @@ The API is fully documented with an auto-generated **OpenAPI 3.1** specification
 
 Browse and test all API endpoints interactively:
 
-- **Swagger UI:** [`/api/docs`](https://network-tools.example.com/api/docs)
-- **OpenAPI JSON:** [`/api/openapi.json`](https://network-tools.example.com/api/openapi.json)
+- **Swagger UI:** [`/api/docs`](https://prefix-mgr.example.com/api/docs)
+- **OpenAPI JSON:** [`/api/openapi.json`](https://prefix-mgr.example.com/api/openapi.json)
 
 The OpenAPI spec can be imported into tools like Postman, Insomnia, or used for client code generation.
 
@@ -187,7 +187,7 @@ Download the OpenAPI spec for offline use or CI/CD integration:
 
 ```bash
 # Download the schema
-curl -o openapi.json https://network-tools.example.com/api/openapi.json
+curl -o openapi.json https://prefix-mgr.example.com/api/openapi.json
 
 # Or during local development
 curl -o openapi.json http://localhost:8787/api/openapi.json

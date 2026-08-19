@@ -128,11 +128,11 @@ interface RipestatRoutingConsistencyResponse {
 
 export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult> {
   const r = await fetchWithRetry(
-    `https://stat.ripe.net/data/prefix-routing-consistency/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=network-tools`,
+    `https://stat.ripe.net/data/prefix-routing-consistency/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=prefix-mgr`,
     {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+        'User-Agent': 'prefix-mgr/1.0 (Cloudflare Worker)',
       },
     },
   );
@@ -165,7 +165,7 @@ export async function lookupIrrExplorer(prefix: string): Promise<IrrExplorerResu
     {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+        'User-Agent': 'prefix-mgr/1.0 (Cloudflare Worker)',
       },
     },
   );
@@ -513,11 +513,11 @@ export async function lookupRpki(prefix: string, _token: string, asn?: number): 
   // Use the ASN if provided for targeted validation, otherwise just query the prefix
   const asnParam = asn ? `&resource=${asn}` : '&resource=0';
   const r = await fetchWithRetry(
-    `https://stat.ripe.net/data/rpki-validation/data.json?prefix=${encodeURIComponent(prefix)}${asnParam}&sourceapp=network-tools`,
+    `https://stat.ripe.net/data/rpki-validation/data.json?prefix=${encodeURIComponent(prefix)}${asnParam}&sourceapp=prefix-mgr`,
     {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+        'User-Agent': 'prefix-mgr/1.0 (Cloudflare Worker)',
       },
     },
   );
@@ -615,11 +615,11 @@ function parseRipestatVisibility(
 
 async function fetchRipestatVisibility(resource: string): Promise<RipestatVisibilityResponse> {
   const r = await fetchWithRetry(
-    `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(resource)}&sourceapp=network-tools`,
+    `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(resource)}&sourceapp=prefix-mgr`,
     {
       headers: {
         Accept: 'application/json',
-        'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+        'User-Agent': 'prefix-mgr/1.0 (Cloudflare Worker)',
       },
     },
   );
@@ -796,7 +796,7 @@ export async function lookupRdap(prefix: string): Promise<RdapResult> {
   const ip = prefix.split('/')[0];
   const headers = {
     Accept: 'application/rdap+json',
-    'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+    'User-Agent': 'prefix-mgr/1.0 (Cloudflare Worker)',
   };
 
   // Try rdap.org first (follows redirects to the correct RIR)
