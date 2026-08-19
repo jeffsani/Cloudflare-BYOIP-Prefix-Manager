@@ -517,6 +517,7 @@ app.get('/api/prefixes/stats', async (c) => {
         advertised: prefixes.filter((p) => p.advertised === true).length,
         withdrawn: prefixes.filter((p) => p.advertised === false).length,
         locked: prefixes.filter((p) => p.on_demand_locked === true).length,
+        pending: prefixes.filter((p) => p.approved === 'P').length,
       },
       bgp: {
         total: allBgpPrefixes.length,

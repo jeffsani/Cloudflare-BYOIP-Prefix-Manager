@@ -278,6 +278,7 @@ export function renderDashboard(userEmail: string): string {
         <label class="text-xs text-cf-gray font-medium">Status:</label>
         <select id="filter-status" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
           <option value="all">All</option>
+          <option value="pending">Pending Approval</option>
           <option value="advertised">Advertised</option>
           <option value="withdrawn">Withdrawn</option>
           <option value="locked">Locked</option>
@@ -1193,7 +1194,9 @@ export function renderDashboard(userEmail: string): string {
       if (prefixStats) {
         var s = prefixStats;
         document.getElementById('stat-total').textContent = s.parent.total + s.bgp.total;
-        document.getElementById('stat-total-sub').textContent = s.parent.total + ' Parent / ' + s.bgp.total + ' Child';
+        var totalSub = s.parent.total + ' Parent / ' + s.bgp.total + ' Child';
+        if (s.parent.pending > 0) totalSub += ' / ' + s.parent.pending + ' Pending';
+        document.getElementById('stat-total-sub').textContent = totalSub;
         document.getElementById('stat-advertised').textContent = s.parent.advertised + s.bgp.advertised;
         document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' Child';
         document.getElementById('stat-withdrawn').textContent = s.parent.withdrawn + s.bgp.withdrawn;
@@ -1210,8 +1213,9 @@ export function renderDashboard(userEmail: string): string {
         var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
         var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
         var locked = allPrefixes.filter(function(p) { return p.on_demand_locked === true; }).length;
+        var pendingCount = allPrefixes.filter(function(p) { return p.approved === 'P'; }).length;
         document.getElementById('stat-total').textContent = total;
-        document.getElementById('stat-total-sub').textContent = '';
+        document.getElementById('stat-total-sub').textContent = pendingCount > 0 ? pendingCount + ' Pending Approval' : '';
         document.getElementById('stat-advertised').textContent = advertised;
         document.getElementById('stat-advertised-sub').textContent = '';
         document.getElementById('stat-withdrawn').textContent = withdrawn;
@@ -1270,6 +1274,7 @@ export function renderDashboard(userEmail: string): string {
       var tagFilter = document.getElementById('filter-tag').value;
 
       filteredPrefixes = allPrefixes.filter(function(p) {
+        if (statusFilter === 'pending' && p.approved !== 'P') return false;
         if (statusFilter === 'advertised' && p.advertised !== true && !p._has_advertised_child) return false;
         if (statusFilter === 'withdrawn' && p.advertised !== false && !p._has_withdrawn_child) return false;
         if (statusFilter === 'locked' && !p.on_demand_locked) return false;
@@ -1419,7 +1424,7 @@ export function renderDashboard(userEmail: string): string {
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
       var delegationIcon = hasDelegations(p.id) ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg><span class="info-bubble" style="width:220px">This prefix has ' + childData[p.id].delegations.length + ' delegation(s) to other accounts.</span></span>' : '';
-      var statusBadge = statusBadgeHtml(p.advertised);
+      var statusBadge = statusBadgeHtml(p.advertised, p.approved);
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
       var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
       var isChecked = selectedPrefixes.has(p.id);
@@ -5010,7 +5015,8 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Helpers ──────────────────────────────────────────────────
-    function statusBadgeHtml(advertised) {
+    function statusBadgeHtml(advertised, approved) {
+      if (approved === 'P') return '<span class="badge-pending">Pending Approval</span>';
       if (advertised === true) return '<span class="badge-advertised">Advertised</span>';
       if (advertised === false) return '<span class="badge-withdrawn">Withdrawn</span>';
       return '<span class="badge-unknown">Unknown</span>';
