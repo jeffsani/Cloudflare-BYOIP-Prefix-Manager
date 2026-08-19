@@ -3503,6 +3503,8 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (data.ok) {
+          // Save validation result before closeAddPrefixModal() nulls it
+          var savedValidationResult = addPrefixValidationResult;
           closeAddPrefixModal();
           loadPrefixes();
           refreshActivityLog();
@@ -3510,14 +3512,14 @@ export function renderDashboard(userEmail: string): string {
           // Determine if we should auto-create RIR records
           var token = data.prefix ? data.prefix.ownership_validation_token : null;
           var prefixId = data.prefix ? data.prefix.id : null;
-          var hasRirCreds = addPrefixValidationResult && addPrefixValidationResult.rir_credentials && addPrefixValidationResult.rir_credentials.length > 0;
+          var hasRirCreds = savedValidationResult && savedValidationResult.rir_credentials && savedValidationResult.rir_credentials.length > 0;
           var isByoAsn = asn !== 13335;
 
-          console.log('[add-prefix] token:', token, 'isByoAsn:', isByoAsn, 'hasRirCreds:', hasRirCreds, 'validationResult:', addPrefixValidationResult);
+          console.log('[add-prefix] token:', token, 'isByoAsn:', isByoAsn, 'hasRirCreds:', hasRirCreds, 'validationResult:', savedValidationResult);
 
           if (isByoAsn && hasRirCreds) {
             // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
-            var irrAlreadyExists = addPrefixValidationResult && addPrefixValidationResult.irr && addPrefixValidationResult.irr.exact_match;
+            var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
             showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists);
           } else if (isByoAsn && token) {
             // Manual flow: show token and instructions
