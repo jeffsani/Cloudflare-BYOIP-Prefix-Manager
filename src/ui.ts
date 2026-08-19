@@ -3593,7 +3593,7 @@ export function renderDashboard(userEmail: string): string {
           if (isByoAsn && hasRirCreds) {
             // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
             var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
-            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists);
+            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult);
           } else if (isByoAsn && token) {
             // Manual flow: show token and instructions
             showPostCreationGuide(cidr, asn, token);
@@ -3617,7 +3617,7 @@ export function renderDashboard(userEmail: string): string {
     var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false };
 
     // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
-    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists) {
+    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult) {
       // If token is missing, try to fetch it from the prefix details
       if (!token && prefixId) {
         try {
@@ -3670,7 +3670,7 @@ export function renderDashboard(userEmail: string): string {
       var anyFailed = false;
       var detectedRir = '';
 
-      // Step 1: Detect RIR
+      // Step 1: Detect RIR (try RDAP first, fall back to saved credentials)
       try {
         var r = await fetch('/api/rir/detect?prefix=' + encodeURIComponent(cidr));
         var d = await r.json();
@@ -3681,12 +3681,31 @@ export function renderDashboard(userEmail: string): string {
         if (d.supported) {
           document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">RIR detected: <strong>' + escHtml(d.rir_name || detectedRir.toUpperCase()) + '</strong></span>';
         } else {
-          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detected (' + escHtml(d.rir_name || 'unknown') + ') but automated creation not supported</span>';
-          anyFailed = true;
+          // RDAP didn't return a supported RIR — try using saved credentials
+          var credsFallback = savedValidationResult && savedValidationResult.rir_credentials ? savedValidationResult.rir_credentials : [];
+          if (credsFallback.length > 0) {
+            // Use the first saved credential's RIR
+            detectedRir = credsFallback[0].rir.toLowerCase();
+            postCreationState.rir = detectedRir;
+            postCreationState.rirSupported = true;
+            document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR credentials: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
+          } else {
+            document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detected (' + escHtml(d.rir_name || 'unknown') + ') but automated creation not supported</span>';
+            anyFailed = true;
+          }
         }
       } catch (e) {
-        document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detection failed</span>';
-        anyFailed = true;
+        // RDAP failed entirely — try using saved credentials
+        var credsFallback2 = savedValidationResult && savedValidationResult.rir_credentials ? savedValidationResult.rir_credentials : [];
+        if (credsFallback2.length > 0) {
+          detectedRir = credsFallback2[0].rir.toLowerCase();
+          postCreationState.rir = detectedRir;
+          postCreationState.rirSupported = true;
+          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR credentials: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
+        } else {
+          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detection failed</span>';
+          anyFailed = true;
+        }
       }
 
       // Step 2: Create or update route object with validation token

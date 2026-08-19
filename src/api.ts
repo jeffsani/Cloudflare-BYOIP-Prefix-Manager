@@ -655,6 +655,9 @@ export async function lookupRipestatVisibility(prefix: string): Promise<Ripestat
 interface RdapEntity {
   roles?: string[];
   vcardArray?: [string, Array<[string, Record<string, string>, string, string | string[]]>];
+  port43?: string;
+  links?: Array<{ href?: string }>;
+  entities?: RdapEntity[];
 }
 
 interface RdapEvent {
@@ -674,6 +677,7 @@ interface RdapResponse {
 }
 
 function extractRir(data: RdapResponse): string {
+  // Check port43 (whois server)
   if (data.port43) {
     const p = data.port43.toLowerCase();
     if (p.includes('arin')) return 'ARIN';
@@ -682,6 +686,7 @@ function extractRir(data: RdapResponse): string {
     if (p.includes('lacnic')) return 'LACNIC';
     if (p.includes('afrinic')) return 'AFRINIC';
   }
+  // Check top-level links
   if (data.links) {
     for (const link of data.links) {
       const href = (link.href || '').toLowerCase();
@@ -690,6 +695,29 @@ function extractRir(data: RdapResponse): string {
       if (href.includes('apnic')) return 'APNIC';
       if (href.includes('lacnic')) return 'LACNIC';
       if (href.includes('afrinic')) return 'AFRINIC';
+    }
+  }
+  // Check nested entity links and port43
+  if (data.entities) {
+    for (const ent of data.entities) {
+      if (ent.port43) {
+        const p = ent.port43.toLowerCase();
+        if (p.includes('arin')) return 'ARIN';
+        if (p.includes('ripe')) return 'RIPE NCC';
+        if (p.includes('apnic')) return 'APNIC';
+        if (p.includes('lacnic')) return 'LACNIC';
+        if (p.includes('afrinic')) return 'AFRINIC';
+      }
+      if (ent.links) {
+        for (const link of ent.links) {
+          const href = (link.href || '').toLowerCase();
+          if (href.includes('arin')) return 'ARIN';
+          if (href.includes('ripe')) return 'RIPE NCC';
+          if (href.includes('apnic')) return 'APNIC';
+          if (href.includes('lacnic')) return 'LACNIC';
+          if (href.includes('afrinic')) return 'AFRINIC';
+        }
+      }
     }
   }
   return 'Unknown';
@@ -726,18 +754,7 @@ function extractFromVcard(
   return result;
 }
 
-export async function lookupRdap(prefix: string): Promise<RdapResult> {
-  const ip = prefix.split('/')[0];
-  const r = await fetch(`https://rdap.org/ip/${ip}`, {
-    headers: {
-      Accept: 'application/rdap+json',
-      'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
-    },
-    redirect: 'follow',
-  });
-  if (!r.ok) throw new Error(`RDAP lookup failed: ${r.status}`);
-  const data = (await r.json()) as RdapResponse;
-
+function parseRdapResponse(data: RdapResponse): RdapResult {
   let org = '';
   let country = '';
   if (data.entities) {
@@ -767,6 +784,48 @@ export async function lookupRdap(prefix: string): Promise<RdapResult> {
     allocated,
     range,
   };
+}
+
+// Known RIR RDAP bootstrap endpoints to try if rdap.org fails
+const RDAP_BOOTSTRAP_ENDPOINTS = [
+  'https://rdap.arin.net/registry',
+  'https://rdap.db.ripe.net',
+];
+
+export async function lookupRdap(prefix: string): Promise<RdapResult> {
+  const ip = prefix.split('/')[0];
+  const headers = {
+    Accept: 'application/rdap+json',
+    'User-Agent': 'network-tools/1.0 (Cloudflare Worker)',
+  };
+
+  // Try rdap.org first (follows redirects to the correct RIR)
+  try {
+    const r = await fetch(`https://rdap.org/ip/${ip}`, { headers, redirect: 'follow' });
+    if (r.ok) {
+      const data = (await r.json()) as RdapResponse;
+      const result = parseRdapResponse(data);
+      if (result.rir !== 'Unknown') return result;
+    }
+  } catch {
+    // Fall through to direct RIR queries
+  }
+
+  // Fallback: try known RIR RDAP endpoints directly
+  for (const endpoint of RDAP_BOOTSTRAP_ENDPOINTS) {
+    try {
+      const r = await fetch(`${endpoint}/ip/${encodeURIComponent(ip)}`, { headers, redirect: 'follow' });
+      if (r.ok) {
+        const data = (await r.json()) as RdapResponse;
+        const result = parseRdapResponse(data);
+        if (result.rir !== 'Unknown') return result;
+      }
+    } catch {
+      continue;
+    }
+  }
+
+  throw new Error(`RDAP lookup failed for ${prefix}: could not determine RIR`);
 }
 
 // ── RIR API functions (ARIN + RIPE) ─────────────────────────────
