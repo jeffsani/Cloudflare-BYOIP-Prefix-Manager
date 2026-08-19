@@ -951,7 +951,6 @@ async function arinGet(url: string, apiKey: string): Promise<ArinFetchResult> {
     method: 'GET',
     headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/rpsl' },
   });
-  console.log(`[ARIN] GET ${url} rpsl: ${resp.status}`);
   if (resp.status !== 406) return { resp, format: 'rpsl' };
 
   // Attempt 2: XML
@@ -959,7 +958,6 @@ async function arinGet(url: string, apiKey: string): Promise<ArinFetchResult> {
     method: 'GET',
     headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/xml' },
   });
-  console.log(`[ARIN] GET ${url} xml: ${resp.status}`);
   return { resp, format: 'xml' };
 }
 
@@ -974,7 +972,6 @@ async function arinCreate(url: string, apiKey: string): Promise<ArinFetchResult>
     method: 'POST',
     headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/rpsl' },
   });
-  console.log(`[ARIN] POST(create) ${url} rpsl: ${resp.status}`);
   if (resp.status !== 406) return { resp, format: 'rpsl' };
 
   // Attempt 2: XML accept
@@ -982,7 +979,6 @@ async function arinCreate(url: string, apiKey: string): Promise<ArinFetchResult>
     method: 'POST',
     headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/xml' },
   });
-  console.log(`[ARIN] POST(create) ${url} xml: ${resp.status}`);
   return { resp, format: 'xml' };
 }
 
@@ -1004,7 +1000,6 @@ async function arinWriteBody(
       headers: { Authorization: `ApiKey ${apiKey}`, Accept: ct, 'Content-Type': ct },
       body,
     });
-    console.log(`[ARIN] ${method} ${url} ${fmt}: ${resp.status}`);
     lastResp = resp;
     if (resp.status !== 406) return resp;
   }
@@ -1125,14 +1120,11 @@ export async function ensureArinRouteObject(
     // ARIN IRR API always uses /route/ in the URL path for both IPv4 and IPv6
     const url = `${ARIN_IRR_API}/route/${ip}/${mask}/AS${originAsn}`;
 
-    console.log(`[ARIN] ensureArinRouteObject: type=${objectType}, prefix=${prefix}, url=${url}`);
-
     // Step 1: GET the existing object
     const { resp: getResp, format } = await arinGet(url, apiKey);
 
     if (getResp.ok) {
       const body = await getResp.text();
-      console.log(`[ARIN] GET OK (${format}), body length=${body.length}`);
 
       if (bodyHasToken(body, validationToken)) {
         return { ok: true, action: 'already_present', details: 'Validation token already present in route object.' };
@@ -1143,35 +1135,28 @@ export async function ensureArinRouteObject(
       const putResp = await arinWriteBody(url, 'PUT', apiKey, rpsl, xml, format);
       if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing route object with validation token.' };
       const putBody = await putResp.text();
-      console.log(`[ARIN] PUT failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
       return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: putBody };
     }
 
     // 404/406 = object not found
     if (getResp.status !== 404 && getResp.status !== 406) {
       const respBody = await getResp.text();
-      console.log(`[ARIN] GET error: ${getResp.status}, body=${respBody.slice(0, 500)}`);
       return { ok: false, error: `ARIN GET ${objectType} returned ${getResp.status}`, details: respBody };
     }
-
-    console.log(`[ARIN] Not found (${getResp.status}), creating via POST (no body)`);
 
     // Step 2: Create the object — POST with NO body (ARIN auto-fills POC/org info)
     const { resp: createResp, format: createFormat } = await arinCreate(url, apiKey);
     if (!createResp.ok) {
       const createBody = await createResp.text();
-      console.log(`[ARIN] POST(create) failed: ${createResp.status}, body=${createBody.slice(0, 500)}`);
       return { ok: false, error: `ARIN POST ${objectType} returned ${createResp.status}`, details: createBody };
     }
 
     // Step 3: Add the validation token to the created object and PUT it back
     const createdBody = await createResp.text();
-    console.log(`[ARIN] Created (${createFormat}), adding token via PUT`);
     const { rpsl, xml } = addTokenToBody(createdBody, createFormat, validationToken, objectType);
     const putResp = await arinWriteBody(url, 'PUT', apiKey, rpsl, xml, createFormat);
     if (putResp.ok) return { ok: true, action: 'created', details: 'Created route object and added validation token.' };
     const putBody = await putResp.text();
-    console.log(`[ARIN] PUT after create failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
     return { ok: true, action: 'created', details: `Created route object but failed to add validation token (PUT ${putResp.status}). Add it manually.` };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN route operation failed: ${(e as Error).message}` };
@@ -1191,8 +1176,6 @@ export async function ensureArinAutnum(
 ): Promise<RirApiResult> {
   try {
     const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
-
-    console.log(`[ARIN] ensureArinAutnum: url=${url}`);
 
     // Step 1: GET the existing object
     const { resp: getResp, format } = await arinGet(url, apiKey);
@@ -1214,8 +1197,6 @@ export async function ensureArinAutnum(
     if (getResp.status !== 404 && getResp.status !== 406) {
       return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
     }
-
-    console.log(`[ARIN] aut-num not found (${getResp.status}), creating via POST (with payload)`);
 
     // Step 2: Create via POST WITH a payload.
     // Unlike route objects, aut-num creation requires a full RPSL/XML payload.
@@ -1241,7 +1222,6 @@ export async function ensureArinAutnum(
     const postResp = await arinWriteBody(url, 'POST', apiKey, rpslBody, xmlBody, format);
     if (postResp.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
     const postBody = await postResp.text();
-    console.log(`[ARIN] POST(create) aut-num failed: ${postResp.status}, body=${postBody.slice(0, 500)}`);
     return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: postBody };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };

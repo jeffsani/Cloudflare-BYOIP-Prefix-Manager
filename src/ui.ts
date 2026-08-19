@@ -191,6 +191,9 @@ export function renderDashboard(userEmail: string): string {
         <button onclick="toggleAbout()" class="text-xs text-cf-gray hover:text-cf-orange flex items-center gap-1" title="About">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
         </button>
+        <a href="/api/docs" target="_blank" rel="noopener" class="text-xs text-cf-gray hover:text-cf-orange flex items-center gap-1" title="API Docs">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+        </a>
         <button onclick="toggleSettings()" class="text-xs text-cf-gray hover:text-cf-orange flex items-center gap-1" title="Settings">
           <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.066 2.573c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.573 1.066c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.066-2.573c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>
         </button>
@@ -211,25 +214,52 @@ export function renderDashboard(userEmail: string): string {
         <button onclick="toggleAbout()" class="text-cf-gray hover:text-cf-orange text-xs">Close</button>
       </div>
       <p class="text-xs text-cf-gray leading-relaxed">
-        A unified dashboard for managing BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts.
+        Network Tools is a unified dashboard for managing BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts &mdash;
+        covering the full lifecycle from prefix onboarding and RIR/RPKI object management through BGP advertisement, service bindings,
+        delegations, and real-time propagation monitoring.
       </p>
-      <div class="text-xs text-cf-gray leading-relaxed mt-2 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
-        <div>&bull; Multi-account management with API token verification</div>
-        <div>&bull; Prefix stats &amp; filtering (status, lock, CIDR, ASN)</div>
-        <div>&bull; BGP sub-prefix creation &amp; advertisement toggling</div>
-        <div>&bull; Bulk advertise / withdraw across prefixes</div>
-        <div>&bull; Service binding management (CDN, Spectrum, Magic Transit, etc.)</div>
-        <div>&bull; Inline prefix description editing with #tag support</div>
-        <div>&bull; Tag-based filtering &mdash; add #tags to descriptions to organize and filter prefixes</div>
-        <div>&bull; Prefix re-validation (RPKI, IRR, ownership)</div>
-        <div>&bull; Looking Glass &mdash; interactive BGP path graph via Cloudflare Radar</div>
-        <div>&bull; Prefix Visibility &mdash; global propagation % (Radar + RIPEstat)</div>
-        <div>&bull; RDAP / Whois hover lookups (org, RIR, country, allocation)</div>
-        <div>&bull; RPKI ROA detail view per origin</div>
-        <div>&bull; Activity log of all actions</div>
+
+      <div class="mt-3">
+        <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Prefix &amp; BGP management</h3>
+        <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          <div>&bull; Multi-account management with API token verification</div>
+          <div>&bull; Prefix stats &amp; filtering (status, lock, CIDR, ASN)</div>
+          <div>&bull; BGP sub-prefix creation &amp; advertisement toggling</div>
+          <div>&bull; Bulk advertise / withdraw across prefixes</div>
+          <div>&bull; Service binding management (CDN, Spectrum, Magic Transit, etc.)</div>
+          <div>&bull; Prefix delegations &mdash; create, list &amp; describe sub-delegations</div>
+          <div>&bull; Inline prefix description editing with #tag support</div>
+          <div>&bull; Tag-based filtering &mdash; add #tags to descriptions to organize and filter prefixes</div>
+        </div>
       </div>
+
+      <div class="mt-3">
+        <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Validation, RIR &amp; RPKI</h3>
+        <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          <div>&bull; Prefix re-validation (RPKI, IRR, ownership)</div>
+          <div>&bull; RIR credential management with auto-detection</div>
+          <div>&bull; Route &amp; autnum object automation (ensure-route, ensure-autnum)</div>
+          <div>&bull; RPKI ROA detail view per origin</div>
+          <div>&bull; LOA (Letter of Authorization) PDF upload</div>
+        </div>
+      </div>
+
+      <div class="mt-3">
+        <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Monitoring &amp; lookups</h3>
+        <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          <div>&bull; Looking Glass &mdash; interactive BGP path graph via Cloudflare Radar</div>
+          <div>&bull; Prefix Visibility &mdash; global propagation % (Radar + RIPEstat)</div>
+          <div>&bull; RDAP / Whois hover lookups (org, RIR, country, allocation)</div>
+          <div>&bull; Activity log of all actions</div>
+        </div>
+      </div>
+
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
         <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read).
+      </p>
+      <p class="text-xs leading-relaxed mt-3">
+        <a href="/api/docs" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none;font-weight:500">View interactive API docs (/api/docs) &#8599;</a>
+        <span class="text-cf-gray">&mdash; OpenAPI spec at <a href="/api/openapi.json" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none;font-weight:500">/api/openapi.json</a></span>
       </p>
     </div>
   </div>
@@ -1496,11 +1526,13 @@ export function renderDashboard(userEmail: string): string {
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
       var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
       var isChecked = selectedPrefixes.has(p.id);
-      var canBulkToggle = !p.on_demand_locked && p.approved !== 'P';
+      var canBulkToggle = canToggleAdvertisement(p);
 
-      // Parent-level toggle button
+      // Parent-level toggle button — shown only for active on-demand prefixes.
+      // Locked prefixes still render the toggle (disabled) so the lock reason is visible,
+      // but pending/unknown (inactive) prefixes get no toggle at all.
       var parentToggleHtml = '';
-      if (p.on_demand_enabled) {
+      if (p.on_demand_enabled && p.approved !== 'P' && (p.advertised === true || p.advertised === false)) {
         var isAdv = p.advertised === true;
         var toggleTip = p.on_demand_locked
           ? 'This prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
@@ -1523,7 +1555,7 @@ export function renderDashboard(userEmail: string): string {
         '</span>';
 
       return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + p.id + '\\')">' +
-        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked && canBulkToggle ? 'checked' : '') + (canBulkToggle ? '' : ' disabled title="Cannot toggle: ' + (p.approved === 'P' ? 'pending approval' : 'locked') + '"') + ' onchange="updateBulkSelection()" style="cursor:' + (canBulkToggle ? 'pointer' : 'not-allowed') + ';accent-color:#F6821F' + (canBulkToggle ? '' : ';opacity:0.4') + '"></td>' +
+        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked && canBulkToggle ? 'checked' : '') + (canBulkToggle ? '' : ' disabled title="Cannot advertise/withdraw: ' + escAttr(toggleDisabledReason(p)) + '"') + ' onchange="updateBulkSelection()" style="cursor:' + (canBulkToggle ? 'pointer' : 'not-allowed') + ';accent-color:#F6821F' + (canBulkToggle ? '' : ';opacity:0.4') + '"></td>' +
         '<td class="px-3 py-2.5"><span class="' + chevClass + '" style="font-size:16px">&#9656;</span></td>' +
         '<td class="px-2 py-2.5">' + lockIcon + delegationIcon + '</td>' +
         '<td class="px-3 py-2.5 font-mono font-medium" style="color:var(--text-strong)"><span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(p.cidr) + '\\',this)">' + escHtml(p.cidr) + '<span class="rdap-tip"></span></span></td>' +
@@ -1591,13 +1623,16 @@ export function renderDashboard(userEmail: string): string {
           var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
           var bgpAdv = bp.on_demand && bp.on_demand.advertised;
           var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
+          // Only allow advertise/withdraw when the sub-prefix has a known (active) state.
+          var bgpActive = bp.on_demand && (bp.on_demand.advertised === true || bp.on_demand.advertised === false);
           var bgpDelegationIcon = bgpHasDelegation(prefixId, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
           var bgpToggleTip = bgpLocked
             ? 'This sub-prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
             : bgpAdv
               ? 'Currently advertised. Click to withdraw this sub-prefix and stop announcing it via BGP.'
               : 'Currently withdrawn. Click to advertise this sub-prefix and begin announcing it via BGP.';
-          var toggleHtml = '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
+          var toggleHtml = !bgpActive ? '' :
+            '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
             (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
             '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
           var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
@@ -5116,6 +5151,27 @@ export function renderDashboard(userEmail: string): string {
       if (advertised === true) return '<span class="badge-advertised">Advertised</span>';
       if (advertised === false) return '<span class="badge-withdrawn">Withdrawn</span>';
       return '<span class="badge-unknown">Unknown</span>';
+    }
+
+    // A prefix can be advertised/withdrawn (via in-row toggle or bulk multi-select) only when:
+    //  - on-demand advertisement is enabled for it (i.e. it has BGP bindings), AND
+    //  - it is not locked, AND
+    //  - it is not pending approval, AND
+    //  - it is active (advertised state is known — true/false, not "Unknown")
+    function canToggleAdvertisement(p) {
+      return p.on_demand_enabled === true &&
+        p.on_demand_locked !== true &&
+        p.approved !== 'P' &&
+        (p.advertised === true || p.advertised === false);
+    }
+
+    // Human-readable reason why a prefix cannot be advertised/withdrawn (for tooltips).
+    function toggleDisabledReason(p) {
+      if (p.on_demand_locked) return 'locked';
+      if (p.approved === 'P') return 'pending approval';
+      if (!p.on_demand_enabled) return 'no BGP bindings / on-demand not enabled';
+      if (p.advertised !== true && p.advertised !== false) return 'inactive (status unknown)';
+      return '';
     }
 
     function validationTooltipText(state, type) {
