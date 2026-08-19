@@ -936,72 +936,154 @@ export async function validateRipeCredentials(
   }
 }
 
+type ArinFormat = 'rpsl' | 'xml';
+interface ArinFetchResult { resp: Response; format: ArinFormat }
+
 /**
  * Make an ARIN IRR API call with automatic 406 fallback.
- * Cloudflare Workers on the edge may mangle Accept headers for sites behind Cloudflare,
- * causing ARIN to return 406 "Not Acceptable". This helper tries multiple strategies:
- *   1. API key in header + RPSL accept
- *   2. API key in header + XML accept
- *   3. API key in query string + RPSL accept
- *   4. API key in query string + XML accept
+ * CF Workers in production return 406 for `Accept: application/rpsl` on sites
+ * behind Cloudflare. We try RPSL first then XML, and return which format succeeded
+ * so callers can use the matching format for writes.
  */
-async function arinFetch(targetUrl: string, method: string, apiKey: string, body?: string): Promise<Response> {
-  const rpslHeaders: Record<string, string> = { Accept: 'application/rpsl' };
-  const xmlHeaders: Record<string, string> = { Accept: 'application/xml' };
-  if (body) {
-    rpslHeaders['Content-Type'] = 'application/rpsl';
-    xmlHeaders['Content-Type'] = 'application/xml';
+async function arinGet(url: string, apiKey: string): Promise<ArinFetchResult> {
+  // Attempt 1: RPSL
+  let resp = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/rpsl' },
+  });
+  console.log(`[ARIN] GET ${url} rpsl: ${resp.status}`);
+  if (resp.status !== 406) return { resp, format: 'rpsl' };
+
+  // Attempt 2: XML
+  resp = await fetch(url, {
+    method: 'GET',
+    headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/xml' },
+  });
+  console.log(`[ARIN] GET ${url} xml: ${resp.status}`);
+  return { resp, format: 'xml' };
+}
+
+/**
+ * Create an ARIN object via POST with NO body (per ARIN docs — the object's primary
+ * key is specified entirely in the URL path, and ARIN auto-populates POC/org info
+ * from the authenticated API key). Returns the created object and which format worked.
+ */
+async function arinCreate(url: string, apiKey: string): Promise<ArinFetchResult> {
+  // Attempt 1: RPSL accept
+  let resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/rpsl' },
+  });
+  console.log(`[ARIN] POST(create) ${url} rpsl: ${resp.status}`);
+  if (resp.status !== 406) return { resp, format: 'rpsl' };
+
+  // Attempt 2: XML accept
+  resp = await fetch(url, {
+    method: 'POST',
+    headers: { Authorization: `ApiKey ${apiKey}`, Accept: 'application/xml' },
+  });
+  console.log(`[ARIN] POST(create) ${url} xml: ${resp.status}`);
+  return { resp, format: 'xml' };
+}
+
+/** Modify an ARIN object via PUT with a payload, with automatic 406 format fallback. */
+async function arinPut(
+  url: string, apiKey: string,
+  rpslBody: string, xmlBody: string, preferFormat: ArinFormat,
+): Promise<Response> {
+  const formats: ArinFormat[] = preferFormat === 'xml' ? ['xml', 'rpsl'] : ['rpsl', 'xml'];
+  let lastResp: Response | null = null;
+  for (const fmt of formats) {
+    const ct = fmt === 'rpsl' ? 'application/rpsl' : 'application/xml';
+    const body = fmt === 'rpsl' ? rpslBody : xmlBody;
+    const resp = await fetch(url, {
+      method: 'PUT',
+      headers: { Authorization: `ApiKey ${apiKey}`, Accept: ct, 'Content-Type': ct },
+      body,
+    });
+    console.log(`[ARIN] PUT ${url} ${fmt}: ${resp.status}`);
+    lastResp = resp;
+    if (resp.status !== 406) return resp;
+  }
+  return lastResp as Response;
+}
+
+// ── XML helpers for ARIN IRR payloads ──
+
+function escapeXml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/** Check if body contains the validation token (works for both RPSL and XML text). */
+function bodyHasToken(body: string, token: string): boolean {
+  return body.includes(`cf-validation: ${token}`) || body.includes(`cf-validation:${token}`);
+}
+
+/**
+ * Add the cf-validation token to an ARIN object body returned by GET or POST(create).
+ * Handles both RPSL and XML formats and returns { rpsl, xml, format } so the caller
+ * can PUT the object back in whichever format ARIN accepts.
+ *
+ * For RPSL: inserts a `descr: cf-validation: <token>` line after the object line.
+ * For XML: inserts a <line> into the <description> block (creating one if absent).
+ */
+function addTokenToBody(
+  body: string, format: ArinFormat, validationToken: string,
+  objectType: string,
+): { rpsl: string; xml: string } {
+  const tokenText = `cf-validation: ${validationToken}`;
+
+  if (format === 'rpsl') {
+    let modified = body.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
+    const tokenLine = `descr: ${tokenText}`;
+    const lineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
+    if (lineMatch) {
+      const idx = modified.indexOf(lineMatch[0]) + lineMatch[0].length;
+      modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
+    } else {
+      modified = tokenLine + '\n' + modified;
+    }
+    return { rpsl: modified, xml: modified };
   }
 
-  // Attempt 1: API key in header, RPSL accept
-  let resp = await fetch(targetUrl, {
-    method,
-    headers: { Authorization: `ApiKey ${apiKey}`, ...rpslHeaders },
-    body: body || undefined,
-  });
-  console.log(`[ARIN] ${method} ${targetUrl} attempt 1 (header+rpsl): ${resp.status}`);
-  if (resp.status !== 406) return resp;
+  // XML format: modify (or create) the <description> block
+  let modified = body;
+  // Remove any existing cf-validation <line> entries
+  modified = modified.replace(/\s*<line\s+number="\d+">\s*cf-validation:[\s\S]*?<\/line>/g, '');
 
-  // Attempt 2: API key in header, XML accept
-  resp = await fetch(targetUrl, {
-    method,
-    headers: { Authorization: `ApiKey ${apiKey}`, ...xmlHeaders },
-    body: body || undefined,
-  });
-  console.log(`[ARIN] ${method} attempt 2 (header+xml): ${resp.status}`);
-  if (resp.status !== 406) return resp;
+  if (/<description\s*>/.test(modified) && modified.includes('</description>')) {
+    // Existing non-empty description block — append a new numbered line
+    const lineNumbers = [...modified.matchAll(/<line\s+number="(\d+)">/g)].map(m => parseInt(m[1], 10));
+    const nextNum = lineNumbers.length > 0 ? Math.max(...lineNumbers) + 1 : 0;
+    const newLine = `    <line number="${nextNum}">${escapeXml(tokenText)}</line>`;
+    modified = modified.replace('</description>', `${newLine}\n  </description>`);
+  } else {
+    // No description block (or self-closing) — create one right after the root open tag
+    const descBlock = `\n  <description>\n    <line number="0">${escapeXml(tokenText)}</line>\n  </description>`;
+    // Remove any self-closing empty description first
+    modified = modified.replace(/<description\s*\/>/g, '');
+    // Insert after the first root element opening tag (e.g. <route ...> or <autNum ...>)
+    modified = modified.replace(/(<(?:route|route6|autNum)\b[^>]*>)/, `$1${descBlock}`);
+  }
 
-  // Attempt 3: API key in query string + RPSL (bypasses potential header issues)
-  const qsUrl = targetUrl + (targetUrl.includes('?') ? '&' : '?') + `apikey=${encodeURIComponent(apiKey)}`;
-  resp = await fetch(qsUrl, {
-    method,
-    headers: rpslHeaders,
-    body: body || undefined,
-  });
-  console.log(`[ARIN] ${method} attempt 3 (qs+rpsl): ${resp.status}`);
-  if (resp.status !== 406) return resp;
-
-  // Attempt 4: API key in query string + XML
-  resp = await fetch(qsUrl, {
-    method,
-    headers: xmlHeaders,
-    body: body || undefined,
-  });
-  console.log(`[ARIN] ${method} attempt 4 (qs+xml): ${resp.status}`);
-  return resp;
+  return { rpsl: body, xml: modified };
 }
 
 /**
  * Ensure a route/route6 object exists at ARIN IRR with the validation token.
- * 1. GET the object — if it exists, add/update the cf-validation descr line via PUT.
- * 2. If it does not exist (404), create it via POST with all required ARIN fields.
+ * Per ARIN docs:
+ *   - Create = POST with NO body (object key is fully specified by the URL path;
+ *     ARIN auto-populates POC/org info from the authenticated API key).
+ *   - Modify = PUT with the RPSL/XML payload.
+ * Flow: GET → if present, add token + PUT. If absent, POST(no body) to create,
+ * then add token to the returned object + PUT.
  */
 export async function ensureArinRouteObject(
   prefix: string,
   originAsn: number,
   validationToken: string,
   apiKey: string,
-  orgId: string,
+  _orgId: string,
 ): Promise<RirApiResult> {
   try {
     const [ip, mask] = prefix.split('/');
@@ -1010,98 +1092,54 @@ export async function ensureArinRouteObject(
     // ARIN IRR API always uses /route/ in the URL path for both IPv4 and IPv6
     const url = `${ARIN_IRR_API}/route/${ip}/${mask}/AS${originAsn}`;
 
-    console.log(`[ARIN] ensureArinRouteObject: objectType=${objectType}, prefix=${prefix}, url=${url}`);
+    console.log(`[ARIN] ensureArinRouteObject: type=${objectType}, prefix=${prefix}, url=${url}`);
 
-    // Step 1: Try to GET the existing object
-    const getResp = await arinFetch(url, 'GET', apiKey);
+    // Step 1: GET the existing object
+    const { resp: getResp, format } = await arinGet(url, apiKey);
 
     if (getResp.ok) {
-      // Object exists — update it
-      const rpsl = await getResp.text();
+      const body = await getResp.text();
+      console.log(`[ARIN] GET OK (${format}), body length=${body.length}`);
 
-      if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+      if (bodyHasToken(body, validationToken)) {
         return { ok: true, action: 'already_present', details: 'Validation token already present in route object.' };
       }
 
-      // Remove old cf-validation lines and insert the new one
-      let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
-      const tokenLine = `descr: cf-validation: ${validationToken}`;
-      const objectLineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
-      if (objectLineMatch) {
-        const idx = modified.indexOf(objectLineMatch[0]) + objectLineMatch[0].length;
-        modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
-      } else {
-        modified = tokenLine + '\n' + modified;
-      }
-
-      const putResp = await arinFetch(url, 'PUT', apiKey, modified);
+      // Add the token and PUT back in the format that worked
+      const { rpsl, xml } = addTokenToBody(body, format, validationToken, objectType);
+      const putResp = await arinPut(url, apiKey, rpsl, xml, format);
       if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing route object with validation token.' };
-      return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: await putResp.text() };
+      const putBody = await putResp.text();
+      console.log(`[ARIN] PUT failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
+      return { ok: false, error: `ARIN PUT ${objectType} returned ${putResp.status}`, details: putBody };
     }
 
-    // 404 = object not found (expected for new prefixes)
-    // 406 = treat as not found — ARIN may return 406 when the Accept header is mangled
+    // 404/406 = object not found
     if (getResp.status !== 404 && getResp.status !== 406) {
       const respBody = await getResp.text();
-      console.log(`[ARIN] GET unexpected error: status=${getResp.status}, body=${respBody.slice(0, 500)}`);
+      console.log(`[ARIN] GET error: ${getResp.status}, body=${respBody.slice(0, 500)}`);
       return { ok: false, error: `ARIN GET ${objectType} returned ${getResp.status}`, details: respBody };
     }
 
-    console.log(`[ARIN] Object not found (status=${getResp.status}), proceeding to create`);
+    console.log(`[ARIN] Not found (${getResp.status}), creating via POST (no body)`);
 
-    // Step 2: Object does not exist — create it
-    const pocs = await lookupArinOrgPocs(orgId);
-    if (!pocs) {
-      const validation = await validateArinCredentials(orgId);
-      const detail = validation.error || 'No Admin/Tech POC handles found.';
-      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
+    // Step 2: Create the object — POST with NO body (ARIN auto-fills POC/org info)
+    const { resp: createResp, format: createFormat } = await arinCreate(url, apiKey);
+    if (!createResp.ok) {
+      const createBody = await createResp.text();
+      console.log(`[ARIN] POST(create) failed: ${createResp.status}, body=${createBody.slice(0, 500)}`);
+      return { ok: false, error: `ARIN POST ${objectType} returned ${createResp.status}`, details: createBody };
     }
 
-    const rpslBody = [
-      `${objectType}: ${prefix}`,
-      `descr: cf-validation: ${validationToken}`,
-      `origin: AS${originAsn}`,
-      `admin-c: ${pocs.adminC}`,
-      `tech-c: ${pocs.techC}`,
-      `mnt-by: MNT-${orgId}`,
-      `source: ARIN`,
-    ].join('\n');
-
-    console.log(`[ARIN] Creating ${objectType} via POST`);
-
-    // Try POST with RPSL payload
-    let postResp = await arinFetch(url, 'POST', apiKey, rpslBody);
-
-    // If POST still fails with 406 even after all retries, try POST without body
-    if (postResp.status === 406) {
-      console.log(`[ARIN] All POST attempts returned 406. Trying POST without body.`);
-      postResp = await arinFetch(url, 'POST', apiKey);
-
-      if (postResp.ok) {
-        // Object created without validation token — add it via PUT
-        const createdRpsl = await postResp.text();
-        let modified = createdRpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
-        const tokenLine = `descr: cf-validation: ${validationToken}`;
-        const objectLineMatch = modified.match(new RegExp(`^${objectType}:\\s+.*$`, 'm'));
-        if (objectLineMatch) {
-          const idx = modified.indexOf(objectLineMatch[0]) + objectLineMatch[0].length;
-          modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
-        } else {
-          modified = tokenLine + '\n' + modified;
-        }
-
-        const putResp = await arinFetch(url, 'PUT', apiKey, modified);
-        if (putResp.ok) return { ok: true, action: 'created', details: 'Created route object and added validation token.' };
-        const putBody = await putResp.text();
-        console.log(`[ARIN] PUT after create returned ${putResp.status}: ${putBody.slice(0, 300)}`);
-        return { ok: true, action: 'created', details: `Created route object but failed to add validation token (PUT ${putResp.status}). Add it manually.` };
-      }
-    }
-
-    if (postResp.ok) return { ok: true, action: 'created', details: 'Created new route object with validation token.' };
-    const postBody = await postResp.text();
-    console.log(`[ARIN] POST failed: status=${postResp.status}, body=${postBody.slice(0, 500)}`);
-    return { ok: false, error: `ARIN POST ${objectType} returned ${postResp.status}`, details: postBody };
+    // Step 3: Add the validation token to the created object and PUT it back
+    const createdBody = await createResp.text();
+    console.log(`[ARIN] Created (${createFormat}), adding token via PUT`);
+    const { rpsl, xml } = addTokenToBody(createdBody, createFormat, validationToken, objectType);
+    const putResp = await arinPut(url, apiKey, rpsl, xml, createFormat);
+    if (putResp.ok) return { ok: true, action: 'created', details: 'Created route object and added validation token.' };
+    const putBody = await putResp.text();
+    console.log(`[ARIN] PUT after create failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
+    return { ok: true, action: 'created', details: `Created route object but failed to add validation token (PUT ${putResp.status}). Add it manually.` };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN route operation failed: ${(e as Error).message}` };
   }
@@ -1116,66 +1154,52 @@ export async function ensureArinAutnum(
   asn: number,
   validationToken: string,
   apiKey: string,
-  orgId: string,
+  _orgId: string,
 ): Promise<RirApiResult> {
   try {
     const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
 
     console.log(`[ARIN] ensureArinAutnum: url=${url}`);
 
-    // Step 1: Try to GET the existing object
-    const getResp = await arinFetch(url, 'GET', apiKey);
+    // Step 1: GET the existing object
+    const { resp: getResp, format } = await arinGet(url, apiKey);
 
     if (getResp.ok) {
-      // Object exists — update it
-      const rpsl = await getResp.text();
+      const body = await getResp.text();
 
-      if (rpsl.includes(`cf-validation: ${validationToken}`)) {
+      if (bodyHasToken(body, validationToken)) {
         return { ok: true, action: 'already_present', details: 'Token already present in aut-num object.' };
       }
 
-      // Remove old cf-validation lines and insert the new one
-      let modified = rpsl.replace(/^descr:\s*cf-validation:.*\n?/gm, '');
-      const tokenLine = `descr: cf-validation: ${validationToken}`;
-      const autNumLineMatch = modified.match(/^aut-num:\s*AS\d+.*$/m);
-      if (autNumLineMatch) {
-        const idx = modified.indexOf(autNumLineMatch[0]) + autNumLineMatch[0].length;
-        modified = modified.slice(0, idx) + '\n' + tokenLine + modified.slice(idx);
-      } else {
-        modified = tokenLine + '\n' + modified;
-      }
-
-      const putResp = await arinFetch(url, 'PUT', apiKey, modified);
+      const { rpsl, xml } = addTokenToBody(body, format, validationToken, 'aut-num');
+      const putResp = await arinPut(url, apiKey, rpsl, xml, format);
       if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing aut-num object with validation token.' };
       return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
 
-    // 404 or 406 = object not found
+    // 404 or 406 = not found
     if (getResp.status !== 404 && getResp.status !== 406) {
       return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
     }
 
-    // Step 2: Object does not exist — create it
-    const pocs = await lookupArinOrgPocs(orgId);
-    if (!pocs) {
-      const validation = await validateArinCredentials(orgId);
-      const detail = validation.error || 'No Admin/Tech POC handles found.';
-      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
+    console.log(`[ARIN] aut-num not found (${getResp.status}), creating via POST (no body)`);
+
+    // Step 2: Create via POST with NO body (ARIN auto-fills POC/org info)
+    const { resp: createResp, format: createFormat } = await arinCreate(url, apiKey);
+    if (!createResp.ok) {
+      const createBody = await createResp.text();
+      console.log(`[ARIN] POST(create) aut-num failed: ${createResp.status}, body=${createBody.slice(0, 500)}`);
+      return { ok: false, error: `ARIN POST aut-num returned ${createResp.status}`, details: createBody };
     }
 
-    const rpslBody = [
-      `aut-num: AS${asn}`,
-      `as-name: AS${asn}`,
-      `descr: cf-validation: ${validationToken}`,
-      `admin-c: ${pocs.adminC}`,
-      `tech-c: ${pocs.techC}`,
-      `mnt-by: MNT-${orgId}`,
-      `source: ARIN`,
-    ].join('\n');
-
-    const postResp = await arinFetch(url, 'POST', apiKey, rpslBody);
-    if (postResp.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
-    return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: await postResp.text() };
+    // Step 3: Add the validation token to the created object and PUT it back
+    const createdBody = await createResp.text();
+    const { rpsl, xml } = addTokenToBody(createdBody, createFormat, validationToken, 'aut-num');
+    const putResp = await arinPut(url, apiKey, rpsl, xml, createFormat);
+    if (putResp.ok) return { ok: true, action: 'created', details: 'Created aut-num object and added validation token.' };
+    const putBody = await putResp.text();
+    console.log(`[ARIN] PUT after create aut-num failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
+    return { ok: true, action: 'created', details: `Created aut-num object but failed to add validation token (PUT ${putResp.status}). Add it manually.` };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };
   }
