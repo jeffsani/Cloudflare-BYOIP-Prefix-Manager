@@ -986,9 +986,12 @@ async function arinCreate(url: string, apiKey: string): Promise<ArinFetchResult>
   return { resp, format: 'xml' };
 }
 
-/** Modify an ARIN object via PUT with a payload, with automatic 406 format fallback. */
-async function arinPut(
-  url: string, apiKey: string,
+/**
+ * Write to ARIN (PUT to modify, or POST to create with a payload) with automatic
+ * 406 format fallback. Tries the preferred format first, then the other.
+ */
+async function arinWriteBody(
+  url: string, method: 'PUT' | 'POST', apiKey: string,
   rpslBody: string, xmlBody: string, preferFormat: ArinFormat,
 ): Promise<Response> {
   const formats: ArinFormat[] = preferFormat === 'xml' ? ['xml', 'rpsl'] : ['rpsl', 'xml'];
@@ -997,11 +1000,11 @@ async function arinPut(
     const ct = fmt === 'rpsl' ? 'application/rpsl' : 'application/xml';
     const body = fmt === 'rpsl' ? rpslBody : xmlBody;
     const resp = await fetch(url, {
-      method: 'PUT',
+      method,
       headers: { Authorization: `ApiKey ${apiKey}`, Accept: ct, 'Content-Type': ct },
       body,
     });
-    console.log(`[ARIN] PUT ${url} ${fmt}: ${resp.status}`);
+    console.log(`[ARIN] ${method} ${url} ${fmt}: ${resp.status}`);
     lastResp = resp;
     if (resp.status !== 406) return resp;
   }
@@ -1012,6 +1015,36 @@ async function arinPut(
 
 function escapeXml(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * Build an ARIN aut-num XML payload for creation.
+ * NOTE: the XML root element is `<autnum>` (lowercase n), per ARIN docs.
+ * Unlike route objects, aut-num creation requires a full payload.
+ */
+function buildAutnumXml(
+  asn: number, descriptionLines: string[],
+  orgId: string, pocs: { adminC: string; techC: string },
+): string {
+  const descLines = descriptionLines
+    .map((line, i) => `    <line number="${i}">${escapeXml(line)}</line>`)
+    .join('\n');
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<autnum xmlns="http://www.arin.net/regrws/core/v1">',
+    '  <description>',
+    descLines,
+    '  </description>',
+    `  <orgHandle>${escapeXml(orgId)}</orgHandle>`,
+    '  <pocLinks>',
+    `    <pocLinkRef description="Admin" function="AD" handle="${escapeXml(pocs.adminC)}"/>`,
+    `    <pocLinkRef description="Tech" function="T" handle="${escapeXml(pocs.techC)}"/>`,
+    '  </pocLinks>',
+    '  <source>ARIN</source>',
+    `  <asName>AS${asn}</asName>`,
+    `  <asNumber>AS${asn}</asNumber>`,
+    '</autnum>',
+  ].join('\n');
 }
 
 /** Check if body contains the validation token (works for both RPSL and XML text). */
@@ -1107,7 +1140,7 @@ export async function ensureArinRouteObject(
 
       // Add the token and PUT back in the format that worked
       const { rpsl, xml } = addTokenToBody(body, format, validationToken, objectType);
-      const putResp = await arinPut(url, apiKey, rpsl, xml, format);
+      const putResp = await arinWriteBody(url, 'PUT', apiKey, rpsl, xml, format);
       if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing route object with validation token.' };
       const putBody = await putResp.text();
       console.log(`[ARIN] PUT failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
@@ -1135,7 +1168,7 @@ export async function ensureArinRouteObject(
     const createdBody = await createResp.text();
     console.log(`[ARIN] Created (${createFormat}), adding token via PUT`);
     const { rpsl, xml } = addTokenToBody(createdBody, createFormat, validationToken, objectType);
-    const putResp = await arinPut(url, apiKey, rpsl, xml, createFormat);
+    const putResp = await arinWriteBody(url, 'PUT', apiKey, rpsl, xml, createFormat);
     if (putResp.ok) return { ok: true, action: 'created', details: 'Created route object and added validation token.' };
     const putBody = await putResp.text();
     console.log(`[ARIN] PUT after create failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
@@ -1154,7 +1187,7 @@ export async function ensureArinAutnum(
   asn: number,
   validationToken: string,
   apiKey: string,
-  _orgId: string,
+  orgId: string,
 ): Promise<RirApiResult> {
   try {
     const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
@@ -1172,7 +1205,7 @@ export async function ensureArinAutnum(
       }
 
       const { rpsl, xml } = addTokenToBody(body, format, validationToken, 'aut-num');
-      const putResp = await arinPut(url, apiKey, rpsl, xml, format);
+      const putResp = await arinWriteBody(url, 'PUT', apiKey, rpsl, xml, format);
       if (putResp.ok) return { ok: true, action: 'updated', details: 'Updated existing aut-num object with validation token.' };
       return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
@@ -1182,24 +1215,34 @@ export async function ensureArinAutnum(
       return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
     }
 
-    console.log(`[ARIN] aut-num not found (${getResp.status}), creating via POST (no body)`);
+    console.log(`[ARIN] aut-num not found (${getResp.status}), creating via POST (with payload)`);
 
-    // Step 2: Create via POST with NO body (ARIN auto-fills POC/org info)
-    const { resp: createResp, format: createFormat } = await arinCreate(url, apiKey);
-    if (!createResp.ok) {
-      const createBody = await createResp.text();
-      console.log(`[ARIN] POST(create) aut-num failed: ${createResp.status}, body=${createBody.slice(0, 500)}`);
-      return { ok: false, error: `ARIN POST aut-num returned ${createResp.status}`, details: createBody };
+    // Step 2: Create via POST WITH a payload.
+    // Unlike route objects, aut-num creation requires a full RPSL/XML payload.
+    const pocs = await lookupArinOrgPocs(orgId);
+    if (!pocs) {
+      const validation = await validateArinCredentials(orgId);
+      const detail = validation.error || 'No Admin/Tech POC handles found.';
+      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
     }
 
-    // Step 3: Add the validation token to the created object and PUT it back
-    const createdBody = await createResp.text();
-    const { rpsl, xml } = addTokenToBody(createdBody, createFormat, validationToken, 'aut-num');
-    const putResp = await arinPut(url, apiKey, rpsl, xml, createFormat);
-    if (putResp.ok) return { ok: true, action: 'created', details: 'Created aut-num object and added validation token.' };
-    const putBody = await putResp.text();
-    console.log(`[ARIN] PUT after create aut-num failed: ${putResp.status}, body=${putBody.slice(0, 300)}`);
-    return { ok: true, action: 'created', details: `Created aut-num object but failed to add validation token (PUT ${putResp.status}). Add it manually.` };
+    const tokenText = `cf-validation: ${validationToken}`;
+    const rpslBody = [
+      `aut-num: AS${asn}`,
+      `as-name: AS${asn}`,
+      `descr: ${tokenText}`,
+      `admin-c: ${pocs.adminC}`,
+      `tech-c: ${pocs.techC}`,
+      `mnt-by: MNT-${orgId}`,
+      `source: ARIN`,
+    ].join('\n');
+    const xmlBody = buildAutnumXml(asn, [tokenText], orgId, pocs);
+
+    const postResp = await arinWriteBody(url, 'POST', apiKey, rpslBody, xmlBody, format);
+    if (postResp.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
+    const postBody = await postResp.text();
+    console.log(`[ARIN] POST(create) aut-num failed: ${postResp.status}, body=${postBody.slice(0, 500)}`);
+    return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: postBody };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };
   }
