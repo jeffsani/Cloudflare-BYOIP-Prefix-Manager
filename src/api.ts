@@ -893,7 +893,8 @@ export async function ensureArinRouteObject(
     const [ip, mask] = prefix.split('/');
     const isV6 = ip.includes(':');
     const objectType = isV6 ? 'route6' : 'route';
-    const url = `${ARIN_IRR_API}/${objectType}/${ip}/${mask}/AS${originAsn}`;
+    // ARIN IRR API always uses /route/ in the URL path for both IPv4 and IPv6
+    const url = `${ARIN_IRR_API}/route/${ip}/${mask}/AS${originAsn}`;
 
     // Step 1: Try to GET the existing object
     const getResp = await fetch(url, {
