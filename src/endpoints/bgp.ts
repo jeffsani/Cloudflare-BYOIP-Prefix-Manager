@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
+import { enqueueNotification } from '../queue';
 import {
   listBgpPrefixes,
   createBgpPrefix,
@@ -101,12 +102,12 @@ export class CreateBgpPrefix extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'create_bgp_prefix',
-        `Child prefix ${body.cidr} created on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const bgpCreateDetails = `Child prefix ${body.cidr} created on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'create_bgp_prefix', bgpCreateDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'create_bgp_prefix',
+        title: body.cidr, details: bgpCreateDetails,
+      });
 
       return c.json({ ok: true, bgp_prefix: result.result });
     } catch (e) {
@@ -158,12 +159,12 @@ export class DeleteBgpPrefix extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'delete_bgp_prefix',
-        `Deleted BGP child prefix ${bgpPrefixId} on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const bgpDeleteDetails = `Deleted BGP child prefix ${bgpPrefixId} on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'delete_bgp_prefix', bgpDeleteDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'delete_bgp_prefix',
+        title: bgpPrefixId, details: bgpDeleteDetails,
+      });
 
       return c.json({ ok: true });
     } catch (e) {
@@ -236,12 +237,14 @@ export class ToggleBgpAdvertisement extends OpenAPIRoute {
         return c.json({ error: reason, bgp_prefix: result.result }, 409);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        body.advertised ? 'advertise' : 'withdraw',
-        `BGP prefix ${result.result?.cidr || bgpPrefixId} in account ${acct.account_id}`,
-      );
+      const toggleCidr = result.result?.cidr || bgpPrefixId;
+      const toggleAction = body.advertised ? 'advertise' : 'withdraw';
+      const toggleDetails = `BGP prefix ${toggleCidr} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, toggleAction, toggleDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: toggleAction,
+        title: toggleCidr, details: toggleDetails,
+      });
 
       return c.json({ ok: true, bgp_prefix: result.result });
     } catch (e) {

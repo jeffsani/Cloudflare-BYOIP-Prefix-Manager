@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
+import { enqueueNotification } from '../queue';
 import {
   listPrefixes,
   listBgpPrefixes,
@@ -132,12 +133,12 @@ export class CreatePrefix extends OpenAPIRoute {
         return c.json({ error: friendlyErrors[errCode] || errCode, details: errDetail }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'create_prefix',
-        `Created prefix ${body.cidr} (ASN ${body.asn}) in account ${acct.account_id}`,
-      );
+      const createPrefixDetails = `Created prefix ${body.cidr} (ASN ${body.asn}) in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'create_prefix', createPrefixDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'create_prefix',
+        title: body.cidr, details: createPrefixDetails,
+      });
 
       return c.json({ ok: true, prefix: result.result });
     } catch (e) {
@@ -417,12 +418,13 @@ export class UpdatePrefixDescription extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'update_description',
-        `Updated description for prefix ${result.result?.cidr || prefixId} in account ${acct.account_id}`,
-      );
+      const updateDescCidr = result.result?.cidr || prefixId;
+      const updateDescDetails = `Updated description for prefix ${updateDescCidr} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'update_description', updateDescDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'update_description',
+        title: updateDescCidr, details: updateDescDetails,
+      });
 
       return c.json({ ok: true, prefix: result.result });
     } catch (e) {
@@ -473,12 +475,13 @@ export class ValidateExistingPrefix extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'Validation API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'validate',
-        `Re-validated prefix ${result.result?.cidr || prefixId} in account ${acct.account_id}`,
-      );
+      const validateCidr = result.result?.cidr || prefixId;
+      const validateDetails = `Re-validated prefix ${validateCidr} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'validate', validateDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'validate',
+        title: validateCidr, details: validateDetails,
+      });
 
       return c.json({ ok: true, prefix: result.result });
     } catch (e) {
@@ -600,12 +603,12 @@ export class BulkToggle extends OpenAPIRoute {
       const action = body.advertised ? 'bulk_advertise' : 'bulk_withdraw';
       const totalToggled = results.reduce((sum, r) => sum + r.toggled, 0);
       const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
-      await logActivity(
-        c.env.DB,
-        email,
-        action,
-        `Bulk ${body.advertised ? 'advertise' : 'withdraw'}: ${totalToggled} toggled, ${totalSkipped} skipped across ${body.prefix_ids.length} prefixes in account ${acct.account_id}`,
-      );
+      const bulkDetails = `Bulk ${body.advertised ? 'advertise' : 'withdraw'}: ${totalToggled} toggled, ${totalSkipped} skipped across ${body.prefix_ids.length} prefixes in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, action, bulkDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: action,
+        title: `${totalToggled} prefix(es)`, details: bulkDetails,
+      });
 
       return c.json({ ok: true, results });
     } catch (e) {

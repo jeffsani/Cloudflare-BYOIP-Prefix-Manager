@@ -2,6 +2,9 @@ export interface Env {
   DB: D1Database;
   ENVIRONMENT: string;
   CF_ACCESS_TEAM_DOMAIN: string;
+  NOTIFY_QUEUE: Queue<NotifyMessage>;
+  RESEND_API_KEY?: string;
+  ALERT_FROM_EMAIL?: string;
 }
 
 export interface UserAccount {
@@ -11,8 +14,93 @@ export interface UserAccount {
   account_id: string;
   api_token: string;
   is_default: number;
+  api_rate_limit_5min: number;
   updated_at: string;
 }
+
+// --- Notification types ---
+
+export type ChannelType = 'email' | 'pagerduty' | 'webhook';
+
+export interface NotificationChannel {
+  id: number;
+  user_email: string;
+  account_id: string;
+  type: ChannelType;
+  name: string;
+  /** {url, token} for webhook, {routing_key} for pagerduty, {email} for email. */
+  config: { url?: string; token?: string; routing_key?: string; email?: string };
+  enabled: boolean;
+  created_at?: string;
+}
+
+export interface NotificationSubscription {
+  id?: number;
+  user_email: string;
+  account_id: string;
+  event_type: string;
+  channel_ids: number[];
+  enabled: boolean;
+  updated_at?: string;
+}
+
+export type NotificationStatus = 'queued' | 'sent' | 'retrying' | 'failed' | 'dead_letter';
+
+export interface NotificationLog {
+  id: number;
+  user_email: string;
+  account_id: string;
+  event_type: string;
+  title: string;
+  details: string;
+  channel_id: number | null;
+  channel_type: string;
+  payload: Record<string, unknown>;
+  status: NotificationStatus;
+  attempts: number;
+  error: string | null;
+  created_at: string;
+  updated_at: string;
+  delivered_at: string | null;
+}
+
+/** Payload delivered to a channel and stored on the log row. */
+export interface NotificationPayload {
+  event_type: string;
+  event_label: string;
+  account_id: string;
+  title: string;
+  details: string;
+  timestamp: string;
+}
+
+/** Body of a Cloudflare Queue message — kept tiny (just the log row id). */
+export interface NotifyMessage {
+  logId: number;
+}
+
+/** Catalog of subscribable events → friendly labels. */
+export const NOTIFICATION_EVENTS: Record<string, string> = {
+  create_prefix: 'Prefix created',
+  delete_prefix: 'Prefix deleted',
+  advertise: 'Prefix advertised',
+  withdraw: 'Prefix withdrawn',
+  bulk_advertise: 'Bulk advertised',
+  bulk_withdraw: 'Bulk withdrawn',
+  create_bgp_prefix: 'BGP sub-prefix created',
+  delete_bgp_prefix: 'BGP sub-prefix deleted',
+  create_binding: 'Service binding created',
+  delete_binding: 'Service binding deleted',
+  create_delegation: 'Delegation created',
+  delete_delegation: 'Delegation deleted',
+  update_description: 'Description updated',
+  validate: 'Prefix validated',
+  external_advertise: 'External: prefix advertised (Radar)',
+  external_withdraw: 'External: prefix withdrawn (Radar)',
+  external_origin_change: 'External: origin ASN changed (Radar)',
+};
+
+export const NOTIFICATION_EVENT_KEYS = Object.keys(NOTIFICATION_EVENTS);
 
 // --- Cloudflare Addressing API types ---
 

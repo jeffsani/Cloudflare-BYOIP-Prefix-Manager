@@ -16,6 +16,13 @@ import { ListDelegations, CreateDelegationEndpoint, DeleteDelegationEndpoint, Up
 import { ListServicesEndpoint } from './endpoints/services';
 import { ListRirCredentials, SaveRirCredentials, PatchRirCredentials, DeleteRirCredentials, ValidateRirCredentialsEndpoint, EnsureRoute, EnsureAutnum, DetectRir } from './endpoints/rir';
 import { LookingGlass, RdapLookup, RpkiLookup, RipestatVisibility, GetActivity } from './endpoints/lookups';
+import {
+  listChannels, createChannel, updateChannel, deleteChannel, testChannel,
+  getSubscriptions, updateSubscription, listLog, retryLog,
+} from './endpoints/notifications';
+import { handleQueueBatch } from './queue';
+import { pollAdvertisementChanges } from './poller';
+import type { NotifyMessage } from './types';
 
 // ─── App Setup ──────────────────────────────────────────────────────
 
@@ -144,8 +151,78 @@ openapi.get('/api/ripestat-visibility', RipestatVisibility);
 // Activity
 openapi.get('/api/activity', GetActivity);
 
+// ─── Notifications (plain Hono routes) ──────────────────────────────
+
+// Channels (per account)
+app.get('/api/notifications/channels', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || '';
+  if (!accountId) return c.json({ error: 'account_id is required' }, 400);
+  return c.json({ channels: await listChannels(c.env, email, accountId) });
+});
+app.post('/api/notifications/channels', async (c) => {
+  const email = c.get('userEmail');
+  const res = await createChannel(c.env, email, await c.req.json());
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.put('/api/notifications/channels/:id', async (c) => {
+  const email = c.get('userEmail');
+  const res = await updateChannel(c.env, email, parseInt(c.req.param('id'), 10), await c.req.json());
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.delete('/api/notifications/channels/:id', async (c) => {
+  const email = c.get('userEmail');
+  return c.json(await deleteChannel(c.env, email, parseInt(c.req.param('id'), 10)));
+});
+app.post('/api/notifications/channels/:id/test', async (c) => {
+  const email = c.get('userEmail');
+  const res = await testChannel(c.env, email, parseInt(c.req.param('id'), 10));
+  return c.json(res, res.ok ? 200 : 400);
+});
+
+// Subscriptions (event → channels, per account)
+app.get('/api/notifications/subscriptions', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || '';
+  if (!accountId) return c.json({ error: 'account_id is required' }, 400);
+  return c.json(await getSubscriptions(c.env, email, accountId));
+});
+app.put('/api/notifications/subscriptions', async (c) => {
+  const email = c.get('userEmail');
+  const res = await updateSubscription(c.env, email, await c.req.json());
+  return c.json(res, res.ok ? 200 : 400);
+});
+
+// Queue status log + retry
+app.get('/api/notifications/log', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || undefined;
+  return c.json({ log: await listLog(c.env, email, accountId) });
+});
+app.post('/api/notifications/log/:id/retry', async (c) => {
+  const email = c.get('userEmail');
+  const res = await retryLog(c.env, email, parseInt(c.req.param('id'), 10));
+  return c.json(res, res.ok ? 200 : 400);
+});
+
 // ─── Export ─────────────────────────────────────────────────────────
 
 export default {
   fetch: app.fetch,
+
+  async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
+    ctx.waitUntil((async () => {
+      try {
+        const res = await pollAdvertisementChanges(env);
+        console.log(`Radar poll: ${res.checked} checked, ${res.errors.length} errors`);
+        if (res.errors.length) console.error('Poll errors:', res.errors.slice(0, 10).join('; '));
+      } catch (err) {
+        console.error('pollAdvertisementChanges failed:', err);
+      }
+    })());
+  },
+
+  async queue(batch: MessageBatch<NotifyMessage>, env: Env) {
+    await handleQueueBatch(batch, env);
+  },
 };

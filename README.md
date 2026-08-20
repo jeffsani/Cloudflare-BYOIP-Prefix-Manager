@@ -100,6 +100,59 @@ Set `ENVIRONMENT = "development"` in `wrangler.toml` to bypass Cloudflare Access
 npm run deploy
 ```
 
+## Notifications & Reliable Delivery
+
+Prefix Manager can send notifications for prefix/BGP/binding lifecycle events (creation, deletion,
+advertise/withdraw, delegations, validation, etc.) and for **advertisement state changes detected
+externally** via Cloudflare Radar. Delivery is reliable and asynchronous — every notification is
+routed through a **Cloudflare Queue** with automatic retries and a dead-letter queue (DLQ).
+
+### Requirements
+- **Workers Paid plan** (Cloudflare Queues is not available on the free tier).
+
+### 1. Create the queues (one-time)
+
+```bash
+npx wrangler queues create prefix-mgr-notifications
+npx wrangler queues create prefix-mgr-notifications-dlq
+```
+
+The producer/consumer/DLQ bindings and the `* * * * *` cron trigger are already declared in
+`wrangler.toml`.
+
+### 2. Configure email delivery (Resend)
+
+Email channels use the [Resend](https://resend.com) API:
+
+```bash
+npx wrangler secret put RESEND_API_KEY
+# ALERT_FROM_EMAIL is set in wrangler.toml ([vars]) — change it to a verified sender.
+```
+
+Webhook and PagerDuty channels need no server-side secrets.
+
+### 3. Configure per account
+
+In **Settings → (expand an account)** you can:
+- Set the **API rate limit (req / 5 min)** — used to pace the Radar poller within your account's limit.
+- Add **notification channels** (email / webhook / PagerDuty) and test them.
+- Choose, per event, which channels fire (**event subscriptions**).
+
+Delivery status (queued / sent / retrying / failed / dead-letter) is shown in the collapsible
+**Notifications Queue** panel on the dashboard, with a manual retry for dead-lettered/failed items.
+
+### How external detection works
+
+A cron job (every minute) polls a rate-limited slice of each account's advertised CIDRs against
+Cloudflare Radar (`/radar/bgp/routes/realtime`) to observe the **global BGP state**. Transitions
+(advertised ⇄ withdrawn, origin ASN change) raise `external_*` events. Changes made through the tool
+are suppressed for a short window to avoid duplicate alerts. The monitored-CIDR list is cached and
+refreshed roughly every 15 minutes to conserve API budget.
+
+> **Rate limits:** all Cloudflare Client API calls (including Radar) share a **global 1,200 req / 5 min
+> per-user limit**. The per-account rate-limit field lets the poller size its work to stay within your
+> (possibly raised) limit while leaving headroom for interactive use.
+
 ## API Token Permissions
 
 Each user creates their own Cloudflare API tokens in the Settings panel. Tokens need these permissions:
@@ -167,6 +220,15 @@ Stores API tokens per account. Multiple tokens per account enable round-robin lo
 
 ### `activity_log`
 Tracks advertisement toggle actions (advertise/withdraw) with user email, action, details, and timestamp.
+
+### `notification_channels` / `notification_subscriptions`
+Per user + account delivery channels (email/webhook/PagerDuty) and per-event channel subscriptions.
+
+### `notification_log`
+One row per notification delivery attempt; tracks status (queued/sent/retrying/failed/dead_letter), attempts, and errors for the Notifications Queue panel.
+
+### `prefix_radar_state` / `prefix_monitor_cache`
+Snapshot of the global BGP state (from Radar) per monitored CIDR, and a cache of the CIDR set to poll per account.
 
 ## API Documentation
 

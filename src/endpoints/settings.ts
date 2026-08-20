@@ -42,6 +42,7 @@ export class ListAccounts extends OpenAPIRoute {
       account_id: r.account_id,
       api_token: maskToken(r.api_token),
       is_default: r.is_default,
+      api_rate_limit_5min: r.api_rate_limit_5min ?? 1200,
       updated_at: r.updated_at,
     }));
     return c.json({ accounts });
@@ -81,20 +82,22 @@ export class CreateAccount extends OpenAPIRoute {
       .bind(email, body.account_id)
       .first<{ id: number }>();
 
+    const rateLimit = body.api_rate_limit_5min && body.api_rate_limit_5min > 0 ? body.api_rate_limit_5min : 1200;
+
     if (existing) {
       if (body.api_token) {
         await c.env.DB.prepare(
-          `UPDATE user_accounts SET account_label = ?, api_token = ?, updated_at = datetime('now')
+          `UPDATE user_accounts SET account_label = ?, api_token = ?, api_rate_limit_5min = ?, updated_at = datetime('now')
            WHERE id = ? AND user_email = ?`,
         )
-          .bind(body.account_label || '', body.api_token, existing.id, email)
+          .bind(body.account_label || '', body.api_token, rateLimit, existing.id, email)
           .run();
       } else {
         await c.env.DB.prepare(
-          `UPDATE user_accounts SET account_label = ?, updated_at = datetime('now')
+          `UPDATE user_accounts SET account_label = ?, api_rate_limit_5min = ?, updated_at = datetime('now')
            WHERE id = ? AND user_email = ?`,
         )
-          .bind(body.account_label || '', existing.id, email)
+          .bind(body.account_label || '', rateLimit, existing.id, email)
           .run();
       }
     } else {
@@ -107,10 +110,10 @@ export class CreateAccount extends OpenAPIRoute {
       const isDefault = (count?.cnt || 0) === 0 ? 1 : 0;
 
       await c.env.DB.prepare(
-        `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default)
-         VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default, api_rate_limit_5min)
+         VALUES (?, ?, ?, ?, ?, ?)`,
       )
-        .bind(email, body.account_label || '', body.account_id, body.api_token || '', isDefault)
+        .bind(email, body.account_label || '', body.account_id, body.api_token || '', isDefault, rateLimit)
         .run();
     }
 

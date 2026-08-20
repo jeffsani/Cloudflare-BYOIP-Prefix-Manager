@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
+import { enqueueNotification } from '../queue';
 import {
   listDelegations,
   createDelegation,
@@ -126,12 +127,12 @@ export class CreateDelegationEndpoint extends OpenAPIRoute {
           .run();
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'create_delegation',
-        `Delegated ${body.cidr} to account ${body.delegated_account_id} on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const delegCreateDetails = `Delegated ${body.cidr} to account ${body.delegated_account_id} on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'create_delegation', delegCreateDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'create_delegation',
+        title: body.cidr, details: delegCreateDetails,
+      });
 
       return c.json({ ok: true, delegation: result.result });
     } catch (e) {
@@ -190,12 +191,12 @@ export class DeleteDelegationEndpoint extends OpenAPIRoute {
         .bind(delegationId, acct.account_id)
         .run();
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'delete_delegation',
-        `Deleted delegation ${delegationId} on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const delegDeleteDetails = `Deleted delegation ${delegationId} on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'delete_delegation', delegDeleteDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'delete_delegation',
+        title: delegationId, details: delegDeleteDetails,
+      });
 
       return c.json({ ok: true });
     } catch (e) {

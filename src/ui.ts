@@ -271,7 +271,7 @@ export function renderDashboard(userEmail: string): string {
         <h2 class="text-sm font-semibold" style="color:var(--text-strong)">Account Settings</h2>
         <button onclick="toggleSettings()" class="text-cf-gray hover:text-cf-orange text-xs">Close</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-3">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
         <div>
           <label class="block text-xs text-cf-gray mb-1">Account Label</label>
           <input id="set-label" type="text" placeholder="e.g. Production" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
@@ -283,6 +283,10 @@ export function renderDashboard(userEmail: string): string {
         <div>
           <label class="block text-xs text-cf-gray mb-1">API Token</label>
           <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <div>
+          <label class="block text-xs text-cf-gray mb-1">API rate limit (req / 5 min)</label>
+          <input id="set-rate-limit" type="number" min="1" value="1200" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
       </div>
       <div class="flex gap-2 mb-4">
@@ -441,6 +445,32 @@ export function renderDashboard(userEmail: string): string {
           <div class="px-4 py-8 text-center text-cf-gray text-xs">
             <div class="spinner" style="margin:0 auto 8px"></div>
             Loading activity log...
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Notifications Queue Panel -->
+    <div id="notif-queue-panel" class="panel overflow-hidden mt-4">
+      <div onclick="toggleNotifQueue()" class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-[rgba(246,130,31,0.05)] transition">
+        <div class="flex items-center gap-2">
+          <span id="notif-queue-chevron" class="chevron text-cf-gray text-xs">&#9654;</span>
+          <svg class="w-4 h-4 text-cf-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+          <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Notifications Queue</h3>
+          <span id="notif-queue-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span id="notif-queue-hint" class="text-[10px] text-cf-gray">Click to expand</span>
+          <button id="notif-queue-refresh" onclick="event.stopPropagation();loadNotifQueue()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          </button>
+        </div>
+      </div>
+      <div id="notif-queue-body" class="hidden" style="border-top:1px solid var(--border)">
+        <div id="notif-queue-content">
+          <div class="px-4 py-8 text-center text-cf-gray text-xs">
+            <div class="spinner" style="margin:0 auto 8px"></div>
+            Loading notifications...
           </div>
         </div>
       </div>
@@ -801,6 +831,8 @@ export function renderDashboard(userEmail: string): string {
     var pageSize = 25;
     var activityLogLoaded = false;
     var activityLogExpanded = false;
+    var notifQueueLoaded = false;
+    var notifQueueExpanded = false;
 
     // ─── Tooltip Positioning (fixed, escapes overflow:hidden) ────
     function positionTooltip(triggerEl, tipEl) {
@@ -961,6 +993,19 @@ export function renderDashboard(userEmail: string): string {
                   '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Update Token</button>' +
                 '</div>' +
               '</div>' +
+              // API Rate Limit
+              '<div class="mb-3">' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API rate limit <span class="font-normal">(requests / 5 min &mdash; used to pace the Radar advertisement poller)</span></label>' +
+                '<div class="flex gap-2">' +
+                  '<input id="acct-rl-' + escAttr(aid) + '" type="number" min="1" value="' + (a.api_rate_limit_5min || 1200) + '" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="updateAccountRateLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
+                '</div>' +
+              '</div>' +
+              // Notifications
+              '<div class="mb-3">' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Notifications <span class="font-normal">(channels &amp; per-event subscriptions for this account)</span></label>' +
+                '<div id="acct-notif-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '</div>' +
               // RIR Credentials
               '<div>' +
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR Credentials <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
@@ -979,6 +1024,7 @@ export function renderDashboard(userEmail: string): string {
         sec.classList.remove('hidden');
         if (chev) chev.style.transform = 'rotate(90deg)';
         loadAccountRirCredentials(accountId);
+        loadAccountNotifications(accountId);
       } else {
         sec.classList.add('hidden');
         if (chev) chev.style.transform = '';
@@ -1002,6 +1048,160 @@ export function renderDashboard(userEmail: string): string {
       } else {
         alert('Failed to update token');
       }
+    }
+
+    async function updateAccountRateLimit(accountId) {
+      var input = document.getElementById('acct-rl-' + accountId);
+      var val = input ? parseInt(input.value, 10) : 0;
+      if (!val || val < 1) { alert('Enter a positive number.'); return; }
+      var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      var resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', api_rate_limit_5min: val })
+      });
+      if (resp.ok) { loadSettings(); } else { alert('Failed to update rate limit'); }
+    }
+
+    // ─── Per-account Notifications ────────────────────────────────
+    async function loadAccountNotifications(accountId) {
+      var el = document.getElementById('acct-notif-' + accountId);
+      if (!el) return;
+      try {
+        var qs = '?account_id=' + encodeURIComponent(accountId);
+        var results = await Promise.all([
+          fetch('/api/notifications/channels' + qs).then(function(r){ return r.json(); }),
+          fetch('/api/notifications/subscriptions' + qs).then(function(r){ return r.json(); })
+        ]);
+        var channels = results[0].channels || [];
+        var events = results[1].events || {};
+        var subs = results[1].subscriptions || [];
+        el.innerHTML = renderNotifConfig(accountId, channels, events, subs);
+      } catch (e) {
+        el.innerHTML = '<span class="text-red-400">Failed to load notifications</span>';
+      }
+    }
+
+    function renderNotifConfig(accountId, channels, events, subs) {
+      var aid = escAttr(accountId);
+      var html = '';
+
+      // Existing channels
+      html += '<div class="space-y-1 mb-2">';
+      if (channels.length === 0) {
+        html += '<div class="text-cf-gray">No channels yet.</div>';
+      } else {
+        channels.forEach(function(ch) {
+          var cfg = ch.config || {};
+          var target = cfg.email || cfg.url || cfg.routing_key || '';
+          html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border">' +
+            '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(ch.type) + '</span>' +
+            '<span>' + escHtml(ch.name) + '</span>' +
+            '<span class="text-cf-gray font-mono">' + escHtml(target) + '</span>' +
+            (ch.enabled ? '' : '<span class="badge-invalid">disabled</span>') +
+            '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="ml-auto text-blue-400 hover:text-blue-300">Test</button>' +
+            '<button onclick="deleteNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="text-red-400 hover:text-red-300">Delete</button>' +
+          '</div>';
+        });
+      }
+      html += '</div>';
+
+      // Add channel form
+      html += '<div class="flex gap-2 items-end flex-wrap mb-3">' +
+        '<div><label class="block text-cf-gray">Type</label>' +
+          '<select id="notif-type-' + aid + '" onchange="onNotifTypeChange(\\'' + aid + '\\')" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white">' +
+            '<option value="email">Email</option><option value="webhook">Webhook</option><option value="pagerduty">PagerDuty</option>' +
+          '</select></div>' +
+        '<div><label class="block text-cf-gray">Name</label><input id="notif-name-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-28" placeholder="Label"></div>' +
+        '<div id="notif-f1-wrap-' + aid + '"><label class="block text-cf-gray" id="notif-f1-label-' + aid + '">Email address</label><input id="notif-f1-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-48" placeholder="alerts@example.com"></div>' +
+        '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-cf-gray">Token (optional)</label><input id="notif-f2-' + aid + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-40" placeholder="Bearer token"></div>' +
+        '<button onclick="addNotifChannel(\\'' + aid + '\\')" class="px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Add channel</button>' +
+      '</div>';
+
+      // Subscriptions matrix
+      var subMap = {};
+      subs.forEach(function(s) { subMap[s.event_type] = s; });
+      html += '<div class="font-semibold text-cf-gray mb-1">Event subscriptions</div>';
+      if (channels.length === 0) {
+        html += '<div class="text-cf-gray">Add a channel to subscribe to events.</div>';
+      } else {
+        html += '<div class="space-y-1">';
+        Object.keys(events).forEach(function(evt) {
+          var sub = subMap[evt] || { channel_ids: [], enabled: true };
+          var chBoxes = channels.map(function(ch) {
+            var checked = (sub.channel_ids || []).indexOf(ch.id) !== -1 ? ' checked' : '';
+            return '<label class="inline-flex items-center gap-1 mr-2">' +
+              '<input type="checkbox" data-evt="' + escAttr(evt) + '" data-ch="' + ch.id + '" class="notif-sub-' + aid + '"' + checked + '>' +
+              '<span>' + escHtml(ch.name || ch.type) + '</span></label>';
+          }).join('');
+          html += '<div class="flex items-start gap-2 p-1.5 rounded border border-cf-border">' +
+            '<span style="min-width:180px;color:var(--text-strong)">' + escHtml(events[evt]) + '</span>' +
+            '<div class="flex flex-wrap">' + chBoxes + '</div>' +
+          '</div>';
+        });
+        html += '</div>';
+        html += '<button onclick="saveNotifSubs(\\'' + aid + '\\')" class="mt-2 px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Save subscriptions</button>';
+      }
+
+      return html;
+    }
+
+    function onNotifTypeChange(accountId) {
+      var t = document.getElementById('notif-type-' + accountId).value;
+      var f1label = document.getElementById('notif-f1-label-' + accountId);
+      var f1 = document.getElementById('notif-f1-' + accountId);
+      var f2wrap = document.getElementById('notif-f2-wrap-' + accountId);
+      if (t === 'email') { f1label.textContent = 'Email address'; f1.placeholder = 'alerts@example.com'; f2wrap.classList.add('hidden'); }
+      else if (t === 'webhook') { f1label.textContent = 'Webhook URL'; f1.placeholder = 'https://…'; f2wrap.classList.remove('hidden'); }
+      else { f1label.textContent = 'Routing key'; f1.placeholder = 'PagerDuty routing key'; f2wrap.classList.add('hidden'); }
+    }
+
+    async function addNotifChannel(accountId) {
+      var type = document.getElementById('notif-type-' + accountId).value;
+      var name = document.getElementById('notif-name-' + accountId).value.trim();
+      var f1 = document.getElementById('notif-f1-' + accountId).value.trim();
+      var f2 = document.getElementById('notif-f2-' + accountId).value.trim();
+      var config = {};
+      if (type === 'email') config.email = f1;
+      else if (type === 'webhook') { config.url = f1; if (f2) config.token = f2; }
+      else config.routing_key = f1;
+      if (!f1) { alert('Enter the channel target.'); return; }
+      var resp = await fetch('/api/notifications/channels', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, type: type, name: name, config: config })
+      });
+      if (resp.ok) { loadAccountNotifications(accountId); }
+      else { var d = await resp.json(); alert(d.error || 'Failed to add channel'); }
+    }
+
+    async function deleteNotifChannel(id, accountId) {
+      if (!confirm('Delete this channel?')) return;
+      await fetch('/api/notifications/channels/' + id, { method: 'DELETE' });
+      loadAccountNotifications(accountId);
+    }
+
+    async function testNotifChannel(id, accountId) {
+      var resp = await fetch('/api/notifications/channels/' + id + '/test', { method: 'POST' });
+      var d = await resp.json();
+      alert(resp.ok ? 'Test notification sent.' : ('Test failed: ' + (d.error || 'unknown')));
+    }
+
+    async function saveNotifSubs(accountId) {
+      var boxes = document.querySelectorAll('.notif-sub-' + accountId);
+      var byEvent = {};
+      boxes.forEach(function(b) {
+        var evt = b.getAttribute('data-evt');
+        if (!byEvent[evt]) byEvent[evt] = [];
+        if (b.checked) byEvent[evt].push(parseInt(b.getAttribute('data-ch'), 10));
+      });
+      var events = Object.keys(byEvent);
+      for (var i = 0; i < events.length; i++) {
+        await fetch('/api/notifications/subscriptions', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, event_type: events[i], channel_ids: byEvent[events[i]], enabled: true })
+        });
+      }
+      alert('Subscriptions saved.');
     }
 
     async function loadAccountRirCredentials(accountId) {
@@ -1209,16 +1409,18 @@ export function renderDashboard(userEmail: string): string {
       var label = document.getElementById('set-label').value.trim();
       var accountId = document.getElementById('set-account-id').value.trim();
       var apiToken = document.getElementById('set-api-token').value.trim();
+      var rateLimit = parseInt(document.getElementById('set-rate-limit').value, 10) || 1200;
       if (!accountId) { alert('Account ID is required'); return; }
       try {
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined })
+          body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined, api_rate_limit_5min: rateLimit })
         });
         document.getElementById('set-label').value = '';
         document.getElementById('set-account-id').value = '';
         document.getElementById('set-api-token').value = '';
+        document.getElementById('set-rate-limit').value = '1200';
         document.getElementById('test-token-result').innerHTML = '';
         loadAccounts();
       } catch (e) {
@@ -5322,6 +5524,101 @@ export function renderDashboard(userEmail: string): string {
 
       html += '</tbody></table>';
       document.getElementById('activity-log-content').innerHTML = html;
+    }
+
+    // ─── Notifications Queue ─────────────────────────────────────
+    function toggleNotifQueue() {
+      notifQueueExpanded = !notifQueueExpanded;
+      var body = document.getElementById('notif-queue-body');
+      var chevron = document.getElementById('notif-queue-chevron');
+      var hint = document.getElementById('notif-queue-hint');
+      var refreshBtn = document.getElementById('notif-queue-refresh');
+      if (notifQueueExpanded) {
+        body.classList.remove('hidden');
+        chevron.classList.add('open');
+        if (hint) hint.textContent = 'Click to collapse';
+        if (refreshBtn) refreshBtn.classList.remove('hidden');
+        if (!notifQueueLoaded) loadNotifQueue();
+      } else {
+        body.classList.add('hidden');
+        chevron.classList.remove('open');
+        if (hint) hint.textContent = 'Click to expand';
+        if (refreshBtn) refreshBtn.classList.add('hidden');
+      }
+    }
+
+    async function loadNotifQueue() {
+      try {
+        var url = '/api/notifications/log' + (activeAccountId ? '?account_id=' + encodeURIComponent(activeAccountId) : '');
+        var resp = await fetch(url);
+        var data = await resp.json();
+        notifQueueLoaded = true;
+        renderNotifQueue(data.log || []);
+      } catch (e) {
+        document.getElementById('notif-queue-content').innerHTML =
+          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load notifications</div>';
+      }
+    }
+
+    function refreshNotifQueue() {
+      if (notifQueueExpanded) loadNotifQueue();
+    }
+
+    function notifStatusBadge(status) {
+      var map = {
+        'queued': { label: 'Queued', css: 'al-badge-gray' },
+        'sent': { label: 'Sent', css: 'al-badge-green' },
+        'retrying': { label: 'Retrying', css: 'al-badge-yellow' },
+        'failed': { label: 'Failed', css: 'al-badge-red' },
+        'dead_letter': { label: 'Dead Letter', css: 'al-badge-red' }
+      };
+      var info = map[status] || { label: status, css: 'al-badge-gray' };
+      return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';
+    }
+
+    function renderNotifQueue(entries) {
+      var countEl = document.getElementById('notif-queue-count');
+      if (countEl) {
+        countEl.textContent = entries.length;
+        countEl.classList.toggle('hidden', entries.length === 0);
+      }
+      if (entries.length === 0) {
+        document.getElementById('notif-queue-content').innerHTML =
+          '<div class="px-4 py-8 text-center text-cf-gray text-xs">No notifications yet</div>';
+        return;
+      }
+      var html = '<table class="w-full text-xs">' +
+        '<thead><tr class="border-b border-cf-border text-left">' +
+        '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Time</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Event</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Channel</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Status</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Attempts</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium">Detail / Error</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium"></th>' +
+        '</tr></thead><tbody>';
+      for (var i = 0; i < entries.length; i++) {
+        var e = entries[i];
+        var canRetry = (e.status === 'dead_letter' || e.status === 'failed');
+        var detail = e.error ? ('<span class="text-red-400">' + escHtml(e.error) + '</span>') : escHtml(e.title || e.details || '');
+        html += '<tr class="al-row">' +
+          '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
+          '<td class="px-3 py-2.5" style="color:var(--text-primary)">' + escHtml(e.event_type) + '</td>' +
+          '<td class="px-3 py-2.5 text-cf-gray">' + escHtml(e.channel_type) + '</td>' +
+          '<td class="px-3 py-2.5">' + notifStatusBadge(e.status) + '</td>' +
+          '<td class="px-3 py-2.5 text-cf-gray">' + (e.attempts || 0) + '</td>' +
+          '<td class="px-3 py-2.5">' + detail + '</td>' +
+          '<td class="px-3 py-2.5">' + (canRetry ? '<button onclick="retryNotif(' + e.id + ')" class="text-[10px] text-cf-orange hover:underline">Retry</button>' : '') + '</td>' +
+          '</tr>';
+      }
+      html += '</tbody></table>';
+      document.getElementById('notif-queue-content').innerHTML = html;
+    }
+
+    async function retryNotif(id) {
+      var resp = await fetch('/api/notifications/log/' + id + '/retry', { method: 'POST' });
+      if (resp.ok) { loadNotifQueue(); }
+      else { var d = await resp.json(); alert(d.error || 'Retry failed'); }
     }
 
     function extractTags(desc) {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
+import { enqueueNotification } from '../queue';
 import {
   listServiceBindings,
   createServiceBinding,
@@ -100,12 +101,12 @@ export class CreateBinding extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'create_binding',
-        `Service binding ${body.cidr} → ${result.result?.service_name || body.service_id} on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const bindCreateDetails = `Service binding ${body.cidr} → ${result.result?.service_name || body.service_id} on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'create_binding', bindCreateDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'create_binding',
+        title: body.cidr, details: bindCreateDetails,
+      });
 
       return c.json({ ok: true, binding: result.result });
     } catch (e) {
@@ -157,12 +158,12 @@ export class DeleteBinding extends OpenAPIRoute {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
 
-      await logActivity(
-        c.env.DB,
-        email,
-        'delete_binding',
-        `Deleted service binding ${bindingId} on prefix ${prefixId} in account ${acct.account_id}`,
-      );
+      const bindDeleteDetails = `Deleted service binding ${bindingId} on prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'delete_binding', bindDeleteDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'delete_binding',
+        title: bindingId, details: bindDeleteDetails,
+      });
 
       return c.json({ ok: true });
     } catch (e) {
