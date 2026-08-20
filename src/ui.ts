@@ -44,6 +44,7 @@ export function renderDashboard(userEmail: string): string {
       --text-primary: #374151; --text-strong: #111827; --input-bg: #F3F4F6;
       --header-bg: rgba(255,255,255,0.85); --scrollbar: #D1D5DB; --accent: #F6821F;
     }
+    html { font-size: 17px; }
     body { background: var(--page-bg); color: var(--text-primary); transition: background 0.2s, color 0.2s; }
     * { scrollbar-width: thin; scrollbar-color: var(--scrollbar) transparent; }
     ::-webkit-scrollbar { width: 6px; } ::-webkit-scrollbar-thumb { background: var(--scrollbar); border-radius: 3px; }
@@ -53,6 +54,7 @@ export function renderDashboard(userEmail: string): string {
     .spinner { border: 2px solid var(--border); border-top-color: #F6821F; border-radius: 50%; width: 18px; height: 18px; animation: spin 0.8s linear infinite; display: inline-block; }
     @keyframes spin { to { transform: rotate(360deg); } }
     [data-theme="light"] .text-white:not(.btn-force-white) { color: var(--text-strong) !important; }
+    [data-theme="light"] .bg-cf-orange.text-white { color: #fff !important; }
     [data-theme="light"] .bg-cf-dark { background-color: var(--input-bg) !important; }
     [data-theme="light"] .bg-cf-surface { background-color: var(--surface) !important; }
     [data-theme="light"] .border-cf-border { border-color: var(--border) !important; }
@@ -1112,7 +1114,7 @@ export function renderDashboard(userEmail: string): string {
           '<select id="notif-type-' + aid + '" onchange="onNotifTypeChange(\\'' + aid + '\\')" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white">' +
             '<option value="email">Email</option><option value="webhook">Webhook</option><option value="pagerduty">PagerDuty</option>' +
           '</select></div>' +
-        '<div><label class="block text-cf-gray">Name</label><input id="notif-name-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-28" placeholder="Label"></div>' +
+        '<div><label class="block text-cf-gray">Name</label><input id="notif-name-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-40" placeholder="Label"></div>' +
         '<div id="notif-f1-wrap-' + aid + '"><label class="block text-cf-gray" id="notif-f1-label-' + aid + '">Email address</label><input id="notif-f1-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-48" placeholder="alerts@example.com"></div>' +
         '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-cf-gray">Token (optional)</label><input id="notif-f2-' + aid + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-40" placeholder="Bearer token"></div>' +
         '<button onclick="addNotifChannel(\\'' + aid + '\\')" class="px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Add channel</button>' +
