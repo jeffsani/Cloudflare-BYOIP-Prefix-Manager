@@ -108,6 +108,12 @@ CREATE TABLE IF NOT EXISTS prefix_radar_state (
   origin_asn      INTEGER,
   visible_routes  INTEGER NOT NULL DEFAULT 0,
   last_change_at  TEXT,
+  -- Consolidated state augmentation. Radar `announced` stays authoritative; these
+  -- columns record the control-plane intended state and inbound-webhook provenance.
+  cf_advertised      INTEGER,             -- control-plane advertised flag (addressing API)
+  source             TEXT NOT NULL DEFAULT 'radar', -- radar|webhook|control_plane
+  last_webhook_at    TEXT,
+  last_webhook_event TEXT,
   updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(account_id, cidr)
 );
@@ -121,3 +127,52 @@ CREATE TABLE IF NOT EXISTS prefix_monitor_cache (
   refreshed_at  TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_email, account_id)
 );
+
+-- ─── Machine-facing integrations ────────────────────────────────────
+-- API keys for the read-only Query API. One key is scoped to a single Cloudflare
+-- account; only the SHA-256 hash of the key is stored (plaintext shown once).
+CREATE TABLE IF NOT EXISTS api_keys (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id   TEXT NOT NULL,             -- CF account this key is scoped to
+  owner_email  TEXT NOT NULL,             -- user_accounts.user_email owning the account (notif routing)
+  name         TEXT NOT NULL DEFAULT '',
+  key_hash     TEXT NOT NULL,             -- SHA-256(key)
+  key_prefix   TEXT NOT NULL DEFAULT '',  -- first chars for display/identification
+  scopes       TEXT NOT NULL DEFAULT '["read"]', -- JSON array, future permission scoping
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  last_used_at TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(key_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_keys_account ON api_keys(account_id);
+CREATE INDEX IF NOT EXISTS idx_api_keys_hash ON api_keys(key_hash);
+
+-- Inbound webhook endpoints. Cloudflare sends the configured secret in the
+-- `cf-webhook-auth` header; we match by SHA-256 hash to resolve the account.
+CREATE TABLE IF NOT EXISTS webhook_endpoints (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id   TEXT NOT NULL,
+  owner_email  TEXT NOT NULL,
+  name         TEXT NOT NULL DEFAULT '',
+  secret_hash  TEXT NOT NULL,             -- SHA-256(cf-webhook-auth secret)
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  last_seen_at TEXT,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(secret_hash)
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_endpoints_hash ON webhook_endpoints(secret_hash);
+
+-- Audit log of raw inbound webhook payloads (debugging / replay).
+CREATE TABLE IF NOT EXISTS webhook_events (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id  TEXT NOT NULL,
+  alert_type  TEXT NOT NULL DEFAULT '',
+  cidrs       TEXT NOT NULL DEFAULT '[]', -- JSON array parsed from payload
+  action      TEXT NOT NULL DEFAULT '',   -- advertise|withdraw|unknown
+  raw         TEXT NOT NULL DEFAULT '{}', -- full JSON payload
+  created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_webhook_events_acct ON webhook_events(account_id, created_at);

@@ -98,6 +98,9 @@ export const NOTIFICATION_EVENTS: Record<string, string> = {
   external_advertise: 'External: prefix advertised (Radar)',
   external_withdraw: 'External: prefix withdrawn (Radar)',
   external_origin_change: 'External: origin ASN changed (Radar)',
+  webhook_advertise: 'Webhook: prefix advertised (Cloudflare)',
+  webhook_withdraw: 'Webhook: prefix withdrawn (Cloudflare)',
+  webhook_event: 'Webhook: Cloudflare notification received',
 };
 
 export const NOTIFICATION_EVENT_KEYS = Object.keys(NOTIFICATION_EVENTS);
