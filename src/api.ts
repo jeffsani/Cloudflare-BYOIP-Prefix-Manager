@@ -435,7 +435,130 @@ export async function verifyTokenPermissions(
     results.push({ permission: 'Addressing Services: Read', status: 'fail', detail: String(e) });
   }
 
+  // Test 4: Audit Logs Read (v2 audit log endpoint)
+  try {
+    const now = new Date();
+    const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/logs/audit?since=${encodeURIComponent(since.toISOString())}` +
+        `&before=${encodeURIComponent(now.toISOString())}&limit=1`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json()) as CfApiResponse<unknown>;
+    results.push({
+      permission: 'Audit Logs: Read',
+      status: data.success ? 'ok' : 'fail',
+      detail: data.success ? undefined : data.errors?.[0]?.message,
+    });
+  } catch (e) {
+    results.push({ permission: 'Audit Logs: Read', status: 'fail', detail: String(e) });
+  }
+
   return results;
+}
+
+// --- Audit Logs (v2) ---
+
+export interface AuditLogEntry {
+  id: string;
+  account?: { id?: string; name?: string };
+  action?: { description?: string; result?: string; time?: string; type?: string };
+  actor?: {
+    context?: string;
+    email?: string;
+    id?: string;
+    ip_address?: string;
+    type?: string;
+  };
+  raw?: Record<string, unknown>;
+  resource?: {
+    id?: string;
+    product?: string;
+    scope?: string;
+    type?: string;
+    request?: unknown;
+    response?: unknown;
+  };
+}
+
+interface AuditLogListResponse {
+  success: boolean;
+  errors: Array<{ code: number; message: string }>;
+  result: AuditLogEntry[];
+  result_info?: { cursor?: string };
+}
+
+/**
+ * List account audit logs (v2) between `since` and `before` (RFC3339), filtered to
+ * addressing/prefix entries. Paginates via result_info.cursor up to a small page cap.
+ */
+export async function listAuditLogs(
+  accountId: string,
+  token: string,
+  since: string,
+  before: string,
+  maxPages = 5,
+): Promise<AuditLogEntry[]> {
+  const out: AuditLogEntry[] = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < maxPages; page++) {
+    let url =
+      `${CF_API}/accounts/${accountId}/logs/audit?since=${encodeURIComponent(since)}` +
+      `&before=${encodeURIComponent(before)}&limit=100&direction=desc`;
+    if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
+
+    const r = await fetchWithRetry(url, { headers: authHeaders(token) });
+    const data = (await r.json()) as AuditLogListResponse;
+    if (!data.success) {
+      throw new Error(data.errors?.[0]?.message || 'Audit log API error');
+    }
+
+    for (const entry of data.result || []) {
+      if (entry.resource?.product === 'addressing') out.push(entry);
+    }
+
+    cursor = data.result_info?.cursor;
+    if (!cursor || !(data.result || []).length) break;
+  }
+
+  return out;
+}
+
+/**
+ * Build a map of prefix id -> CIDR covering both parent prefixes and their BGP
+ * sub-prefixes, so audit-log resource IDs (which may be either) can be resolved.
+ */
+export async function buildPrefixCidrMap(
+  accountId: string,
+  token: string,
+): Promise<Record<string, string>> {
+  const map: Record<string, string> = {};
+  const prefixResp = await listPrefixes(accountId, token);
+  if (!prefixResp.success) return map;
+  const prefixes = prefixResp.result || [];
+
+  for (const p of prefixes) {
+    if (p.id && p.cidr) map[p.id] = p.cidr;
+  }
+
+  const bgpResults = await Promise.all(
+    prefixes.map(async (p) => {
+      try {
+        const bgpData = await listBgpPrefixes(accountId, p.id, token);
+        return bgpData.success ? bgpData.result || [] : [];
+      } catch {
+        return [];
+      }
+    }),
+  );
+  for (const children of bgpResults) {
+    for (const b of children) {
+      if (b.id && b.cidr) map[b.id] = b.cidr;
+    }
+  }
+
+  return map;
 }
 
 // --- Update Prefix Description ---

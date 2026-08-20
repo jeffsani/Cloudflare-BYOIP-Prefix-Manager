@@ -445,6 +445,11 @@ export function renderDashboard(userEmail: string): string {
           <span id="activity-log-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
         </div>
         <div class="flex items-center gap-2">
+          <select id="activity-log-source" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogSource(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by source">
+            <option value="all">All sources</option>
+            <option value="local">Local tool</option>
+            <option value="audit">Audit log</option>
+          </select>
           <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
           <button id="activity-log-refresh" onclick="event.stopPropagation();loadActivityLog()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -862,6 +867,8 @@ export function renderDashboard(userEmail: string): string {
     var pageSize = 25;
     var activityLogLoaded = false;
     var activityLogExpanded = false;
+    var activityLogEntries = [];
+    var activityLogSource = 'all';
     var notifQueueLoaded = false;
     var notifQueueExpanded = false;
 
@@ -1566,6 +1573,8 @@ export function renderDashboard(userEmail: string): string {
     function onAccountChange() {
       activeAccountId = document.getElementById('filter-account').value;
       loadPrefixes();
+      // Audit-log entries are account-scoped; reload if the panel is open.
+      if (activityLogExpanded) loadActivityLog();
     }
 
     // ─── Prefixes ─────────────────────────────────────────────────
@@ -5577,30 +5586,40 @@ export function renderDashboard(userEmail: string): string {
       var chevron = document.getElementById('activity-log-chevron');
       var hint = document.getElementById('activity-log-hint');
       var refreshBtn = document.getElementById('activity-log-refresh');
+      var sourceSel = document.getElementById('activity-log-source');
       if (activityLogExpanded) {
         body.classList.remove('hidden');
         chevron.classList.add('open');
         if (hint) hint.textContent = 'Click to collapse';
         if (refreshBtn) refreshBtn.classList.remove('hidden');
+        if (sourceSel) sourceSel.classList.remove('hidden');
         if (!activityLogLoaded) loadActivityLog();
       } else {
         body.classList.add('hidden');
         chevron.classList.remove('open');
         if (hint) hint.textContent = 'Click to expand';
         if (refreshBtn) refreshBtn.classList.add('hidden');
+        if (sourceSel) sourceSel.classList.add('hidden');
       }
     }
 
     async function loadActivityLog() {
       try {
-        var resp = await fetch('/api/activity');
+        var url = '/api/activity' + (activeAccountId ? '?account_id=' + encodeURIComponent(activeAccountId) : '');
+        var resp = await fetch(url);
         var data = await resp.json();
         activityLogLoaded = true;
-        renderActivityLog(data.activity || []);
+        activityLogEntries = data.activity || [];
+        renderActivityLog(activityLogEntries);
       } catch (e) {
         document.getElementById('activity-log-content').innerHTML =
           '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load activity log</div>';
       }
+    }
+
+    function setActivityLogSource(value) {
+      activityLogSource = value;
+      renderActivityLog(activityLogEntries);
     }
 
     function refreshActivityLog() {
@@ -5624,10 +5643,34 @@ export function renderDashboard(userEmail: string): string {
         'update_description': { label: 'Updated Description', css: 'al-badge-gray' },
         'rir_ensure_route': { label: 'Prefix Validation', css: 'al-badge-yellow' },
         'rir_ensure_autnum': { label: 'Prefix Validation', css: 'al-badge-yellow' },
-        'validate': { label: 'IRR Validation', css: 'al-badge-yellow' }
+        'validate': { label: 'IRR Validation', css: 'al-badge-yellow' },
+        'create': { label: 'Create', css: 'al-badge-blue' },
+        'update': { label: 'Update', css: 'al-badge-gray' },
+        'delete': { label: 'Delete', css: 'al-badge-red' },
+        'view': { label: 'View', css: 'al-badge-gray' }
       };
       var info = map[action] || { label: action, css: 'al-badge-gray' };
       return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';
+    }
+
+    function sourceBadge(source) {
+      if (source === 'audit') {
+        return '<span class="al-badge al-badge-yellow">Audit</span>';
+      }
+      return '<span class="al-badge al-badge-blue">Local</span>';
+    }
+
+    function activityActorHtml(e) {
+      if (e.source === 'audit') {
+        var who = e.actor_email || e.actor_type || 'unknown';
+        var html = '<div class="font-mono">' + escHtml(who) + '</div>';
+        var meta = [];
+        if (e.actor_context) meta.push(e.actor_context);
+        if (e.actor_ip) meta.push(e.actor_ip);
+        if (meta.length) html += '<div class="text-[10px] text-cf-gray">' + escHtml(meta.join(' · ')) + '</div>';
+        return html;
+      }
+      return '<span class="font-mono">' + escHtml(e.user_email || '') + '</span>';
     }
 
     function formatActivityTime(dateStr) {
@@ -5641,13 +5684,17 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function renderActivityLog(entries) {
+      var filtered = (entries || []).filter(function(e) {
+        return activityLogSource === 'all' || (e.source || 'local') === activityLogSource;
+      });
+
       var countEl = document.getElementById('activity-log-count');
       if (countEl) {
-        countEl.textContent = entries.length;
-        countEl.classList.toggle('hidden', entries.length === 0);
+        countEl.textContent = filtered.length;
+        countEl.classList.toggle('hidden', filtered.length === 0);
       }
 
-      if (entries.length === 0) {
+      if (filtered.length === 0) {
         document.getElementById('activity-log-content').innerHTML =
           '<div class="px-4 py-8 text-center text-cf-gray text-xs">' +
           '<svg class="w-6 h-6 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>' +
@@ -5658,18 +5705,20 @@ export function renderDashboard(userEmail: string): string {
       var html = '<table class="w-full text-xs">' +
         '<thead><tr class="border-b border-cf-border text-left">' +
         '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Date / Time</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:70px">Source</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">Action</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium">Details</th>' +
-        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">User</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">User / Actor</th>' +
         '</tr></thead><tbody>';
 
-      for (var i = 0; i < entries.length; i++) {
-        var e = entries[i];
+      for (var i = 0; i < filtered.length; i++) {
+        var e = filtered[i];
         html += '<tr class="al-row">' +
           '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
+          '<td class="px-3 py-2.5">' + sourceBadge(e.source) + '</td>' +
           '<td class="px-3 py-2.5">' + formatActionBadge(e.action) + '</td>' +
           '<td class="px-3 py-2.5" style="color:var(--text-primary)">' + escHtml(e.details) + '</td>' +
-          '<td class="px-3 py-2.5 text-cf-gray font-mono">' + escHtml(e.user_email) + '</td>' +
+          '<td class="px-3 py-2.5 text-cf-gray">' + activityActorHtml(e) + '</td>' +
           '</tr>';
       }
 
