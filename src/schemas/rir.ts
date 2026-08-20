@@ -22,6 +22,7 @@ export const PatchRirCredentialRequestSchema = z.object({
 
 export const ValidateRirCredentialRequestSchema = z.object({
   rir: z.string().min(1, 'rir is required'),
+  account_id: z.string().optional(),
   api_key: z.string().optional(),
   maintainer: z.string().optional(),
 });

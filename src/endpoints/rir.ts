@@ -245,21 +245,34 @@ export class ValidateRirCredentialsEndpoint extends OpenAPIRoute {
   };
 
   async handle(c: AppContext) {
+    const email = c.get('userEmail') as string;
     const data = await this.getValidatedData<typeof this.schema>();
     const body = data.body;
     const rir = (body.rir || '').toLowerCase();
 
+    // For saved credentials the API key is masked in the UI, so resolve the
+    // stored key (and maintainer) from the DB when they aren't supplied.
+    let apiKey = body.api_key;
+    let maintainer = body.maintainer;
+    if (body.account_id && (!apiKey || !maintainer)) {
+      const stored = await resolveRirCreds(c.env.DB, email, body.account_id, rir);
+      if (stored) {
+        if (!apiKey) apiKey = stored.apiKey;
+        if (!maintainer) maintainer = stored.maintainer;
+      }
+    }
+
     if (rir === 'arin') {
-      if (!body.maintainer) {
+      if (!maintainer) {
         return c.json({ valid: false, error: 'Org ID is required for ARIN.' });
       }
-      const result = await validateArinCredentials(body.maintainer, body.api_key);
+      const result = await validateArinCredentials(maintainer, apiKey);
       return c.json(result);
     } else if (rir === 'ripe') {
-      if (!body.api_key || !body.maintainer) {
+      if (!apiKey || !maintainer) {
         return c.json({ valid: false, error: 'API key and maintainer are required for RIPE.' });
       }
-      const result = await validateRipeCredentials(body.api_key, body.maintainer);
+      const result = await validateRipeCredentials(apiKey, maintainer);
       return c.json(result);
     } else {
       return c.json({ valid: false, error: 'RIR must be "arin" or "ripe".' });

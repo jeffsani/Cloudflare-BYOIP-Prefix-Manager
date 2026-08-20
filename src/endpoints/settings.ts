@@ -239,9 +239,26 @@ export class TestToken extends OpenAPIRoute {
   };
 
   async handle(c: AppContext) {
+    const email = c.get('userEmail');
     const data = await this.getValidatedData<typeof this.schema>();
     const body = data.body;
-    const results = await verifyTokenPermissions(body.account_id, body.api_token);
+
+    // For a saved account the token is masked in the UI, so resolve the stored
+    // token from the DB when the request omits it.
+    let token = body.api_token;
+    if (!token) {
+      const stored = await c.env.DB.prepare(
+        'SELECT api_token FROM user_accounts WHERE user_email = ? AND account_id = ?',
+      )
+        .bind(email, body.account_id)
+        .first<{ api_token: string }>();
+      if (!stored?.api_token) {
+        return c.json({ error: 'No saved token found for this account.' }, 400);
+      }
+      token = stored.api_token;
+    }
+
+    const results = await verifyTokenPermissions(body.account_id, token);
     return c.json({ results });
   }
 }

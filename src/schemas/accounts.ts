@@ -19,7 +19,7 @@ export const CreateAccountRequestSchema = z.object({
 
 export const TokenTestRequestSchema = z.object({
   account_id: z.string().min(1, 'account_id is required'),
-  api_token: z.string().min(1, 'api_token is required'),
+  api_token: z.string().optional(),
 });
 
 export const TokenTestResultItemSchema = z.object({

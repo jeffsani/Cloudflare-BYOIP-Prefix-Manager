@@ -1286,9 +1286,11 @@ export function renderDashboard(userEmail: string): string {
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
             html += '<span class="font-mono">' + escHtml(c.api_key) + '</span>';
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
-            html += '<button onclick="editRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Edit</button>';
+            html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Validate</button>';
+            html += '<button onclick="editRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>';
             html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>';
             html += '</div>';
+            html += '<div id="rir-cred-validate-result-' + c.id + '" class="text-[10px] mt-1 px-2"></div>';
             // Edit row (hidden)
             html += '<div id="' + credRowId + '-edit" class="hidden p-2 rounded border border-cf-orange" style="background:var(--input-bg)">';
             html += '<div class="flex gap-2 items-end flex-wrap">';
@@ -1435,6 +1437,32 @@ export function renderDashboard(userEmail: string): string {
           var msg = '<span class="text-green-400">&#10003; Valid</span>';
           if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
           if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ')</span>';
+          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
+          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
+          resultEl.innerHTML = msg;
+        } else {
+          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
+        }
+      } catch (e) {
+        resultEl.innerHTML = '<span class="text-red-400">Validation request failed</span>';
+      }
+    }
+
+    async function validateSavedRirCredential(id, accountId, rir, maintainer) {
+      var resultEl = document.getElementById('rir-cred-validate-result-' + id);
+      if (!resultEl) return;
+      resultEl.innerHTML = '<span class="animate-pulse text-cf-gray">Validating...</span>';
+      try {
+        var r = await fetch('/api/rir/credentials/validate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rir: rir, account_id: accountId, maintainer: maintainer })
+        });
+        var data = await r.json();
+        if (data.valid) {
+          var msg = '<span class="text-green-400">&#10003; Valid</span>';
+          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
+          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ', Tech: ' + escHtml(data.techC) + ')</span>';
           if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
           else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
           resultEl.innerHTML = msg;
