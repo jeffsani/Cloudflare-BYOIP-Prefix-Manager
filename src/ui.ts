@@ -1044,7 +1044,7 @@ export function renderDashboard(userEmail: string): string {
       });
       if (resp.ok) {
         if (input) input.value = '';
-        loadSettings();
+        loadAccounts();
       } else {
         alert('Failed to update token');
       }
@@ -1060,7 +1060,7 @@ export function renderDashboard(userEmail: string): string {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', api_rate_limit_5min: val })
       });
-      if (resp.ok) { loadSettings(); } else { alert('Failed to update rate limit'); }
+      if (resp.ok) { loadAccounts(); } else { alert('Failed to update rate limit'); }
     }
 
     // ─── Per-account Notifications ────────────────────────────────

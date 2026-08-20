@@ -1,10 +1,10 @@
-# Prefix Manager — BYOIP Prefix Manager
+# BYOIP Prefix Manager
 
 A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Bring Your Own IP) prefixes across multiple Cloudflare accounts. Built with Hono, server-rendered HTML, and vanilla JavaScript.
 
 **Live:** [prefix-mgr.example.com](https://prefix-mgr.example.com) (Cloudflare Access — Google IdP)
 
-![Prefix Manager Dashboard](src/network-tools.png)
+![Prefix Manager Dashboard](src/prefix-mgr.png)
 
 ## Features
 
