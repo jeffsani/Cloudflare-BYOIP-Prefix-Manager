@@ -1021,8 +1021,10 @@ export function renderDashboard(userEmail: string): string {
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Cloudflare API Token</label>' +
                 '<div class="flex gap-2">' +
                   '<input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token to update" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Validate</button>' +
                   '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Update Token</button>' +
                 '</div>' +
+                '<div id="acct-token-test-result-' + escAttr(aid) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>' +
                 '<div id="acct-token-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
               // API Rate Limit
@@ -1494,6 +1496,31 @@ export function renderDashboard(userEmail: string): string {
             var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
             return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
           }).join('');
+        }
+      } catch (e) {
+        el.innerHTML = '<span class="badge-invalid">Error</span>';
+      }
+    }
+
+    async function testSavedAccountToken(accountId) {
+      var el = document.getElementById('acct-token-test-result-' + accountId);
+      if (!el) return;
+      el.innerHTML = '<div class="spinner" style="width:12px;height:12px"></div>';
+      try {
+        var resp = await fetch('/api/test-token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId })
+        });
+        var data = await resp.json();
+        if (data.results) {
+          el.innerHTML = data.results.map(function(r) {
+            var cls = r.status === 'ok' ? 'badge-valid' : 'badge-invalid';
+            var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
+            return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
+          }).join('');
+        } else {
+          el.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Test failed') + '</span>';
         }
       } catch (e) {
         el.innerHTML = '<span class="badge-invalid">Error</span>';
