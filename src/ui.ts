@@ -76,6 +76,11 @@ export function renderDashboard(userEmail: string): string {
     .badge-delegation { background: rgba(20,184,166,0.15); color: #14b8a6; border: 1px solid rgba(20,184,166,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-tag { background: rgba(99,102,241,0.15); color: #6366f1; border: 1px solid rgba(99,102,241,0.3); padding: 2px 6px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; cursor: pointer; }
     .badge-tag:hover { background: rgba(99,102,241,0.25); }
+    .inline-msg { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 500; line-height: 1.3; }
+    .inline-msg-success { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
+    .inline-msg-error { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); }
+    .inline-msg-close { cursor: pointer; font-weight: 700; opacity: 0.7; margin-left: 2px; }
+    .inline-msg-close:hover { opacity: 1; }
     .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; outline: none; }
     .info-ico { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: normal; line-height: 1; cursor: help; transition: all 0.15s; }
     .info-tip:hover .info-ico, .info-tip:focus .info-ico { color: #F6821F; border-color: #F6821F; }
@@ -296,6 +301,7 @@ export function renderDashboard(userEmail: string): string {
         <button onclick="testNewAccountToken()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Test Token</button>
         <div id="test-token-result" class="flex items-center text-[10px]"></div>
       </div>
+      <div id="set-account-msg" class="mb-4"></div>
       <div id="accounts-list"></div>
     </div>
   </div>
@@ -346,6 +352,9 @@ export function renderDashboard(userEmail: string): string {
         </button>
       </div>
     </div>
+
+    <!-- Inline status message for prefix operations -->
+    <div id="prefix-msg" class="mb-3 empty:hidden"></div>
 
     <!-- Stats Row -->
     <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
@@ -469,6 +478,7 @@ export function renderDashboard(userEmail: string): string {
         </div>
       </div>
       <div id="notif-queue-body" class="hidden" style="border-top:1px solid var(--border)">
+        <div id="notif-queue-msg" class="px-4 pt-2 empty:hidden"></div>
         <div id="notif-queue-content">
           <div class="px-4 py-8 text-center text-cf-gray text-xs">
             <div class="spinner" style="margin:0 auto 8px"></div>
@@ -534,6 +544,22 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Generic App Confirm Modal -->
+  <div id="app-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAppConfirmModal()">
+    <div class="modal-content" style="max-width:420px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 id="app-confirm-title" class="text-sm font-semibold" style="color:var(--text-strong)">Confirm</h3>
+      </div>
+      <div class="p-4">
+        <p id="app-confirm-message" class="text-xs text-cf-gray mb-4"></p>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeAppConfirmModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="app-confirm-btn" onclick="runAppConfirm()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Confirm</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete Service Binding Confirm Modal -->
   <div id="delete-binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteBindingModal()">
     <div class="modal-content" style="max-width:420px">
@@ -543,6 +569,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4">
         <p id="delete-binding-message" class="text-xs text-cf-gray mb-3"></p>
         <p class="text-[10px] text-yellow-400 mb-4">Changes take 4–6 hours to propagate. This action cannot be undone.</p>
+        <div id="delete-binding-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delete-binding-btn" onclick="executeDeleteBinding()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
@@ -560,6 +587,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4">
         <p id="delete-bgp-prefix-message" class="text-xs text-cf-gray mb-3"></p>
         <p class="text-[10px] text-yellow-400 mb-4">This action cannot be undone.</p>
+        <div id="delete-bgp-prefix-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteBgpPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delete-bgp-prefix-btn" onclick="executeDeleteBgpPrefix()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
@@ -670,6 +698,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4">
         <p id="delete-delegation-message" class="text-xs text-cf-gray mb-3"></p>
         <p class="text-[10px] text-yellow-400 mb-4">The delegated account will lose access to this prefix range. This action cannot be undone.</p>
+        <div id="delete-delegation-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delete-delegation-btn" onclick="executeDeleteDelegation()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
@@ -994,6 +1023,7 @@ export function renderDashboard(userEmail: string): string {
                   '<input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token to update" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">' +
                   '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Update Token</button>' +
                 '</div>' +
+                '<div id="acct-token-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
               // API Rate Limit
               '<div class="mb-3">' +
@@ -1002,6 +1032,7 @@ export function renderDashboard(userEmail: string): string {
                   '<input id="acct-rl-' + escAttr(aid) + '" type="number" min="1" value="' + (a.api_rate_limit_5min || 1200) + '" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
                   '<button onclick="updateAccountRateLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
                 '</div>' +
+                '<div id="acct-rl-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
               // Notifications
               '<div class="mb-3">' +
@@ -1034,9 +1065,10 @@ export function renderDashboard(userEmail: string): string {
     }
 
     async function updateAccountToken(accountId) {
+      var msgId = 'acct-token-msg-' + accountId;
       var input = document.getElementById('acct-token-' + accountId);
       var token = input ? input.value.trim() : '';
-      if (!token) { alert('Enter a new API token.'); return; }
+      if (!token) { showInlineMsg(msgId, 'Enter a new API token.', 'error'); return; }
       // Find the account label
       var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
       var resp = await fetch('/api/settings', {
@@ -1046,23 +1078,36 @@ export function renderDashboard(userEmail: string): string {
       });
       if (resp.ok) {
         if (input) input.value = '';
-        loadAccounts();
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg(msgId, 'API token updated.', 'success');
       } else {
-        alert('Failed to update token');
+        showInlineMsg(msgId, 'Failed to update token.', 'error');
       }
     }
 
+    // Re-open an account's edit section after loadAccounts() re-renders the list
+    function reexpandAccount(accountId) {
+      var sec = document.getElementById('acct-expand-' + accountId);
+      if (sec && sec.classList.contains('hidden')) toggleAccountExpand(accountId);
+    }
+
     async function updateAccountRateLimit(accountId) {
+      var msgId = 'acct-rl-msg-' + accountId;
       var input = document.getElementById('acct-rl-' + accountId);
       var val = input ? parseInt(input.value, 10) : 0;
-      if (!val || val < 1) { alert('Enter a positive number.'); return; }
+      if (!val || val < 1) { showInlineMsg(msgId, 'Enter a positive number.', 'error'); return; }
       var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
       var resp = await fetch('/api/settings', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', api_rate_limit_5min: val })
       });
-      if (resp.ok) { loadAccounts(); } else { alert('Failed to update rate limit'); }
+      if (resp.ok) {
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg(msgId, 'Rate limit updated.', 'success');
+      } else { showInlineMsg(msgId, 'Failed to update rate limit.', 'error'); }
     }
 
     // ─── Per-account Notifications ────────────────────────────────
@@ -1087,6 +1132,9 @@ export function renderDashboard(userEmail: string): string {
     function renderNotifConfig(accountId, channels, events, subs) {
       var aid = escAttr(accountId);
       var html = '';
+
+      // Inline status message area
+      html += '<div id="notif-msg-' + aid + '" class="mb-2"></div>';
 
       // Existing channels
       html += '<div class="space-y-1 mb-2">';
@@ -1167,25 +1215,33 @@ export function renderDashboard(userEmail: string): string {
       if (type === 'email') config.email = f1;
       else if (type === 'webhook') { config.url = f1; if (f2) config.token = f2; }
       else config.routing_key = f1;
-      if (!f1) { alert('Enter the channel target.'); return; }
+      if (!f1) { showInlineMsg('notif-msg-' + accountId, 'Enter the channel target.', 'error'); return; }
       var resp = await fetch('/api/notifications/channels', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ account_id: accountId, type: type, name: name, config: config })
       });
-      if (resp.ok) { loadAccountNotifications(accountId); }
-      else { var d = await resp.json(); alert(d.error || 'Failed to add channel'); }
+      if (resp.ok) {
+        await loadAccountNotifications(accountId);
+        showInlineMsg('notif-msg-' + accountId, 'Channel added.', 'success');
+      } else {
+        var d = await resp.json();
+        showInlineMsg('notif-msg-' + accountId, d.error || 'Failed to add channel', 'error');
+      }
     }
 
     async function deleteNotifChannel(id, accountId) {
-      if (!confirm('Delete this channel?')) return;
-      await fetch('/api/notifications/channels/' + id, { method: 'DELETE' });
-      loadAccountNotifications(accountId);
+      showConfirm({ title: 'Delete Channel', message: 'Delete this channel?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
+        await fetch('/api/notifications/channels/' + id, { method: 'DELETE' });
+        await loadAccountNotifications(accountId);
+        showInlineMsg('notif-msg-' + accountId, 'Channel deleted.', 'success');
+      } });
     }
 
     async function testNotifChannel(id, accountId) {
       var resp = await fetch('/api/notifications/channels/' + id + '/test', { method: 'POST' });
       var d = await resp.json();
-      alert(resp.ok ? 'Test notification sent.' : ('Test failed: ' + (d.error || 'unknown')));
+      if (resp.ok) showInlineMsg('notif-msg-' + accountId, 'Test notification sent.', 'success');
+      else showInlineMsg('notif-msg-' + accountId, 'Test failed: ' + (d.error || 'unknown'), 'error');
     }
 
     async function saveNotifSubs(accountId) {
@@ -1197,13 +1253,17 @@ export function renderDashboard(userEmail: string): string {
         if (b.checked) byEvent[evt].push(parseInt(b.getAttribute('data-ch'), 10));
       });
       var events = Object.keys(byEvent);
-      for (var i = 0; i < events.length; i++) {
-        await fetch('/api/notifications/subscriptions', {
-          method: 'PUT', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, event_type: events[i], channel_ids: byEvent[events[i]], enabled: true })
-        });
+      try {
+        for (var i = 0; i < events.length; i++) {
+          await fetch('/api/notifications/subscriptions', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: accountId, event_type: events[i], channel_ids: byEvent[events[i]], enabled: true })
+          });
+        }
+        showInlineMsg('notif-msg-' + accountId, 'Subscriptions saved.', 'success');
+      } catch (e) {
+        showInlineMsg('notif-msg-' + accountId, 'Failed to save subscriptions: ' + e, 'error');
       }
-      alert('Subscriptions saved.');
     }
 
     async function loadAccountRirCredentials(accountId) {
@@ -1266,7 +1326,7 @@ export function renderDashboard(userEmail: string): string {
       var rir = document.getElementById('acct-rir-sel-' + accountId).value;
       var apiKey = document.getElementById('acct-rir-key-' + accountId).value.trim();
       var maintainer = document.getElementById('acct-rir-mnt-' + accountId).value.trim();
-      if (!apiKey) { alert('API key is required.'); return; }
+      if (!apiKey) { showInlineMsg('acct-rir-validate-result-' + accountId, 'API key is required.', 'error'); return; }
       var r = await fetch('/api/rir/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1274,16 +1334,19 @@ export function renderDashboard(userEmail: string): string {
       });
       var data = await r.json();
       if (data.ok) {
-        loadAccountRirCredentials(accountId);
+        await loadAccountRirCredentials(accountId);
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credentials saved.', 'success');
       } else {
-        alert(data.error || 'Failed to save credentials');
+        showInlineMsg('acct-rir-validate-result-' + accountId, data.error || 'Failed to save credentials', 'error');
       }
     }
 
     async function deleteRirCredential(id, accountId) {
-      if (!confirm('Delete this RIR credential?')) return;
-      await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
-      loadAccountRirCredentials(accountId);
+      showConfirm({ title: 'Delete RIR Credential', message: 'Delete this RIR credential?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
+        await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
+        await loadAccountRirCredentials(accountId);
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credential deleted.', 'success');
+      } });
     }
 
     function editRirCredential(id, accountId, rir, maintainer) {
@@ -1312,9 +1375,10 @@ export function renderDashboard(userEmail: string): string {
       });
       var data = await r.json();
       if (data.ok) {
-        loadAccountRirCredentials(accountId);
+        await loadAccountRirCredentials(accountId);
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credentials updated.', 'success');
       } else {
-        alert(data.error || 'Failed to update credentials');
+        showInlineMsg('rir-edit-validate-result-' + id, data.error || 'Failed to update credentials', 'error');
       }
     }
 
@@ -1385,7 +1449,8 @@ export function renderDashboard(userEmail: string): string {
     async function testNewAccountToken() {
       var token = document.getElementById('set-api-token').value.trim();
       var accountId = document.getElementById('set-account-id').value.trim();
-      if (!token || !accountId) { alert('Account ID and API Token are required'); return; }
+      if (!token || !accountId) { showInlineMsg('set-account-msg', 'Account ID and API Token are required.', 'error'); return; }
+      clearInlineMsg('set-account-msg');
       var el = document.getElementById('test-token-result');
       el.innerHTML = '<div class="spinner" style="width:12px;height:12px"></div>';
       try {
@@ -1412,7 +1477,7 @@ export function renderDashboard(userEmail: string): string {
       var accountId = document.getElementById('set-account-id').value.trim();
       var apiToken = document.getElementById('set-api-token').value.trim();
       var rateLimit = parseInt(document.getElementById('set-rate-limit').value, 10) || 1200;
-      if (!accountId) { alert('Account ID is required'); return; }
+      if (!accountId) { showInlineMsg('set-account-msg', 'Account ID is required.', 'error'); return; }
       try {
         await fetch('/api/settings', {
           method: 'POST',
@@ -1424,16 +1489,18 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('set-api-token').value = '';
         document.getElementById('set-rate-limit').value = '1200';
         document.getElementById('test-token-result').innerHTML = '';
-        loadAccounts();
+        await loadAccounts();
+        showInlineMsg('set-account-msg', 'Account saved.', 'success');
       } catch (e) {
-        alert('Failed to save account: ' + e);
+        showInlineMsg('set-account-msg', 'Failed to save account: ' + e, 'error');
       }
     }
 
     async function deleteAccount(id) {
-      if (!confirm('Delete this account and all its tokens?')) return;
-      await fetch('/api/settings/' + id, { method: 'DELETE' });
-      loadAccounts();
+      showConfirm({ title: 'Delete Account', message: 'Delete this account and all its tokens?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
+        await fetch('/api/settings/' + id, { method: 'DELETE' });
+        await loadAccounts();
+      } });
     }
 
     async function setDefault(id) {
@@ -1941,10 +2008,10 @@ export function renderDashboard(userEmail: string): string {
           }
           refreshActivityLog();
         } else {
-          alert('Toggle failed: ' + (data.error || 'Unknown error'));
+          showInlineMsg('prefix-msg', 'Toggle failed: ' + (data.error || 'Unknown error'), 'error');
         }
       } catch (e) {
-        alert('Toggle failed: ' + e);
+        showInlineMsg('prefix-msg', 'Toggle failed: ' + e, 'error');
       }
     }
 
@@ -1997,9 +2064,11 @@ export function renderDashboard(userEmail: string): string {
         }
 
         if (errors.length > 0) {
-          alert('Toggled ' + toggled + ' sub-prefix(es), but ' + errors.length + ' failed:\\n' + errors.join('\\n'));
+          showInlineMsg('prefix-msg', 'Toggled ' + toggled + ' sub-prefix(es), but ' + errors.length + ' failed: ' + errors.join('; '), 'error');
         } else if (toggled === 0) {
-          alert('No sub-prefixes were toggled. They may all be locked or already in the desired state.' + (skipped > 0 ? ' (' + skipped + ' skipped)' : ''));
+          showInlineMsg('prefix-msg', 'No sub-prefixes were toggled. They may all be locked or already in the desired state.' + (skipped > 0 ? ' (' + skipped + ' skipped)' : ''), 'error');
+        } else {
+          showInlineMsg('prefix-msg', 'Toggled ' + toggled + ' sub-prefix(es).', 'success');
         }
 
         // Refresh
@@ -2007,7 +2076,7 @@ export function renderDashboard(userEmail: string): string {
         loadPrefixes();
         refreshActivityLog();
       } catch (e) {
-        alert('Toggle failed: ' + e);
+        showInlineMsg('prefix-msg', 'Toggle failed: ' + e, 'error');
       }
     }
 
@@ -2064,11 +2133,11 @@ export function renderDashboard(userEmail: string): string {
           renderPrefixTable();
           refreshActivityLog();
         } else {
-          alert('Failed to update description: ' + (data.error || 'Unknown error'));
+          showInlineMsg('prefix-msg', 'Failed to update description: ' + (data.error || 'Unknown error'), 'error');
           cancelEditDescription(prefixId);
         }
       } catch (e) {
-        alert('Failed to update description: ' + e);
+        showInlineMsg('prefix-msg', 'Failed to update description: ' + e, 'error');
         cancelEditDescription(prefixId);
       } finally {
         if (spinner) spinner.classList.add('hidden');
@@ -2211,10 +2280,14 @@ export function renderDashboard(userEmail: string): string {
           loadPrefixes();
           refreshActivityLog();
         } else {
-          alert('Bulk toggle failed: ' + (data.error || 'Unknown error'));
+          var errEl = document.getElementById('bulk-confirm-results');
+          errEl.innerHTML = '<span class="inline-msg inline-msg-error">Bulk toggle failed: ' + escHtml(data.error || 'Unknown error') + '</span>';
+          errEl.classList.remove('hidden');
         }
       } catch (e) {
-        alert('Bulk toggle failed: ' + e);
+        var errEl2 = document.getElementById('bulk-confirm-results');
+        errEl2.innerHTML = '<span class="inline-msg inline-msg-error">Bulk toggle failed: ' + escHtml(String(e)) + '</span>';
+        errEl2.classList.remove('hidden');
       } finally {
         btn.disabled = false;
       }
@@ -2507,8 +2580,11 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function confirmCloseChildPrefixModal() {
-      if (isChildPrefixDirty() && !confirm('You have unsaved changes. Discard them?')) return;
-      closeChildPrefixModal();
+      if (isChildPrefixDirty()) {
+        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeChildPrefixModal });
+      } else {
+        closeChildPrefixModal();
+      }
     }
 
     function validateChildPrefix() {
@@ -2752,8 +2828,11 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function confirmCloseBindingModal() {
-      if (isBindingDirty() && !confirm('You have unsaved changes. Discard them?')) return;
-      closeBindingModal();
+      if (isBindingDirty()) {
+        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeBindingModal });
+      } else {
+        closeBindingModal();
+      }
     }
 
     function validateBinding() {
@@ -2894,6 +2973,7 @@ export function renderDashboard(userEmail: string): string {
         'Are you sure you want to delete the service binding <strong>' + escHtml(serviceName) + '</strong> for <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
       document.getElementById('delete-binding-btn').disabled = false;
       document.getElementById('delete-binding-btn').textContent = 'Delete';
+      clearInlineMsg('delete-binding-error');
       document.getElementById('delete-binding-modal').classList.remove('hidden');
     }
 
@@ -2921,12 +3001,12 @@ export function renderDashboard(userEmail: string): string {
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
           refreshActivityLog();
         } else {
-          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          showInlineMsg('delete-binding-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
           btn.disabled = false;
           btn.textContent = 'Delete';
         }
       } catch (e) {
-        alert('Delete failed: ' + e);
+        showInlineMsg('delete-binding-error', 'Delete failed: ' + e, 'error');
         btn.disabled = false;
         btn.textContent = 'Delete';
       }
@@ -2941,6 +3021,7 @@ export function renderDashboard(userEmail: string): string {
         'Are you sure you want to delete the BGP child prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
       document.getElementById('delete-bgp-prefix-btn').disabled = false;
       document.getElementById('delete-bgp-prefix-btn').textContent = 'Delete';
+      clearInlineMsg('delete-bgp-prefix-error');
       document.getElementById('delete-bgp-prefix-modal').classList.remove('hidden');
     }
 
@@ -2968,12 +3049,12 @@ export function renderDashboard(userEmail: string): string {
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
           refreshActivityLog();
         } else {
-          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          showInlineMsg('delete-bgp-prefix-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
           btn.disabled = false;
           btn.textContent = 'Delete';
         }
       } catch (e) {
-        alert('Delete failed: ' + e);
+        showInlineMsg('delete-bgp-prefix-error', 'Delete failed: ' + e, 'error');
         btn.disabled = false;
         btn.textContent = 'Delete';
       }
@@ -3024,8 +3105,11 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function confirmCloseDelegationModal() {
-      if (isDelegationDirty() && !confirm('You have unsaved changes. Discard them?')) return;
-      closeDelegationModal();
+      if (isDelegationDirty()) {
+        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeDelegationModal });
+      } else {
+        closeDelegationModal();
+      }
     }
 
     function validateDelegation() {
@@ -3117,6 +3201,7 @@ export function renderDashboard(userEmail: string): string {
         'Are you sure you want to delete the delegation of <strong class="font-mono">' + escHtml(cidr) + '</strong> to account <strong class="font-mono">' + escHtml(delegatedAccountId) + '</strong>?';
       document.getElementById('delete-delegation-btn').disabled = false;
       document.getElementById('delete-delegation-btn').textContent = 'Delete';
+      clearInlineMsg('delete-delegation-error');
       document.getElementById('delete-delegation-modal').classList.remove('hidden');
     }
 
@@ -3144,12 +3229,12 @@ export function renderDashboard(userEmail: string): string {
           setTimeout(function() { toggleRow(d.prefixId); }, 100);
           refreshActivityLog();
         } else {
-          alert('Delete failed: ' + (data.error || 'Unknown error'));
+          showInlineMsg('delete-delegation-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
           btn.disabled = false;
           btn.textContent = 'Delete';
         }
       } catch (e) {
-        alert('Delete failed: ' + e);
+        showInlineMsg('delete-delegation-error', 'Delete failed: ' + e, 'error');
         btn.disabled = false;
         btn.textContent = 'Delete';
       }
@@ -3191,11 +3276,12 @@ export function renderDashboard(userEmail: string): string {
             }
           }
           renderPrefixTable();
+          showInlineMsg('prefix-msg', 'Description saved.', 'success');
         } else {
-          alert('Failed to save description: ' + (data.error || 'Unknown error'));
+          showInlineMsg('prefix-msg', 'Failed to save description: ' + (data.error || 'Unknown error'), 'error');
         }
       } catch (e) {
-        alert('Failed to save description: ' + e);
+        showInlineMsg('prefix-msg', 'Failed to save description: ' + e, 'error');
       }
     }
 
@@ -3237,7 +3323,7 @@ export function renderDashboard(userEmail: string): string {
 
     function openAddPrefixModal() {
       if (!activeAccountId) {
-        alert('Please configure an account in Settings first.');
+        showInlineMsg('prefix-msg', 'Please configure an account in Settings first.', 'error');
         return;
       }
       // Reset state
@@ -3298,8 +3384,11 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function confirmCloseAddPrefixModal() {
-      if (isAddPrefixDirty() && !confirm('You have unsaved changes. Discard them?')) return;
-      closeAddPrefixModal();
+      if (isAddPrefixDirty()) {
+        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeAddPrefixModal });
+      } else {
+        closeAddPrefixModal();
+      }
     }
 
     function setAddPrefixFamily(family) {
@@ -3781,11 +3870,16 @@ export function renderDashboard(userEmail: string): string {
           // Only warn if there are actual errors (not just warnings)
           var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
           if (hasErrors) {
-            if (!confirm('Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '\\n\\nContinue anyway?')) return;
+            showConfirm({ title: 'Validation issues', message: 'Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '. Continue anyway?', confirmLabel: 'Continue', danger: true, onConfirm: function() { finishAddPrefix(cidr, asn, description, delegateLoaCreation); } });
+            return;
           }
         }
       }
 
+      finishAddPrefix(cidr, asn, description, delegateLoaCreation);
+    }
+
+    async function finishAddPrefix(cidr, asn, description, delegateLoaCreation) {
       // Check if this prefix falls within an existing parent prefix
       var parentPrefix = findParentPrefix(cidr);
       if (parentPrefix) {
@@ -4247,10 +4341,10 @@ export function renderDashboard(userEmail: string): string {
       var rir = document.getElementById('pcg-route-rir').value;
       var apiKey = document.getElementById('pcg-route-apikey').value.trim();
       var mnt = document.getElementById('pcg-route-mnt').value.trim();
-      if (!apiKey) { alert('API key is required.'); return; }
-      if (rir === 'ripe' && !mnt) { alert('RIPE requires a maintainer (mnt-by).'); return; }
-
       var statusEl = document.getElementById('pcg-route-status');
+      if (!apiKey) { showInlineMsg('pcg-route-status', 'API key is required.', 'error'); return; }
+      if (rir === 'ripe' && !mnt) { showInlineMsg('pcg-route-status', 'RIPE requires a maintainer (mnt-by).', 'error'); return; }
+
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Creating at ' + rir.toUpperCase() + '...</span>';
 
       var r = await fetch('/api/rir/ensure-route', {
@@ -4306,9 +4400,9 @@ export function renderDashboard(userEmail: string): string {
       var rir = document.getElementById('pcg-autnum-rir').value;
       var apiKey = document.getElementById('pcg-autnum-apikey').value.trim();
       var mnt = document.getElementById('pcg-autnum-mnt').value.trim();
-      if (!apiKey) { alert('API key is required.'); return; }
-
       var statusEl = document.getElementById('pcg-autnum-status');
+      if (!apiKey) { showInlineMsg('pcg-autnum-status', 'API key is required.', 'error'); return; }
+
       statusEl.innerHTML = '<span class="text-cf-gray text-[10px] animate-pulse">Updating aut-num at ' + rir.toUpperCase() + '...</span>';
 
       var r = await fetch('/api/rir/ensure-autnum', {
@@ -4455,10 +4549,10 @@ export function renderDashboard(userEmail: string): string {
           loadPrefixes();
           refreshActivityLog();
         } else {
-          alert('Validation failed: ' + (data.error || 'Unknown error'));
+          showInlineMsg('prefix-msg', 'Validation failed: ' + (data.error || 'Unknown error'), 'error');
         }
       } catch (e) {
-        alert('Validation request failed: ' + e.message);
+        showInlineMsg('prefix-msg', 'Validation request failed: ' + e.message, 'error');
       } finally {
         if (btn) btn.disabled = false;
       }
@@ -5619,8 +5713,8 @@ export function renderDashboard(userEmail: string): string {
 
     async function retryNotif(id) {
       var resp = await fetch('/api/notifications/log/' + id + '/retry', { method: 'POST' });
-      if (resp.ok) { loadNotifQueue(); }
-      else { var d = await resp.json(); alert(d.error || 'Retry failed'); }
+      if (resp.ok) { await loadNotifQueue(); showInlineMsg('notif-queue-msg', 'Retry queued.', 'success'); }
+      else { var d = await resp.json(); showInlineMsg('notif-queue-msg', d.error || 'Retry failed', 'error'); }
     }
 
     function extractTags(desc) {
@@ -5652,6 +5746,44 @@ export function renderDashboard(userEmail: string): string {
 
     function escAttr(s) {
       return escHtml(s).replace(/'/g, '&#39;');
+    }
+
+    // ─── Inline messages & confirm modal ──────────────────────────
+    function showInlineMsg(targetId, message, type) {
+      var el = document.getElementById(targetId);
+      if (!el) return;
+      var cls = type === 'success' ? 'inline-msg inline-msg-success' : 'inline-msg inline-msg-error';
+      el.innerHTML = '<span class="' + cls + '">' + escHtml(String(message)) +
+        '<span class="inline-msg-close" onclick="this.parentNode.parentNode.innerHTML=\\'\\'" role="button" aria-label="Dismiss">&times;</span></span>';
+    }
+
+    function clearInlineMsg(targetId) {
+      var el = document.getElementById(targetId);
+      if (el) el.innerHTML = '';
+    }
+
+    var _appConfirmCb = null;
+    function showConfirm(opts) {
+      opts = opts || {};
+      document.getElementById('app-confirm-title').textContent = opts.title || 'Confirm';
+      document.getElementById('app-confirm-message').textContent = opts.message || '';
+      var btn = document.getElementById('app-confirm-btn');
+      btn.textContent = opts.confirmLabel || 'Confirm';
+      btn.className = 'px-3 py-1.5 text-white text-xs font-medium rounded-lg transition ' +
+        (opts.danger ? 'bg-red-600 hover:bg-red-700' : 'bg-cf-orange hover:bg-orange-600');
+      _appConfirmCb = opts.onConfirm || null;
+      document.getElementById('app-confirm-modal').classList.remove('hidden');
+    }
+
+    function closeAppConfirmModal() {
+      document.getElementById('app-confirm-modal').classList.add('hidden');
+      _appConfirmCb = null;
+    }
+
+    function runAppConfirm() {
+      var cb = _appConfirmCb;
+      closeAppConfirmModal();
+      if (cb) cb();
     }
   </script>
 </body>
