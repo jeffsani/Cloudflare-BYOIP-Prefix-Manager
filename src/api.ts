@@ -435,7 +435,8 @@ export async function verifyTokenPermissions(
     results.push({ permission: 'Addressing Services: Read', status: 'fail', detail: String(e) });
   }
 
-  // Test 4: Audit Logs Read (v2 audit log endpoint)
+  // Test 4: Audit Logs v2 read. NOTE: the v2 endpoint (/logs/audit) requires the
+  // "Account Settings: Read" token permission — NOT the legacy "Audit Logs: Read".
   try {
     const now = new Date();
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -444,14 +445,15 @@ export async function verifyTokenPermissions(
         `&before=${encodeURIComponent(now.toISOString())}&limit=1`,
       { headers: authHeaders(token) },
     );
-    const data = (await r.json()) as CfApiResponse<unknown>;
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
     results.push({
-      permission: 'Audit Logs: Read',
-      status: data.success ? 'ok' : 'fail',
-      detail: data.success ? undefined : data.errors?.[0]?.message,
+      permission: 'Audit Logs (Account Settings: Read)',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
     });
   } catch (e) {
-    results.push({ permission: 'Audit Logs: Read', status: 'fail', detail: String(e) });
+    results.push({ permission: 'Audit Logs (Account Settings: Read)', status: 'fail', detail: String(e) });
   }
 
   return results;
@@ -509,9 +511,10 @@ export async function listAuditLogs(
     if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
 
     const r = await fetchWithRetry(url, { headers: authHeaders(token) });
-    const data = (await r.json()) as AuditLogListResponse;
-    if (!data.success) {
-      throw new Error(data.errors?.[0]?.message || 'Audit log API error');
+    const data = (await r.json().catch(() => null)) as AuditLogListResponse | null;
+    if (!data || !data.success) {
+      const msg = data?.errors?.[0]?.message || `Audit log API error (HTTP ${r.status})`;
+      throw new Error(msg);
     }
 
     for (const entry of data.result || []) {

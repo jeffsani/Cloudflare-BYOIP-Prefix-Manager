@@ -17,6 +17,13 @@ export async function accessAuthMiddleware(c: Context<AppEnv>, next: Next) {
     return next();
   }
 
+  // Machine-facing routes are not protected by CF Access — they carry their own
+  // auth (per-account API keys / the cf-webhook-auth secret), enforced by
+  // dedicated middleware in machine-auth.ts.
+  if (c.req.path.startsWith('/api/public/') || c.req.path.startsWith('/webhooks/')) {
+    return next();
+  }
+
   if (c.env.ENVIRONMENT !== 'production') {
     c.set('userEmail', 'dev@localhost');
     return next();

@@ -869,6 +869,7 @@ export function renderDashboard(userEmail: string): string {
     var activityLogExpanded = false;
     var activityLogEntries = [];
     var activityLogSource = 'all';
+    var activityLogAuditError = '';
     var notifQueueLoaded = false;
     var notifQueueExpanded = false;
 
@@ -1049,9 +1050,14 @@ export function renderDashboard(userEmail: string): string {
                 '<div id="acct-notif-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
               '</div>' +
               // RIR Credentials
-              '<div>' +
+              '<div class="mb-3">' +
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR Credentials <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
                 '<div id="acct-rir-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '</div>' +
+              // API Access & Integrations
+              '<div>' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API Access &amp; Integrations <span class="font-normal">(read-only Query API keys &amp; inbound Cloudflare webhooks)</span></label>' +
+                '<div id="acct-integrations-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -1067,6 +1073,7 @@ export function renderDashboard(userEmail: string): string {
         if (chev) chev.style.transform = 'rotate(90deg)';
         loadAccountRirCredentials(accountId);
         loadAccountNotifications(accountId);
+        loadAccountIntegrations(accountId);
       } else {
         sec.classList.add('hidden');
         if (chev) chev.style.transform = '';
@@ -1117,6 +1124,151 @@ export function renderDashboard(userEmail: string): string {
         reexpandAccount(accountId);
         showInlineMsg(msgId, 'Rate limit updated.', 'success');
       } else { showInlineMsg(msgId, 'Failed to update rate limit.', 'error'); }
+    }
+
+    // ─── Per-account API Access & Integrations ────────────────────
+    async function loadAccountIntegrations(accountId) {
+      var el = document.getElementById('acct-integrations-' + accountId);
+      if (!el) return;
+      try {
+        var qs = '?account_id=' + encodeURIComponent(accountId);
+        var results = await Promise.all([
+          fetch('/api/integrations/api-keys' + qs).then(function(r){ return r.json(); }),
+          fetch('/api/integrations/webhooks' + qs).then(function(r){ return r.json(); })
+        ]);
+        renderAccountIntegrations(accountId, results[0].keys || [], results[1].webhooks || []);
+      } catch (e) {
+        el.innerHTML = '<p class="text-[10px] text-red-400">Failed to load integrations.</p>';
+      }
+    }
+
+    function renderAccountIntegrations(accountId, keys, webhooks) {
+      var el = document.getElementById('acct-integrations-' + accountId);
+      if (!el) return;
+      var aid = escAttr(accountId);
+      var webhookUrl = window.location.origin + '/webhooks/cloudflare';
+      var html = '';
+
+      html += '<div id="intg-msg-' + aid + '" class="mb-2"></div>';
+      html += '<div id="intg-secret-' + aid + '" class="mb-2"></div>';
+
+      // ── API keys (Query API) ──
+      html += '<div class="mb-3">';
+      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Query API keys</div>';
+      html += '<div class="space-y-1 mb-2">';
+      if (keys.length === 0) {
+        html += '<div class="text-[10px] text-cf-gray">No API keys yet.</div>';
+      } else {
+        keys.forEach(function(k) {
+          var used = k.last_used_at ? ('last used ' + escHtml(k.last_used_at)) : 'never used';
+          html += '<div class="flex items-center justify-between gap-2 px-2 py-1 rounded border border-cf-border">' +
+            '<div class="min-w-0">' +
+              '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(k.name) + '</span> ' +
+              '<span class="font-mono text-cf-gray">' + escHtml(k.key_prefix) + '&hellip;</span> ' +
+              '<span class="text-cf-gray">(' + used + ')</span>' +
+            '</div>' +
+            '<button onclick="deleteAccountApiKey(' + k.id + ', \\'' + aid + '\\')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400 shrink-0">Revoke</button>' +
+          '</div>';
+        });
+      }
+      html += '</div>';
+      html += '<div class="flex gap-2">' +
+        '<input id="intg-key-name-' + aid + '" type="text" placeholder="Key name (e.g. monitoring)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-[11px] text-white focus:border-cf-orange focus:outline-none">' +
+        '<button onclick="createAccountApiKey(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition shrink-0">Create Key</button>' +
+      '</div>';
+      html += '</div>';
+
+      // ── Inbound webhooks ──
+      html += '<div>';
+      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Inbound Cloudflare webhooks</div>';
+      html += '<div class="text-[10px] text-cf-gray mb-1">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span></div>';
+      html += '<div class="space-y-1 mb-2">';
+      if (webhooks.length === 0) {
+        html += '<div class="text-[10px] text-cf-gray">No webhook secrets yet.</div>';
+      } else {
+        webhooks.forEach(function(w) {
+          var seen = w.last_seen_at ? ('last seen ' + escHtml(w.last_seen_at)) : 'never received';
+          html += '<div class="flex items-center justify-between gap-2 px-2 py-1 rounded border border-cf-border">' +
+            '<div class="min-w-0">' +
+              '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(w.name) + '</span> ' +
+              '<span class="text-cf-gray">(' + seen + ')</span>' +
+            '</div>' +
+            '<button onclick="deleteAccountWebhook(' + w.id + ', \\'' + aid + '\\')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400 shrink-0">Revoke</button>' +
+          '</div>';
+        });
+      }
+      html += '</div>';
+      html += '<div class="flex gap-2">' +
+        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="Webhook name (e.g. network-flow)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-[11px] text-white focus:border-cf-orange focus:outline-none">' +
+        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition shrink-0">Create Secret</button>' +
+      '</div>';
+      html += '</div>';
+
+      el.innerHTML = html;
+    }
+
+    // Show a generated secret exactly once (it cannot be retrieved again).
+    function showIntegrationSecret(accountId, label, value) {
+      var el = document.getElementById('intg-secret-' + accountId);
+      if (!el) return;
+      el.innerHTML = '<div class="px-2 py-2 rounded border border-cf-orange" style="background:rgba(246,130,31,0.08)">' +
+        '<div class="text-[10px] font-semibold mb-1" style="color:var(--text-strong)">' + escHtml(label) + ' &mdash; copy it now, it will not be shown again</div>' +
+        '<div class="flex items-center gap-2">' +
+          '<code class="flex-1 font-mono text-[11px] break-all" style="color:var(--text-strong)">' + escHtml(value) + '</code>' +
+          '<button onclick="navigator.clipboard && navigator.clipboard.writeText(\\'' + escAttr(value) + '\\')" class="px-2 py-1 text-[10px] border border-cf-border rounded hover:border-cf-orange hover:text-cf-orange shrink-0">Copy</button>' +
+          '<span class="inline-msg-close" onclick="this.parentNode.parentNode.parentNode.innerHTML=\\'\\'" role="button" aria-label="Dismiss">&times;</span>' +
+        '</div>' +
+      '</div>';
+    }
+
+    async function createAccountApiKey(accountId) {
+      var input = document.getElementById('intg-key-name-' + accountId);
+      var name = input ? input.value.trim() : '';
+      var resp = await fetch('/api/integrations/api-keys', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, name: name })
+      });
+      var d = await resp.json();
+      if (resp.ok && d.ok) {
+        if (input) input.value = '';
+        await loadAccountIntegrations(accountId);
+        showIntegrationSecret(accountId, 'API key', d.key);
+      } else {
+        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to create key', 'error');
+      }
+    }
+
+    async function deleteAccountApiKey(id, accountId) {
+      showConfirm({ title: 'Revoke API key', message: 'Revoke this API key? Clients using it will stop working immediately.', confirmLabel: 'Revoke', danger: true, onConfirm: async function() {
+        await fetch('/api/integrations/api-keys/' + id, { method: 'DELETE' });
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'API key revoked.', 'success');
+      } });
+    }
+
+    async function createAccountWebhook(accountId) {
+      var input = document.getElementById('intg-wh-name-' + accountId);
+      var name = input ? input.value.trim() : '';
+      var resp = await fetch('/api/integrations/webhooks', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, name: name })
+      });
+      var d = await resp.json();
+      if (resp.ok && d.ok) {
+        if (input) input.value = '';
+        await loadAccountIntegrations(accountId);
+        showIntegrationSecret(accountId, 'Webhook secret (paste into cf-webhook-auth / Cloudflare secret field)', d.secret);
+      } else {
+        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to create webhook secret', 'error');
+      }
+    }
+
+    async function deleteAccountWebhook(id, accountId) {
+      showConfirm({ title: 'Revoke webhook secret', message: 'Revoke this webhook secret? Cloudflare notifications using it will be rejected.', confirmLabel: 'Revoke', danger: true, onConfirm: async function() {
+        await fetch('/api/integrations/webhooks/' + id, { method: 'DELETE' });
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'Webhook secret revoked.', 'success');
+      } });
     }
 
     // ─── Per-account Notifications ────────────────────────────────
@@ -5610,6 +5762,7 @@ export function renderDashboard(userEmail: string): string {
         var data = await resp.json();
         activityLogLoaded = true;
         activityLogEntries = data.activity || [];
+        activityLogAuditError = data.audit_error || '';
         renderActivityLog(activityLogEntries);
       } catch (e) {
         document.getElementById('activity-log-content').innerHTML =
@@ -5694,15 +5847,22 @@ export function renderDashboard(userEmail: string): string {
         countEl.classList.toggle('hidden', filtered.length === 0);
       }
 
+      var banner = '';
+      if (activityLogAuditError && activityLogSource !== 'local') {
+        banner = '<div class="px-4 py-2 text-[11px] text-yellow-400 border-b border-cf-border" style="background:rgba(234,179,8,0.08)">' +
+          '&#9888; Audit log unavailable: ' + escHtml(activityLogAuditError) +
+          '. The Audit Logs v2 API requires the <strong>Account Settings: Read</strong> token permission.</div>';
+      }
+
       if (filtered.length === 0) {
-        document.getElementById('activity-log-content').innerHTML =
+        document.getElementById('activity-log-content').innerHTML = banner +
           '<div class="px-4 py-8 text-center text-cf-gray text-xs">' +
           '<svg class="w-6 h-6 mx-auto mb-2 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>' +
           'No activity recorded yet</div>';
         return;
       }
 
-      var html = '<table class="w-full text-xs">' +
+      var html = banner + '<table class="w-full text-xs">' +
         '<thead><tr class="border-b border-cf-border text-left">' +
         '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Date / Time</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:70px">Source</th>' +

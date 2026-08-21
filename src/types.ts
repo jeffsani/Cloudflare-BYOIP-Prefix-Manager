@@ -18,6 +18,51 @@ export interface UserAccount {
   updated_at: string;
 }
 
+// --- Machine integration types (Query API + inbound webhooks) ---
+
+export interface ApiKey {
+  id: number;
+  account_id: string;
+  owner_email: string;
+  name: string;
+  key_prefix: string;
+  scopes: string[];
+  enabled: boolean;
+  last_used_at: string | null;
+  created_at: string;
+}
+
+export interface WebhookEndpoint {
+  id: number;
+  account_id: string;
+  owner_email: string;
+  name: string;
+  enabled: boolean;
+  last_seen_at: string | null;
+  created_at: string;
+}
+
+/** Resolved auth context for machine-facing routes (set by middleware). */
+export interface MachineContext {
+  account_id: string;
+  owner_email: string;
+  scopes: string[];
+}
+
+/** Consolidated per-CIDR prefix state returned by the Query API. */
+export interface PrefixState {
+  cidr: string;
+  announced: boolean;
+  origin_asn: number | null;
+  visible_routes: number;
+  cf_advertised: boolean | null;
+  source: string;
+  last_change_at: string | null;
+  last_webhook_at: string | null;
+  last_webhook_event: string | null;
+  updated_at: string;
+}
+
 // --- Notification types ---
 
 export type ChannelType = 'email' | 'pagerduty' | 'webhook';

@@ -153,6 +153,76 @@ refreshed roughly every 15 minutes to conserve API budget.
 > per-user limit**. The per-account rate-limit field lets the poller size its work to stay within your
 > (possibly raised) limit while leaving headroom for interactive use.
 
+## Prefix State Query API (for external tooling)
+
+The Worker maintains a consolidated per-CIDR state snapshot in D1 (`prefix_radar_state`)
+refreshed by the Radar poller and inbound webhooks. Because it serves this from D1 rather
+than proxying the Cloudflare API, **other tooling can poll it for large prefix sets on a
+1‑minute interval without hitting the Cloudflare API rate limit**.
+
+### Authentication
+
+Each Query API request must carry a **per-account API key** as a Bearer token. Keys are
+created in **Settings → (expand an account) → API Access & Integrations** and are shown
+**once** at creation (only a SHA‑256 hash is stored). These routes bypass Cloudflare Access.
+
+```bash
+curl -H "Authorization: Bearer pmk_xxxxx" \
+  https://prefix-mgr.example.com/api/public/v1/prefixes
+```
+
+### Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/public/v1/health` | Liveness + `server_time` (anchor for `since`) |
+| `GET` | `/api/public/v1/prefixes` | List consolidated state for the key's account |
+| `GET` | `/api/public/v1/prefixes/lookup?cidr=<cidr>` | Single-CIDR state |
+
+`GET /api/public/v1/prefixes` query params: `advertised=true|false`, `cidr=<substr>`,
+`since=<ISO timestamp>` (returns only rows updated at/after the timestamp — ideal for
+incremental polling), `limit` (≤1000), `offset`. Each row returns:
+
+```json
+{
+  "cidr": "192.0.2.0/24",
+  "announced": true,
+  "origin_asn": 13335,
+  "visible_routes": 120,
+  "cf_advertised": true,
+  "source": "radar",
+  "last_change_at": "2026-08-20T10:00:00Z",
+  "last_webhook_at": null,
+  "last_webhook_event": null,
+  "updated_at": "2026-08-20T10:01:00Z"
+}
+```
+
+The Radar-observed `announced` flag is authoritative; `cf_advertised` is the Cloudflare
+control-plane intended state and `last_webhook_*` reflect inbound webhook provenance.
+
+## Inbound Cloudflare Webhooks
+
+The Worker can receive **generic webhook notifications from Cloudflare** (e.g. Network Flow
+auto-advertisements). It validates them, updates the prefix state store, and fans the event
+out through the existing notification channels/queue.
+
+### Setup
+
+1. In **Settings → (expand an account) → API Access & Integrations**, click **Create Secret**.
+   Copy the generated secret (shown once).
+2. In the Cloudflare dashboard, create a **generic webhook** notification destination:
+   - **URL:** `https://prefix-mgr.example.com/webhooks/cloudflare`
+   - **Secret:** paste the secret from step 1 (Cloudflare sends it in the `cf-webhook-auth`
+     header; the Worker matches it by hash to resolve the account).
+3. Attach the destination to the notification policies you want (e.g. Network Flow
+   auto-advertisement).
+
+Inbound payloads are parsed heuristically (CIDRs + advertise/withdraw intent extracted from
+`alert_type`/`text`/`data`), stored raw in `webhook_events` for auditing, and raise
+`webhook_advertise` / `webhook_withdraw` / `webhook_event` notification events. Cloudflare's
+"test" ping is acknowledged with `200` and makes no state changes.
+
 ## API Token Permissions
 
 Each user creates their own Cloudflare API tokens in the Settings panel. Tokens need these permissions:
@@ -190,6 +260,8 @@ prefix-mgr/
     ├── helpers.ts              — Shared helpers (getToken, logActivity, resolveAccount)
     ├── ui.ts                   — Server-rendered HTML dashboard
     ├── auth.ts                 — CF Access JWT middleware
+    ├── machine-auth.ts         — API-key + webhook-secret middleware for machine routes
+    ├── webhooks.ts             — Inbound Cloudflare webhook handler + payload parser
     ├── types.ts                — TypeScript interfaces
     ├── api.ts                  — Cloudflare API helpers
     ├── schemas/                — Zod schemas for request/response validation & OpenAPI generation
@@ -207,6 +279,8 @@ prefix-mgr/
         ├── delegations.ts      — Delegation endpoints
         ├── services.ts         — Services endpoint
         ├── rir.ts              — RIR credentials & operations endpoints
+        ├── public.ts           — Read-only prefix-state Query API (machine clients)
+        ├── integrations.ts     — API key & webhook secret management (CF Access)
         └── lookups.ts          — Looking glass, RDAP, RPKI, visibility, activity endpoints
 ```
 
@@ -228,7 +302,14 @@ Per user + account delivery channels (email/webhook/PagerDuty) and per-event cha
 One row per notification delivery attempt; tracks status (queued/sent/retrying/failed/dead_letter), attempts, and errors for the Notifications Queue panel.
 
 ### `prefix_radar_state` / `prefix_monitor_cache`
-Snapshot of the global BGP state (from Radar) per monitored CIDR, and a cache of the CIDR set to poll per account.
+Consolidated per-CIDR state and a cache of the CIDR set to poll per account. `prefix_radar_state` holds the Radar-observed global BGP state (authoritative `announced` flag) augmented with the control-plane `cf_advertised` flag and inbound-webhook provenance (`source`, `last_webhook_at`, `last_webhook_event`).
+
+### `api_keys` / `webhook_endpoints` / `webhook_events`
+Per-account API keys for the Query API (SHA‑256 hashed), inbound webhook secrets (SHA‑256 hashed, matched against the `cf-webhook-auth` header), and an audit log of raw inbound webhook payloads.
+
+> Existing deployments: apply the additive migration with
+> `npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql`
+> (the `ALTER TABLE` statements safely error with "duplicate column" if already applied).
 
 ## API Documentation
 
@@ -280,3 +361,9 @@ Additional plain routes (not in OpenAPI spec):
 | `GET` | `/health` | Health check |
 | `GET` | `/api/me` | Current user email |
 | `POST` | `/api/loa-upload` | Upload LOA document (multipart/form-data) |
+| `GET/POST/DELETE` | `/api/integrations/api-keys` | Manage Query API keys (CF Access) |
+| `GET/POST/DELETE` | `/api/integrations/webhooks` | Manage inbound webhook secrets (CF Access) |
+| `GET` | `/api/public/v1/prefixes` | Query API — consolidated prefix state (API-key auth) |
+| `GET` | `/api/public/v1/prefixes/lookup` | Query API — single-CIDR state (API-key auth) |
+| `GET` | `/api/public/v1/health` | Query API — liveness + server time (API-key auth) |
+| `POST` | `/webhooks/cloudflare` | Inbound Cloudflare notification webhook (`cf-webhook-auth`) |

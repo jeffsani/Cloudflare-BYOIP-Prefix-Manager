@@ -22,6 +22,13 @@ import {
 } from './endpoints/notifications';
 import { handleQueueBatch } from './queue';
 import { pollAdvertisementChanges } from './poller';
+import { apiKeyAuthMiddleware, webhookAuthMiddleware } from './machine-auth';
+import { handleCloudflareWebhook } from './webhooks';
+import { listPrefixStates, lookupPrefixState, publicHealth } from './endpoints/public';
+import {
+  listApiKeys, createApiKey, deleteApiKey,
+  listWebhookEndpoints, createWebhookEndpoint, deleteWebhookEndpoint,
+} from './endpoints/integrations';
 import type { NotifyMessage } from './types';
 
 // ─── App Setup ──────────────────────────────────────────────────────
@@ -204,6 +211,61 @@ app.post('/api/notifications/log/:id/retry', async (c) => {
   const res = await retryLog(c.env, email, parseInt(c.req.param('id'), 10));
   return c.json(res, res.ok ? 200 : 400);
 });
+
+// ─── Integrations: API keys & inbound webhook endpoints (CF Access) ──
+
+app.get('/api/integrations/api-keys', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || '';
+  if (!accountId) return c.json({ error: 'account_id is required' }, 400);
+  return c.json({ keys: await listApiKeys(c.env, email, accountId) });
+});
+app.post('/api/integrations/api-keys', async (c) => {
+  const email = c.get('userEmail');
+  const res = await createApiKey(c.env, email, await c.req.json());
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.delete('/api/integrations/api-keys/:id', async (c) => {
+  const email = c.get('userEmail');
+  return c.json(await deleteApiKey(c.env, email, parseInt(c.req.param('id'), 10)));
+});
+
+app.get('/api/integrations/webhooks', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || '';
+  if (!accountId) return c.json({ error: 'account_id is required' }, 400);
+  return c.json({ webhooks: await listWebhookEndpoints(c.env, email, accountId) });
+});
+app.post('/api/integrations/webhooks', async (c) => {
+  const email = c.get('userEmail');
+  const res = await createWebhookEndpoint(c.env, email, await c.req.json());
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.delete('/api/integrations/webhooks/:id', async (c) => {
+  const email = c.get('userEmail');
+  return c.json(await deleteWebhookEndpoint(c.env, email, parseInt(c.req.param('id'), 10)));
+});
+
+// ─── Machine-facing routes (own auth, CF Access bypassed in auth.ts) ──
+
+type MachineEnv = {
+  Bindings: Env;
+  Variables: { account_id: string; owner_email: string; scopes: string[] };
+};
+
+// Read-only prefix-state Query API — per-account API-key (Bearer) auth.
+const publicApi = new Hono<MachineEnv>();
+publicApi.use('*', apiKeyAuthMiddleware);
+publicApi.get('/health', publicHealth);
+publicApi.get('/prefixes', listPrefixStates);
+publicApi.get('/prefixes/lookup', lookupPrefixState);
+app.route('/api/public/v1', publicApi);
+
+// Inbound Cloudflare notification webhooks — cf-webhook-auth secret validation.
+const webhooksApi = new Hono<MachineEnv>();
+webhooksApi.use('*', webhookAuthMiddleware);
+webhooksApi.post('/cloudflare', handleCloudflareWebhook);
+app.route('/webhooks', webhooksApi);
 
 // ─── Export ─────────────────────────────────────────────────────────
 

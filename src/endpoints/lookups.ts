@@ -211,7 +211,10 @@ export class GetActivity extends OpenAPIRoute {
     responses: {
       '200': {
         description: 'Activity log entries',
-        ...contentJson(z.object({ activity: z.array(ActivityLogEntrySchema) })),
+        ...contentJson(z.object({
+          activity: z.array(ActivityLogEntrySchema),
+          audit_error: z.string().optional(),
+        })),
       },
     },
   };
@@ -236,8 +239,10 @@ export class GetActivity extends OpenAPIRoute {
       created_at: r.created_at as string,
     }));
 
-    // Cloudflare audit log (account-scoped). Best-effort: never break local log.
+    // Cloudflare audit log (account-scoped). Best-effort: never break local log,
+    // but surface the error so the UI can explain why audit rows are missing.
     let auditEntries: Array<Record<string, unknown>> = [];
+    let auditError: string | undefined;
     try {
       const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
       if (acct?.account_id) {
@@ -250,8 +255,9 @@ export class GetActivity extends OpenAPIRoute {
         ]);
         auditEntries = entries.map((e) => mapAuditEntry(e, prefixMap));
       }
-    } catch {
-      // Missing Audit:Read permission, no token, or API error — omit audit rows.
+    } catch (e) {
+      auditError = e instanceof Error ? e.message : String(e);
+      console.error('Audit log fetch failed:', auditError);
     }
 
     // Local created_at is UTC without a 'Z' suffix; normalize before comparing.
@@ -263,7 +269,7 @@ export class GetActivity extends OpenAPIRoute {
       .sort((a, b) => ts(b.created_at) - ts(a.created_at))
       .slice(0, 100);
 
-    return c.json({ activity: merged });
+    return c.json({ activity: merged, audit_error: auditError });
   }
 }
 

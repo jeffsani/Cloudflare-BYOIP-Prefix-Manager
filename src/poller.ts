@@ -76,36 +76,50 @@ async function getMonitoredCidrs(env: Env, acct: AccountRow): Promise<string[]> 
     if (age < CACHE_TTL_MS) return safeParse<string[]>(cached.cidrs, []);
   }
 
-  const cidrs = await enumerateCidrs(acct);
+  const advertisedByCidr = await enumerateCidrs(acct);
+  const cidrs = [...advertisedByCidr.keys()];
   await env.DB.prepare(
     `INSERT INTO prefix_monitor_cache (user_email, account_id, cidrs, refreshed_at)
      VALUES (?, ?, ?, datetime('now'))
      ON CONFLICT(user_email, account_id)
      DO UPDATE SET cidrs = excluded.cidrs, refreshed_at = excluded.refreshed_at`
   ).bind(acct.user_email, acct.account_id, JSON.stringify(cidrs)).run();
+
+  // Refresh the control-plane advertised flag on any existing state rows. This
+  // is an UPDATE-only pass, so it never creates rows ahead of a Radar
+  // observation (which would confuse reconcile's first-observation logic).
+  for (const [cidr, advertised] of advertisedByCidr) {
+    await env.DB.prepare(
+      `UPDATE prefix_radar_state SET cf_advertised = ?, updated_at = datetime('now')
+       WHERE account_id = ? AND cidr = ?`
+    ).bind(advertised ? 1 : 0, acct.account_id, cidr).run();
+  }
   return cidrs;
 }
 
-/** Enumerate announced CIDRs: BGP sub-prefixes where present, else parent prefixes. */
-async function enumerateCidrs(acct: AccountRow): Promise<string[]> {
-  const out = new Set<string>();
+/**
+ * Enumerate announced CIDRs (BGP sub-prefixes where present, else parent
+ * prefixes) mapped to their control-plane advertised flag.
+ */
+async function enumerateCidrs(acct: AccountRow): Promise<Map<string, boolean>> {
+  const out = new Map<string, boolean>();
   const prefixResp = await listPrefixes(acct.account_id, acct.api_token);
-  if (!prefixResp.success) return [];
+  if (!prefixResp.success) return out;
   for (const p of prefixResp.result || []) {
     let hasChild = false;
     try {
       const bgpResp = await listBgpPrefixes(acct.account_id, p.id, acct.api_token);
       if (bgpResp.success) {
         for (const b of bgpResp.result || []) {
-          if (b.cidr) { out.add(b.cidr); hasChild = true; }
+          if (b.cidr) { out.set(b.cidr, !!b.on_demand?.advertised); hasChild = true; }
         }
       }
     } catch {
       // Ignore per-prefix listing failures; fall back to the parent CIDR.
     }
-    if (!hasChild && p.cidr) out.add(p.cidr);
+    if (!hasChild && p.cidr) out.set(p.cidr, !!p.advertised);
   }
-  return [...out];
+  return out;
 }
 
 /** Query Radar for the current global BGP state of a CIDR. */
@@ -125,11 +139,12 @@ async function reconcile(env: Env, acct: AccountRow, cidr: string, observed: Rad
   ).bind(acct.account_id, cidr).first<{ announced: number; origin_asn: number | null }>();
 
   const upsert = () => env.DB.prepare(
-    `INSERT INTO prefix_radar_state (account_id, cidr, announced, origin_asn, visible_routes, last_change_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now'), datetime('now'))
+    `INSERT INTO prefix_radar_state (account_id, cidr, announced, origin_asn, visible_routes, source, last_change_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, 'radar', datetime('now'), datetime('now'))
      ON CONFLICT(account_id, cidr)
      DO UPDATE SET announced = excluded.announced, origin_asn = excluded.origin_asn,
-                   visible_routes = excluded.visible_routes, last_change_at = datetime('now'), updated_at = datetime('now')`
+                   visible_routes = excluded.visible_routes, source = 'radar',
+                   last_change_at = datetime('now'), updated_at = datetime('now')`
   ).bind(acct.account_id, cidr, observed.announced ? 1 : 0, observed.origin_asn, observed.visible_routes).run();
 
   // First observation: seed silently.
