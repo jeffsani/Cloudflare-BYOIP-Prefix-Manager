@@ -23,11 +23,12 @@ import {
 import { handleQueueBatch } from './queue';
 import { pollAdvertisementChanges } from './poller';
 import { apiKeyAuthMiddleware, webhookAuthMiddleware } from './machine-auth';
-import { handleCloudflareWebhook } from './webhooks';
+import { handleCloudflareWebhook, handleLogpushWebhook } from './webhooks';
 import { listPrefixStates, lookupPrefixState, publicHealth } from './endpoints/public';
 import {
   listApiKeys, createApiKey, deleteApiKey,
   listWebhookEndpoints, createWebhookEndpoint, deleteWebhookEndpoint,
+  enableAuditLogpush, getAuditLogpushStatus,
 } from './endpoints/integrations';
 import type { NotifyMessage } from './types';
 
@@ -246,6 +247,19 @@ app.delete('/api/integrations/webhooks/:id', async (c) => {
   return c.json(await deleteWebhookEndpoint(c.env, email, parseInt(c.req.param('id'), 10)));
 });
 
+app.get('/api/integrations/logpush', async (c) => {
+  const email = c.get('userEmail');
+  const accountId = c.req.query('account_id') || '';
+  const res = await getAuditLogpushStatus(c.env, email, accountId);
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.post('/api/integrations/logpush', async (c) => {
+  const email = c.get('userEmail');
+  const origin = new URL(c.req.url).origin;
+  const res = await enableAuditLogpush(c.env, email, await c.req.json(), origin);
+  return c.json(res, res.ok ? 200 : 400);
+});
+
 // ─── Machine-facing routes (own auth, CF Access bypassed in auth.ts) ──
 
 type MachineEnv = {
@@ -265,6 +279,7 @@ app.route('/api/public/v1', publicApi);
 const webhooksApi = new Hono<MachineEnv>();
 webhooksApi.use('*', webhookAuthMiddleware);
 webhooksApi.post('/cloudflare', handleCloudflareWebhook);
+webhooksApi.post('/logpush', handleLogpushWebhook);
 app.route('/webhooks', webhooksApi);
 
 // ─── Export ─────────────────────────────────────────────────────────

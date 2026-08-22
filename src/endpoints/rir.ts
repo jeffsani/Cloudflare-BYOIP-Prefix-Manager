@@ -9,6 +9,7 @@ import {
   updateRipeRouteObject,
   ensureArinAutnum,
   updateRipeAutnum,
+  createRipeAutnum,
   normalizeRirName,
   validateArinCredentials,
   validateRipeCredentials,
@@ -388,7 +389,14 @@ export class EnsureAutnum extends OpenAPIRoute {
       }
       result = await ensureArinAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
     } else {
+      if (!creds.maintainer) {
+        return c.json({ error: 'RIPE requires a maintainer (mnt-by). Save it in Settings.' }, 400);
+      }
+      // For RIPE: try update first, fall back to create if the aut-num doesn't exist
       result = await updateRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
+      if (!result.ok && result.error?.includes('not found')) {
+        result = await createRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
+      }
     }
 
     if (result.ok) {

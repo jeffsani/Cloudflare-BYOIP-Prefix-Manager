@@ -181,6 +181,43 @@ export function renderDashboard(userEmail: string): string {
     .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
     .al-row { border-bottom: 1px solid var(--border); }
     .al-row:last-child { border-bottom: none; }
+    /* ── Architecture + prefix-creation flow diagrams (About panel) ── */
+    .arch-diagram { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; padding: 4px 0; }
+    .arch-layer { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 8px; }
+    .arch-box { border: 1px solid var(--border); border-radius: 8px; background: var(--input-bg); padding: 6px 10px; color: var(--text-primary); text-align: center; min-width: 90px; }
+    .arch-box-title { font-weight: 600; color: var(--text-strong); font-size: 11px; }
+    .arch-box-sub { font-size: 9px; color: var(--muted); margin-top: 2px; line-height: 1.35; }
+    .arch-box-worker { border-color: rgba(246,130,31,0.5); background: rgba(246,130,31,0.06); flex: 1; min-width: 260px; }
+    .arch-box-store { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.06); }
+    .arch-box-queue { border-color: rgba(34,197,94,0.4); background: rgba(34,197,94,0.06); }
+    .arch-chip { display: inline-block; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); padding: 1px 6px; font-size: 9px; color: var(--text-primary); margin: 2px; white-space: nowrap; }
+    .arch-conn { text-align: center; color: var(--muted); font-size: 12px; line-height: 1; }
+    .arch-caption { font-size: 10px; color: var(--muted); margin-top: 6px; line-height: 1.4; }
+    .arch-group-label { font-size: 9px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 3px; width: 100%; text-align: left; }
+    .arch-lanes { display: grid; grid-template-columns: 1fr; gap: 6px; }
+    @media (min-width: 640px) { .arch-lanes { grid-template-columns: 1fr 1fr; } }
+    .arch-lane { border: 1px solid var(--border); border-radius: 8px; padding: 6px 8px; background: var(--input-bg); }
+    .arch-lane-title { font-size: 10px; font-weight: 700; color: var(--text-strong); margin-bottom: 4px; }
+    .arch-lane-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
+    .arch-lane-step { border: 1px solid var(--border); border-radius: 4px; background: var(--surface); padding: 1px 5px; color: var(--text-primary); white-space: nowrap; }
+    .flow { display: flex; flex-direction: column; gap: 0; }
+    .flow-step { display: flex; gap: 8px; align-items: flex-start; }
+    .flow-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .flow-body { flex: 1; min-width: 0; border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--input-bg); }
+    .flow-cf { border-left-color: #F6821F; }
+    .flow-rir { border-left-color: #14b8a6; }
+    .flow-lookup { border-left-color: #6b7280; }
+    .flow-title { font-size: 11px; font-weight: 600; color: var(--text-strong); }
+    .flow-tag { display: inline-block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
+    .flow-tag-cf { background: rgba(246,130,31,0.15); color: #F6821F; }
+    .flow-tag-rir { background: rgba(20,184,166,0.15); color: #14b8a6; }
+    .flow-tag-lookup { background: rgba(107,114,128,0.15); color: #9ca3af; }
+    .flow-desc { font-size: 10px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
+    .flow-api { display: block; font-family: monospace; font-size: 9.5px; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
+    .flow-arrow { color: var(--muted); font-size: 11px; line-height: 1; margin: 2px 0 2px 9px; }
+    .flow-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 10px; color: var(--muted); margin-bottom: 8px; }
+    .flow-legend-item { display: inline-flex; align-items: center; gap: 4px; }
+    .flow-legend-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   </style>
 </head>
 <body class="font-sans min-h-screen">
@@ -259,6 +296,152 @@ export function renderDashboard(userEmail: string): string {
           <div>&bull; RDAP / Whois hover lookups (org, RIR, country, allocation)</div>
           <div>&bull; Activity log of all actions</div>
         </div>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="text-xs font-semibold mb-2" style="color:var(--text-strong)">Architecture</h3>
+        <div class="arch-diagram">
+          <div class="arch-layer">
+            <div class="arch-box" style="min-width:240px">
+              <div class="arch-box-title">Browser Dashboard (SPA)</div>
+              <div class="arch-box-sub">Server-rendered HTML &bull; Tailwind &bull; dagre graph &bull; dark/light</div>
+            </div>
+          </div>
+          <div class="arch-conn">&darr;</div>
+          <div class="arch-layer">
+            <div class="arch-box" style="min-width:240px">
+              <div class="arch-box-title">Cloudflare Access (JWT)</div>
+              <div class="arch-box-sub">accessAuthMiddleware &bull; per-user identity</div>
+            </div>
+          </div>
+          <div class="arch-conn">&darr;</div>
+          <div class="arch-layer">
+            <div class="arch-box arch-box-worker">
+              <div class="arch-box-title">Cloudflare Worker &middot; Hono + chanfana</div>
+              <div class="arch-box-sub">Static UI (/) &bull; OpenAPI (/api/docs, /api/openapi.json) &bull; scheduled() cron &bull; queue() consumer</div>
+              <div style="margin-top:4px">
+                <span class="arch-chip">settings</span><span class="arch-chip">prefixes</span><span class="arch-chip">bgp</span><span class="arch-chip">bindings</span><span class="arch-chip">delegations</span><span class="arch-chip">services</span><span class="arch-chip">rir</span><span class="arch-chip">lookups</span><span class="arch-chip">activity</span><span class="arch-chip">notifications</span><span class="arch-chip">integrations</span><span class="arch-chip">public (Query API)</span>
+              </div>
+            </div>
+          </div>
+          <div class="arch-conn">&darr;</div>
+          <div class="arch-layer">
+            <div class="arch-box arch-box-store"><div class="arch-box-title">D1 (prefix-mgr-db)</div><div class="arch-box-sub">accounts, tokens, RIR creds,<br>activity, notifications, prefix state</div></div>
+            <div class="arch-box arch-box-queue"><div class="arch-box-title">Queue + DLQ</div><div class="arch-box-sub">prefix-mgr-notifications</div></div>
+            <div class="arch-box arch-box-store"><div class="arch-box-title">Cron (every 1 min)</div><div class="arch-box-sub">Radar advertisement poller</div></div>
+          </div>
+          <div class="arch-conn">&darr;</div>
+          <div class="arch-layer" style="flex-direction:column">
+            <div class="arch-group-label">External services</div>
+            <div style="text-align:center">
+              <span class="arch-chip">Cloudflare API</span><span class="arch-chip">Cloudflare Audit Logs</span><span class="arch-chip">Cloudflare Radar</span><span class="arch-chip">RIPEstat</span><span class="arch-chip">IRRexplorer</span><span class="arch-chip">RDAP</span><span class="arch-chip">ARIN Reg-RWS / Whois</span><span class="arch-chip">RIPE DB</span><span class="arch-chip">Resend (email)</span><span class="arch-chip">PagerDuty</span><span class="arch-chip">Webhooks</span>
+            </div>
+          </div>
+        </div>
+        <p class="arch-caption">Requests flow top &rarr; bottom through Access into the Worker; the cron poller and queue consumer run asynchronously inside the Worker against D1 and external services.</p>
+
+        <div class="mt-3">
+          <div class="arch-group-label" style="margin-bottom:4px">Key workflows</div>
+          <div class="arch-lanes">
+            <div class="arch-lane">
+              <div class="arch-lane-title">Prefix onboarding</div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">Validate (RPKI / IRR / ownership)</span> &rarr; <span class="arch-lane-step">RIR objects + LOA</span> &rarr; <span class="arch-lane-step">Create prefix</span></div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Prefix management</div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">List / stats / filter</span><span class="arch-lane-step">BGP advertise / withdraw</span><span class="arch-lane-step">Bindings</span><span class="arch-lane-step">Delegations</span><span class="arch-lane-step">Descriptions &amp; #tags</span></div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Event auditing</div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">Tool actions &rarr; D1 activity_log</span> + <span class="arch-lane-step">Cloudflare Audit Logs</span> &rarr; <span class="arch-lane-step">Merged Activity panel</span></div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Event notifications</div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">Radar poller detects change</span> &rarr; <span class="arch-lane-step">Queue + DLQ</span> &rarr; <span class="arch-lane-step">Email / PagerDuty / Webhook</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <h3 class="text-xs font-semibold mb-2" style="color:var(--text-strong)">Creating a new prefix</h3>
+        <div class="flow-legend">
+          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#F6821F"></span>Cloudflare API</span>
+          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#14b8a6"></span>Registrar (ARIN / RIPE)</span>
+          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#6b7280"></span>Validation lookup</span>
+        </div>
+        <div class="flow">
+          <div class="flow-step">
+            <div class="flow-num">1</div>
+            <div class="flow-body flow-cf">
+              <div class="flow-title">Upload LOA <span class="text-cf-gray font-normal">(optional)</span><span class="flow-tag flow-tag-cf">Cloudflare</span></div>
+              <div class="flow-desc">Attach a Letter of Authorization PDF; returns a loa_document_id for the create step.</div>
+              <code class="flow-api">POST /api/loa-upload  &rarr;  CF POST /accounts/{id}/addressing/loa_documents</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">2</div>
+            <div class="flow-body flow-lookup">
+              <div class="flow-title">Pre-submission validation<span class="flow-tag flow-tag-lookup">Lookup</span></div>
+              <div class="flow-desc">Check ROA/RPKI and IRR route objects for an ASN match before creating the prefix.</div>
+              <code class="flow-api">POST /api/prefixes/validate-new
+  &rarr; RIPEstat GET /data/rpki-validation (ROA)
+  &rarr; RIPEstat GET /data/prefix-routing-consistency (IRR)</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">3</div>
+            <div class="flow-body flow-cf">
+              <div class="flow-title">Create prefix<span class="flow-tag flow-tag-cf">Cloudflare</span></div>
+              <div class="flow-desc">Creates the BYOIP prefix and returns the ownership_validation_token. Logs activity and enqueues a create_prefix notification. If the origin is AS13335 (Cloudflare) or no RIR credentials are saved, the flow stops here.</div>
+              <code class="flow-api">POST /api/prefixes  &rarr;  CF POST /accounts/{id}/addressing/prefixes
+  body: { cidr, asn, delegate_loa_creation, description?, loa_document_id? }</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">4</div>
+            <div class="flow-body flow-lookup">
+              <div class="flow-title">Detect RIR<span class="flow-tag flow-tag-lookup">Lookup</span></div>
+              <div class="flow-desc">Determine the responsible registry via RDAP (falls back to the first saved RIR credential).</div>
+              <code class="flow-api">GET /api/rir/detect?prefix=&hellip;  &rarr;  RDAP rdap.org &rarr; ARIN / RIPE bootstrap</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">5</div>
+            <div class="flow-body flow-rir">
+              <div class="flow-title">Ensure route object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
+              <div class="flow-desc">Add descr: cf-validation: &lt;token&gt; to the route / route6 object at the registrar.</div>
+              <code class="flow-api">POST /api/rir/ensure-route
+  ARIN: GET/POST/PUT reg.arin.net/rest/irr/route/{ip}/{mask}/AS{asn} (ApiKey, RPSL/XML)
+  RIPE: PUT/POST rest.db.ripe.net/ripe/route[6] (Basic, JSON)</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">6</div>
+            <div class="flow-body flow-rir">
+              <div class="flow-title">Ensure aut-num object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
+              <div class="flow-desc">Add the same cf-validation token to the aut-num object for the origin ASN.</div>
+              <code class="flow-api">POST /api/rir/ensure-autnum
+  ARIN: GET/POST/PUT reg.arin.net/rest/irr/aut-num/AS{asn} (+POCs from whois.arin.net)
+  RIPE: PUT rest.db.ripe.net/ripe/aut-num</code>
+            </div>
+          </div>
+          <div class="flow-arrow">&darr;</div>
+          <div class="flow-step">
+            <div class="flow-num">7</div>
+            <div class="flow-body flow-cf">
+              <div class="flow-title">Request Cloudflare validation<span class="flow-tag flow-tag-cf">Cloudflare</span></div>
+              <div class="flow-desc">Cloudflare re-checks the IRR objects for the token. May take up to ~10 minutes; the prefix list then refreshes.</div>
+              <code class="flow-api">POST /api/prefixes/{prefixId}/validate  &rarr;  CF POST /accounts/{id}/addressing/prefixes/{prefixId}/validate</code>
+            </div>
+          </div>
+        </div>
+        <p class="arch-caption">Steps 4&ndash;6 run automatically only for BYO-ASN prefixes (ASN &ne; 13335, Cloudflare&rsquo;s own ASN) with saved RIR credentials; otherwise the UI shows a manual copy-paste guide with the same token and objects.</p>
       </div>
 
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
@@ -1134,15 +1317,16 @@ export function renderDashboard(userEmail: string): string {
         var qs = '?account_id=' + encodeURIComponent(accountId);
         var results = await Promise.all([
           fetch('/api/integrations/api-keys' + qs).then(function(r){ return r.json(); }),
-          fetch('/api/integrations/webhooks' + qs).then(function(r){ return r.json(); })
+          fetch('/api/integrations/webhooks' + qs).then(function(r){ return r.json(); }),
+          fetch('/api/integrations/logpush' + qs).then(function(r){ return r.json(); }).catch(function(){ return {}; })
         ]);
-        renderAccountIntegrations(accountId, results[0].keys || [], results[1].webhooks || []);
+        renderAccountIntegrations(accountId, results[0].keys || [], results[1].webhooks || [], results[2] || {});
       } catch (e) {
         el.innerHTML = '<p class="text-[10px] text-red-400">Failed to load integrations.</p>';
       }
     }
 
-    function renderAccountIntegrations(accountId, keys, webhooks) {
+    function renderAccountIntegrations(accountId, keys, webhooks, logpush) {
       var el = document.getElementById('acct-integrations-' + accountId);
       if (!el) return;
       var aid = escAttr(accountId);
@@ -1202,6 +1386,29 @@ export function renderDashboard(userEmail: string): string {
         '<input id="intg-wh-name-' + aid + '" type="text" placeholder="Webhook name (e.g. network-flow)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-[11px] text-white focus:border-cf-orange focus:outline-none">' +
         '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition shrink-0">Create Secret</button>' +
       '</div>';
+      html += '</div>';
+
+      // ── Audit log streaming (Logpush) ──
+      html += '<div class="mt-3 pt-3 border-t border-cf-border">';
+      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Audit log streaming (Logpush)</div>';
+      html += '<div class="text-[10px] text-cf-gray mb-2">Streams the account\\'s Audit Logs v2 to this tool so the Activity panel loads instantly instead of polling the API. Requires an Enterprise plan and a token with <span class="font-mono">Logs Write</span>.</div>';
+      var jobs = (logpush && logpush.jobs) || [];
+      if (jobs.length) {
+        jobs.forEach(function(j) {
+          var state = j.enabled ? 'enabled' : 'disabled';
+          var err = j.last_error || j.error_message;
+          html += '<div class="px-2 py-1 rounded border border-cf-border mb-2 text-[10px]">' +
+            '<span style="color:var(--text-strong)" class="font-medium">Job #' + escHtml(String(j.id)) + '</span> ' +
+            '<span class="text-cf-gray">(' + escHtml(state) + ')</span>' +
+            (err ? '<div class="text-red-400 mt-0.5">' + escHtml(String(err)) + '</div>' : '') +
+          '</div>';
+        });
+      } else if (logpush && logpush.error) {
+        html += '<div class="text-[10px] text-yellow-400 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
+      } else {
+        html += '<div class="text-[10px] text-cf-gray mb-2">No audit-log Logpush job configured yet.</div>';
+      }
+      html += '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Enable audit log streaming</button>';
       html += '</div>';
 
       el.innerHTML = html;
@@ -1269,6 +1476,26 @@ export function renderDashboard(userEmail: string): string {
         await loadAccountIntegrations(accountId);
         showInlineMsg('intg-msg-' + accountId, 'Webhook secret revoked.', 'success');
       } });
+    }
+
+    async function enableAccountLogpush(accountId) {
+      showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
+      var resp = await fetch('/api/integrations/logpush', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+      });
+      var d = await resp.json();
+      if (resp.ok && d.ok && d.auto) {
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
+      } else if (resp.ok && d.ok) {
+        // Auto-create failed — surface the error and the manual-setup details.
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
+        if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
+      } else {
+        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
+      }
     }
 
     // ─── Per-account Notifications ────────────────────────────────
@@ -5785,15 +6012,15 @@ export function renderDashboard(userEmail: string): string {
         'withdraw': { label: 'Withdrawn', css: 'al-badge-red' },
         'bulk_advertise': { label: 'Bulk Advertised', css: 'al-badge-green' },
         'bulk_withdraw': { label: 'Bulk Withdrawn', css: 'al-badge-red' },
-        'create_prefix': { label: 'Create Prefix', css: 'al-badge-blue' },
-        'delete_prefix': { label: 'Delete Prefix', css: 'al-badge-red' },
-        'create_bgp_prefix': { label: 'Created BGP Prefix', css: 'al-badge-blue' },
-        'delete_bgp_prefix': { label: 'Delete BGP Prefix', css: 'al-badge-red' },
-        'create_binding': { label: 'Created Binding', css: 'al-badge-blue' },
-        'delete_binding': { label: 'Deleted Binding', css: 'al-badge-red' },
-        'create_delegation': { label: 'Created Delegation', css: 'al-badge-blue' },
-        'delete_delegation': { label: 'Deleted Delegation', css: 'al-badge-red' },
-        'update_description': { label: 'Updated Description', css: 'al-badge-gray' },
+        'create_prefix': { label: 'Create', css: 'al-badge-blue' },
+        'delete_prefix': { label: 'Delete', css: 'al-badge-red' },
+        'create_bgp_prefix': { label: 'Create', css: 'al-badge-blue' },
+        'delete_bgp_prefix': { label: 'Delete', css: 'al-badge-red' },
+        'create_binding': { label: 'Create', css: 'al-badge-blue' },
+        'delete_binding': { label: 'Delete', css: 'al-badge-red' },
+        'create_delegation': { label: 'Create', css: 'al-badge-blue' },
+        'delete_delegation': { label: 'Delete', css: 'al-badge-red' },
+        'update_description': { label: 'Update', css: 'al-badge-gray' },
         'rir_ensure_route': { label: 'Prefix Validation', css: 'al-badge-yellow' },
         'rir_ensure_autnum': { label: 'Prefix Validation', css: 'al-badge-yellow' },
         'validate': { label: 'IRR Validation', css: 'al-badge-yellow' },

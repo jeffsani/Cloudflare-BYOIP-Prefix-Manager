@@ -42,6 +42,26 @@ export interface WebhookEndpoint {
   created_at: string;
 }
 
+/** A Cloudflare Audit Logs v2 entry ingested via Logpush and stored in D1. */
+export interface AuditLogEvent {
+  id: number;
+  account_id: string;
+  audit_log_id: string;
+  action_type: string;
+  action_description: string;
+  action_result: string;
+  actor_email: string;
+  actor_type: string;
+  actor_ip: string;
+  actor_context: string;
+  resource_id: string;
+  resource_product: string;
+  resource_type: string;
+  action_time: string;
+  raw: string;
+  created_at: string;
+}
+
 /** Resolved auth context for machine-facing routes (set by middleware). */
 export interface MachineContext {
   account_id: string;

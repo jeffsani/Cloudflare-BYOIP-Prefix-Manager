@@ -239,21 +239,39 @@ export class GetActivity extends OpenAPIRoute {
       created_at: r.created_at as string,
     }));
 
-    // Cloudflare audit log (account-scoped). Best-effort: never break local log,
-    // but surface the error so the UI can explain why audit rows are missing.
+    // Cloudflare audit log (account-scoped). Hybrid: prefer Logpush-ingested rows
+    // stored in D1 (fast); fall back to the live Audit Logs API when none exist
+    // yet. Best-effort: never break local log, but surface errors to the UI.
     let auditEntries: Array<Record<string, unknown>> = [];
     let auditError: string | undefined;
     try {
       const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
       if (acct?.account_id) {
-        const token = await getToken(c.env.DB, email, acct.account_id);
-        const now = new Date();
-        const since = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
-        const [entries, prefixMap] = await Promise.all([
-          listAuditLogs(acct.account_id, token, since.toISOString(), now.toISOString()),
-          buildPrefixCidrMap(acct.account_id, token).catch(() => ({} as Record<string, string>)),
-        ]);
-        auditEntries = entries.map((e) => mapAuditEntry(e, prefixMap));
+        const stored = await c.env.DB.prepare(
+          'SELECT * FROM audit_log_events WHERE account_id = ? ORDER BY action_time DESC LIMIT 100',
+        ).bind(acct.account_id).all<Record<string, unknown>>();
+
+        if ((stored.results || []).length) {
+          // Fast path — resolve CIDRs best-effort so display matches the live path.
+          let prefixMap: Record<string, string> = {};
+          try {
+            const token = await getToken(c.env.DB, email, acct.account_id);
+            prefixMap = await buildPrefixCidrMap(acct.account_id, token);
+          } catch {
+            // No token / API error — fall back to raw resource IDs.
+          }
+          auditEntries = (stored.results || []).map((r) => mapAuditRow(r, prefixMap));
+        } else {
+          // Fallback path — no Logpush data yet; poll the live Audit Logs API.
+          const token = await getToken(c.env.DB, email, acct.account_id);
+          const now = new Date();
+          const since = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+          const [entries, prefixMap] = await Promise.all([
+            listAuditLogs(acct.account_id, token, since.toISOString(), now.toISOString()),
+            buildPrefixCidrMap(acct.account_id, token).catch(() => ({} as Record<string, string>)),
+          ]);
+          auditEntries = entries.map((e) => mapAuditEntry(e, prefixMap));
+        }
       }
     } catch (e) {
       auditError = e instanceof Error ? e.message : String(e);
@@ -271,6 +289,31 @@ export class GetActivity extends OpenAPIRoute {
 
     return c.json({ activity: merged, audit_error: auditError });
   }
+}
+
+/** Map a Logpush-ingested `audit_log_events` D1 row to the merged activity shape. */
+function mapAuditRow(r: Record<string, unknown>, prefixMap: Record<string, string>): Record<string, unknown> {
+  const prefixId = String(r.resource_id || '');
+  const cidr = prefixId ? prefixMap[prefixId] : undefined;
+  const description = String(r.action_description || r.resource_type || r.action_type || 'Audit event');
+  const target = cidr || prefixId;
+  const details = target ? `${description} — ${target}` : description;
+
+  return {
+    source: 'audit' as const,
+    id: String(r.audit_log_id || ''),
+    action: String(r.action_type || 'audit'),
+    action_description: r.action_description,
+    result: r.action_result,
+    details,
+    created_at: (r.action_time as string) || '',
+    actor_email: r.actor_email,
+    actor_type: r.actor_type,
+    actor_context: r.actor_context,
+    actor_ip: r.actor_ip,
+    prefix_id: prefixId,
+    cidr,
+  };
 }
 
 function mapAuditEntry(e: AuditLogEntry, prefixMap: Record<string, string>): Record<string, unknown> {

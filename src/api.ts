@@ -528,6 +528,69 @@ export async function listAuditLogs(
   return out;
 }
 
+// --- Logpush (Audit Logs v2 streaming) ---
+
+const AUDIT_LOGPUSH_DATASET = 'audit_logs_v2';
+
+interface LogpushJobResult {
+  id: number;
+  dataset: string;
+  enabled: boolean;
+  name: string;
+  destination_conf: string;
+  last_complete: string | null;
+  last_error: string | null;
+  error_message: string | null;
+}
+
+/** List existing Logpush jobs for an account. */
+export async function listLogpushJobs(
+  accountId: string,
+  token: string,
+): Promise<CfApiResponse<LogpushJobResult[]>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/logpush/jobs`,
+    { headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+/**
+ * Create a Logpush job that streams the account's `audit_logs_v2` dataset to our
+ * HTTP webhook. Auth is carried via a `header_cf-webhook-auth` URL parameter so
+ * the destination reuses the existing webhook secret validation. Cloudflare
+ * validates the destination on creation by POSTing a gzipped test payload.
+ *
+ * NOTE: Logpush for audit logs is an Enterprise feature and the token needs the
+ * `Logs Write` permission; failures surface the Cloudflare error message.
+ */
+export async function createAuditLogpushJob(
+  accountId: string,
+  token: string,
+  webhookUrl: string,
+  webhookSecret: string,
+  name = 'network-tools-audit-logs',
+): Promise<CfApiResponse<LogpushJobResult>> {
+  const destination_conf =
+    `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(webhookSecret)}`;
+
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/logpush/jobs`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify({
+        name,
+        dataset: AUDIT_LOGPUSH_DATASET,
+        destination_conf,
+        enabled: true,
+        output_options: { timestamp_format: 'rfc3339' },
+      }),
+    },
+  );
+  return r.json();
+}
+
 /**
  * Build a map of prefix id -> CIDR covering both parent prefixes and their BGP
  * sub-prefixes, so audit-log resource IDs (which may be either) can be resolved.
@@ -1319,18 +1382,29 @@ export async function ensureArinAutnum(
       return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
 
-    // 404 or 406 = not found
-    if (getResp.status !== 404 && getResp.status !== 406) {
+    // 400/404/406 = object not found → fall through to create.
+    // (ARIN returns 404/406 for missing objects; some deployments behind
+    // Cloudflare surface a 400 for the same "does not exist" condition.)
+    if (getResp.status !== 400 && getResp.status !== 404 && getResp.status !== 406) {
       return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
     }
 
     // Step 2: Create via POST WITH a payload.
     // Unlike route objects, aut-num creation requires a full RPSL/XML payload.
-    const pocs = await lookupArinOrgPocs(orgId);
+    // Look up the Org's Admin/Tech POC handles; fall back to the fuller
+    // credential validation (which also resolves POCs) if the direct lookup
+    // fails, so a transient/parse hiccup doesn't block auto-creation.
+    let pocs = await lookupArinOrgPocs(orgId);
     if (!pocs) {
-      const validation = await validateArinCredentials(orgId);
-      const detail = validation.error || 'No Admin/Tech POC handles found.';
-      return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
+      const validation = await validateArinCredentials(orgId, apiKey);
+      if (validation.adminC || validation.techC) {
+        const adminC = validation.adminC || validation.techC || '';
+        const techC = validation.techC || validation.adminC || '';
+        pocs = { adminC, techC };
+      } else {
+        const detail = validation.error || 'No Admin/Tech POC handles found for this Org.';
+        return { ok: false, error: `Could not look up POC handles for Org ${orgId}: ${detail}` };
+      }
     }
 
     const tokenText = `cf-validation: ${validationToken}`;
@@ -1600,6 +1674,96 @@ export async function updateRipeAutnum(
     };
   } catch (e: unknown) {
     return { ok: false, error: `RIPE aut-num update failed: ${(e as Error).message}` };
+  }
+}
+
+/**
+ * Look up an admin-c/tech-c contact handle (nic-hdl) for a RIPE maintainer by
+ * reading the mntner object's `admin-c` attribute. Used to populate the mandatory
+ * admin-c/tech-c fields when creating a new aut-num object.
+ */
+export async function lookupRipeMntnerContact(maintainer: string): Promise<string | null> {
+  try {
+    const r = await fetch(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!r.ok) return null;
+    const data = (await r.json()) as {
+      objects?: { object?: Array<{ attributes?: { attribute?: Array<{ name: string; value: string }> } }> };
+    };
+    const attrs = data?.objects?.object?.[0]?.attributes?.attribute;
+    if (!attrs) return null;
+    const adminC = attrs.find((a) => a.name === 'admin-c');
+    return adminC?.value || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Create a new aut-num object at RIPE DB with the validation token.
+ * POST /ripe/aut-num — uses the WhoisResource JSON format.
+ * admin-c/tech-c are mandatory; they are derived from the maintainer's admin-c.
+ */
+export async function createRipeAutnum(
+  asn: number,
+  validationToken: string,
+  apiKey: string,
+  maintainer: string,
+): Promise<RirApiResult> {
+  try {
+    const contact = await lookupRipeMntnerContact(maintainer);
+    if (!contact) {
+      return {
+        ok: false,
+        error: `Could not derive an admin-c/tech-c contact from maintainer '${maintainer}'. Create the aut-num object manually at RIPE, or add an admin-c to the maintainer.`,
+      };
+    }
+
+    const url = `${RIPE_DB_API}/ripe/aut-num`;
+    const attributes = [
+      { name: 'aut-num', value: `AS${asn}` },
+      { name: 'as-name', value: `AS${asn}` },
+      { name: 'descr', value: `cf-validation: ${validationToken}` },
+      { name: 'admin-c', value: contact },
+      { name: 'tech-c', value: contact },
+      { name: 'mnt-by', value: maintainer },
+      { name: 'source', value: 'RIPE' },
+    ];
+
+    const body = {
+      objects: {
+        object: [
+          {
+            type: 'aut-num',
+            source: { id: 'ripe' },
+            attributes: { attribute: attributes },
+          },
+        ],
+      },
+    };
+
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${apiKey}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (r.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
+
+    const data = await r.json().catch(() => null);
+    const errMsg = extractRipeError(data);
+    return {
+      ok: false,
+      error: `RIPE POST aut-num returned ${r.status}`,
+      details: errMsg || (await r.text().catch(() => '')),
+    };
+  } catch (e: unknown) {
+    return { ok: false, error: `RIPE aut-num create failed: ${(e as Error).message}` };
   }
 }
 

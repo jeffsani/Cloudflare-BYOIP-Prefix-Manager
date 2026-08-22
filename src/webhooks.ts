@@ -134,6 +134,107 @@ async function applyWebhookState(
   ).bind(accountId, cidr, seededAnnounced, eventLabel).run();
 }
 
+// ─── Logpush: Audit Logs v2 ingestion ────────────────────────────────
+// Cloudflare pushes batched, gzip-compressed, newline-delimited JSON (NDJSON)
+// to this endpoint. We store addressing-related entries in D1 so the Activity
+// panel can read them fast instead of synchronously polling the Audit Logs API.
+
+/** Read the (possibly gzipped) request body as text. */
+async function readBodyText(c: Context<MachineEnv>): Promise<string> {
+  const buf = await c.req.arrayBuffer();
+  if (!buf.byteLength) return '';
+  const enc = (c.req.header('content-encoding') || '').toLowerCase();
+  const looksGzipped = enc.includes('gzip') || (() => {
+    const b = new Uint8Array(buf);
+    return b.length > 2 && b[0] === 0x1f && b[1] === 0x8b; // gzip magic bytes
+  })();
+
+  if (looksGzipped) {
+    try {
+      const stream = new Response(buf).body!.pipeThrough(new DecompressionStream('gzip'));
+      return await new Response(stream).text();
+    } catch (err) {
+      console.error('logpush gunzip failed, falling back to raw text:', err);
+    }
+  }
+  return new TextDecoder().decode(buf);
+}
+
+const AUDIT_TIME = (v: unknown): string => {
+  if (typeof v === 'number') return new Date(v > 1e12 ? v : v * 1000).toISOString();
+  return v ? String(v) : '';
+};
+
+/**
+ * POST /webhooks/logpush — receive Cloudflare Logpush batches for the
+ * `audit_logs_v2` dataset. Auth (cf-webhook-auth) is enforced by
+ * webhookAuthMiddleware. Cloudflare validates the destination by pushing a
+ * gzipped `{"content":"tests"}` payload, which we acknowledge with 200.
+ */
+export async function handleLogpushWebhook(c: Context<MachineEnv>) {
+  const accountId = c.get('account_id');
+
+  const body = await readBodyText(c);
+  const lines = body.split('\n').map((l) => l.trim()).filter(Boolean);
+
+  // Destination-validation ping: a single {"content":"tests"} object.
+  if (lines.length === 1) {
+    try {
+      const obj = JSON.parse(lines[0]) as Record<string, unknown>;
+      if (obj && obj.content === 'tests' && !obj.AuditLogID) {
+        return c.json({ ok: true, validation: true });
+      }
+    } catch {
+      // Not JSON — fall through and treat as empty.
+    }
+  }
+
+  let stored = 0;
+  for (const line of lines) {
+    let e: Record<string, any>;
+    try {
+      e = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (!e || !e.AuditLogID) continue;
+    // Only surface addressing/prefix entries (matches the live-API filter).
+    const product = String(e.ResourceProduct || '');
+    if (product && product !== 'addressing') continue;
+
+    try {
+      await c.env.DB.prepare(
+        `INSERT INTO audit_log_events
+           (account_id, audit_log_id, action_type, action_description, action_result,
+            actor_email, actor_type, actor_ip, actor_context,
+            resource_id, resource_product, resource_type, action_time, raw)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(audit_log_id) DO NOTHING`,
+      ).bind(
+        e.AccountID || accountId,
+        String(e.AuditLogID),
+        String(e.ActionType || ''),
+        String(e.ActionDescription || ''),
+        String(e.ActionResult || ''),
+        String(e.ActorEmail || ''),
+        String(e.ActorType || ''),
+        String(e.ActorIPAddress || ''),
+        String(e.ActorContext || ''),
+        String(e.ResourceID || ''),
+        product,
+        String(e.ResourceType || ''),
+        AUDIT_TIME(e.ActionTimestamp),
+        JSON.stringify(e).slice(0, 100000),
+      ).run();
+      stored++;
+    } catch (err) {
+      console.error('audit_log_events insert failed:', err);
+    }
+  }
+
+  return c.json({ ok: true, received: lines.length, stored });
+}
+
 /** Fan the webhook event out through the account's notification channels. */
 async function notifyWebhook(
   env: Env, ownerEmail: string, accountId: string, cidr: string, parsed: ParsedWebhook,

@@ -176,3 +176,28 @@ CREATE TABLE IF NOT EXISTS webhook_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_webhook_events_acct ON webhook_events(account_id, created_at);
+
+-- Cloudflare Audit Logs v2 entries ingested via Logpush (HTTP destination →
+-- /webhooks/logpush). Replaces synchronous polling of the Audit Logs API on the
+-- Activity panel. Deduped by the Cloudflare-assigned audit_log_id.
+CREATE TABLE IF NOT EXISTS audit_log_events (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  account_id        TEXT NOT NULL,
+  audit_log_id      TEXT NOT NULL,             -- Cloudflare AuditLogID (unique)
+  action_type       TEXT NOT NULL DEFAULT '',  -- create|update|delete|...
+  action_description TEXT NOT NULL DEFAULT '',
+  action_result     TEXT NOT NULL DEFAULT '',
+  actor_email       TEXT NOT NULL DEFAULT '',
+  actor_type        TEXT NOT NULL DEFAULT '',
+  actor_ip          TEXT NOT NULL DEFAULT '',
+  actor_context     TEXT NOT NULL DEFAULT '',
+  resource_id       TEXT NOT NULL DEFAULT '',
+  resource_product  TEXT NOT NULL DEFAULT '',
+  resource_type     TEXT NOT NULL DEFAULT '',
+  action_time       TEXT NOT NULL DEFAULT '',   -- RFC3339 timestamp of the change
+  raw               TEXT NOT NULL DEFAULT '{}', -- full JSON log line
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(audit_log_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_events_acct ON audit_log_events(account_id, action_time);
