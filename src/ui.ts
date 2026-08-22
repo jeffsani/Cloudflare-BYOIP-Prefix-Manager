@@ -445,7 +445,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
 
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
-        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read).
+        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read) + Account Settings (Read, for audit logs) + Logs (Read/Edit, for audit-log streaming).
       </p>
       <p class="text-xs leading-relaxed mt-3">
         <a href="/api/docs" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none;font-weight:500">View interactive API docs (/api/docs) &#8599;</a>

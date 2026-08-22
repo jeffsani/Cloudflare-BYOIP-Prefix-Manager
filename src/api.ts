@@ -456,6 +456,25 @@ export async function verifyTokenPermissions(
     results.push({ permission: 'Audit Logs (Account Settings: Read)', status: 'fail', detail: String(e) });
   }
 
+  // Test 5: Logs Read/Edit — required to create & manage the audit-log Logpush
+  // job that streams Audit Logs v2 into this tool. Listing jobs needs Logs Read;
+  // creating one needs Logs Edit (Enterprise plan).
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/logpush/jobs`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
+    results.push({
+      permission: 'Logs: Read/Edit (Logpush audit streaming)',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+    });
+  } catch (e) {
+    results.push({ permission: 'Logs: Read/Edit (Logpush audit streaming)', status: 'fail', detail: String(e) });
+  }
+
   return results;
 }
 
