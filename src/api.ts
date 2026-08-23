@@ -1125,20 +1125,65 @@ export async function validateArinCredentials(
 }
 
 /**
- * Validate RIPE credentials: test API key by checking a known object.
+ * Validate RIPE credentials: confirm the maintainer exists AND that the API key
+ * actually authenticates against it.
+ *
+ * The public GET of a mntner object requires no auth, so it can only tell us the
+ * maintainer exists — it says nothing about whether the API key is correct. To
+ * verify the key we issue a non-destructive dry-run PUT (`?dry-run=true`) of the
+ * fetched object with `Authorization: Basic <apiKey>`. Dry-run runs full
+ * validation (including authorisation) but never persists. RIPE checks auth
+ * independently of object syntax, so we detect an auth failure from the error
+ * message rather than the status code alone (a dry-run of the publicly-filtered
+ * mntner can return non-auth validation errors even when the key is valid).
  */
 export async function validateRipeCredentials(
   apiKey: string,
   maintainer: string,
-): Promise<{ valid: boolean; error?: string }> {
+): Promise<{ valid: boolean; apiKeyValid?: boolean; error?: string }> {
   try {
-    // Check if the maintainer object exists in RIPE DB (public, no auth needed)
+    // Step 1: Check the maintainer object exists (public, no auth needed).
     const r = await fetch(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
       headers: { Accept: 'application/json' },
     });
     if (r.status === 404) return { valid: false, error: `Maintainer '${maintainer}' not found in RIPE database.` };
-    if (r.ok) return { valid: true };
-    return { valid: false, error: `RIPE returned HTTP ${r.status}.` };
+    if (!r.ok) return { valid: false, error: `RIPE returned HTTP ${r.status}.` };
+
+    const mntnerObject = await r.json().catch(() => null);
+    if (!mntnerObject) return { valid: false, error: 'Could not parse the RIPE maintainer object.' };
+
+    // Step 2: Dry-run PUT the object back with the API key to verify auth.
+    const putResp = await fetch(
+      `${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}?dry-run=true`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Basic ${apiKey}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify(mntnerObject),
+      },
+    );
+
+    if (putResp.ok) return { valid: true, apiKeyValid: true };
+
+    const errData = await putResp.json().catch(() => null);
+    const errMsg = extractRipeError(errData);
+    // RIPE returns 401 for auth failures; some deployments surface the same
+    // "Authorisation ... failed" message with a different status, so check both.
+    const authFailed = putResp.status === 401 || /authorisation.*failed|no valid credentials/i.test(errMsg);
+    if (authFailed) {
+      return {
+        valid: false,
+        apiKeyValid: false,
+        error: `Maintainer '${maintainer}' exists but the API key was rejected by RIPE.`,
+      };
+    }
+
+    // Any other error means auth passed but the dry-run object was rejected for
+    // unrelated reasons (e.g. the publicly-filtered mntner) — the key is valid.
+    return { valid: true, apiKeyValid: true };
   } catch (e: unknown) {
     return { valid: false, error: `RIPE validation failed: ${(e as Error).message}` };
   }

@@ -247,11 +247,21 @@ export class GetActivity extends OpenAPIRoute {
     try {
       const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
       if (acct?.account_id) {
-        const stored = await c.env.DB.prepare(
-          'SELECT * FROM audit_log_events WHERE account_id = ? ORDER BY action_time DESC LIMIT 100',
-        ).bind(acct.account_id).all<Record<string, unknown>>();
+        // Best-effort read of Logpush-ingested rows. If the table hasn't been
+        // migrated yet ("no such table"), treat it as empty and fall through to
+        // the live API rather than surfacing a misleading error.
+        let storedRows: Array<Record<string, unknown>> = [];
+        try {
+          const stored = await c.env.DB.prepare(
+            'SELECT * FROM audit_log_events WHERE account_id = ? ORDER BY action_time DESC LIMIT 100',
+          ).bind(acct.account_id).all<Record<string, unknown>>();
+          storedRows = stored.results || [];
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          if (!/no such table/i.test(msg)) throw e; // real error — propagate
+        }
 
-        if ((stored.results || []).length) {
+        if (storedRows.length) {
           // Fast path — resolve CIDRs best-effort so display matches the live path.
           let prefixMap: Record<string, string> = {};
           try {
@@ -260,7 +270,7 @@ export class GetActivity extends OpenAPIRoute {
           } catch {
             // No token / API error — fall back to raw resource IDs.
           }
-          auditEntries = (stored.results || []).map((r) => mapAuditRow(r, prefixMap));
+          auditEntries = storedRows.map((r) => mapAuditRow(r, prefixMap));
         } else {
           // Fallback path — no Logpush data yet; poll the live Audit Logs API.
           const token = await getToken(c.env.DB, email, acct.account_id);
