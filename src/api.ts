@@ -1110,12 +1110,29 @@ export async function validateArinCredentials(
             Accept: 'application/rpsl',
           },
         });
-        // 404 = key is valid (object doesn't exist, but auth succeeded)
-        // 401/403 = bad key
-        apiKeyValid = testResp.status !== 401 && testResp.status !== 403;
+        // 2xx or 404 = auth succeeded (object simply doesn't exist).
+        // 401/403 = the key was rejected.
+        // Anything else (400/429/5xx) is inconclusive — leave undefined rather
+        // than falsely reporting the key as valid.
+        if (testResp.ok || testResp.status === 404) apiKeyValid = true;
+        else if (testResp.status === 401 || testResp.status === 403) apiKeyValid = false;
+        else apiKeyValid = undefined;
       } catch {
         apiKeyValid = undefined;
       }
+    }
+
+    // A supplied-but-rejected key means the credentials are not usable, so the
+    // overall result must not report success.
+    if (apiKeyValid === false) {
+      return {
+        valid: false,
+        orgName,
+        adminC: pocs.adminC,
+        techC: pocs.techC,
+        apiKeyValid,
+        error: `Org '${orgId}' (${orgName}) is valid but the ARIN API key was rejected.`,
+      };
     }
 
     return { valid: true, orgName, adminC: pocs.adminC, techC: pocs.techC, apiKeyValid };
