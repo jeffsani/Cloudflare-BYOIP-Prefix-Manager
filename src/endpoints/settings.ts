@@ -180,6 +180,51 @@ export class DeleteAccount extends OpenAPIRoute {
   }
 }
 
+// DELETE /api/settings/:id/token
+export class ClearAccountToken extends OpenAPIRoute {
+  schema = {
+    tags: ['Account Settings'],
+    summary: 'Delete account API token',
+    description: 'Clear the saved Cloudflare API token for an account without deleting the account itself.',
+    request: {
+      params: z.object({
+        id: z.string().describe('Account row ID'),
+      }),
+    },
+    responses: {
+      '200': {
+        description: 'Token cleared',
+        ...contentJson(OkResponseSchema),
+      },
+      '404': {
+        description: 'Account not found',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+    const id = parseInt(data.params.id, 10);
+
+    const row = await c.env.DB.prepare(
+      'SELECT id FROM user_accounts WHERE id = ? AND user_email = ?',
+    )
+      .bind(id, email)
+      .first<{ id: number }>();
+    if (!row) return c.json({ error: 'Not found' }, 404);
+
+    await c.env.DB.prepare(
+      "UPDATE user_accounts SET api_token = '', updated_at = datetime('now') WHERE id = ? AND user_email = ?",
+    )
+      .bind(id, email)
+      .run();
+
+    return c.json({ ok: true });
+  }
+}
+
 // PUT /api/settings/:id/default
 export class SetDefaultAccount extends OpenAPIRoute {
   schema = {

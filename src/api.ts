@@ -83,6 +83,23 @@ export async function createPrefix(
   return r.json();
 }
 
+// --- Delete Prefix ---
+
+export async function deletePrefix(
+  accountId: string,
+  prefixId: string,
+  token: string,
+): Promise<CfApiResponse<{ id: string }>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}`,
+    {
+      method: 'DELETE',
+      headers: authHeaders(token),
+    },
+  );
+  return r.json();
+}
+
 // --- Upload LOA Document ---
 
 export async function uploadLoaDocument(

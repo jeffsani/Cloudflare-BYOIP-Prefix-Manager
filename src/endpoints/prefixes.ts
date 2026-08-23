@@ -8,6 +8,7 @@ import {
   listPrefixes,
   listBgpPrefixes,
   createPrefix,
+  deletePrefix,
   uploadLoaDocument,
   updatePrefixDescription,
   validatePrefix,
@@ -141,6 +142,60 @@ export class CreatePrefix extends OpenAPIRoute {
       });
 
       return c.json({ ok: true, prefix: result.result });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+    }
+  }
+}
+
+// DELETE /api/prefixes/:prefixId
+export class DeletePrefix extends OpenAPIRoute {
+  schema = {
+    tags: ['Prefixes'],
+    summary: 'Delete BYOIP prefix',
+    description: 'Delete an unapproved BYOIP prefix owned by the account.',
+    request: {
+      params: z.object({ prefixId: z.string() }),
+      query: AccountIdQuerySchema,
+    },
+    responses: {
+      '200': {
+        description: 'Prefix deleted',
+        ...contentJson(OkResponseSchema),
+      },
+      '400': {
+        description: 'No account configured',
+        ...contentJson(ErrorResponseSchema),
+      },
+      '502': {
+        description: 'Cloudflare API error',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+    const prefixId = data.params.prefixId;
+    const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
+    if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+    try {
+      const token = await getToken(c.env.DB, email, acct.account_id);
+      const result = await deletePrefix(acct.account_id, prefixId, token);
+      if (!result.success) {
+        return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
+      }
+
+      const deletePrefixDetails = `Deleted prefix ${prefixId} in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'delete_prefix', deletePrefixDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'delete_prefix',
+        title: prefixId, details: deletePrefixDetails,
+      });
+
+      return c.json({ ok: true });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
     }

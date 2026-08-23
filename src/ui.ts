@@ -792,6 +792,24 @@ export function renderDashboard(userEmail: string): string {
     </div>
   </div>
 
+  <!-- Delete Parent Prefix Confirm Modal -->
+  <div id="delete-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeletePrefixModal()">
+    <div class="modal-content" style="max-width:420px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delete Prefix</h3>
+      </div>
+      <div class="p-4">
+        <p id="delete-prefix-message" class="text-xs text-cf-gray mb-3"></p>
+        <p class="text-[10px] text-yellow-400 mb-4">This action cannot be undone. Only unapproved prefixes can be deleted.</p>
+        <div id="delete-prefix-error" class="mb-3 empty:hidden"></div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeDeletePrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="delete-prefix-btn" onclick="executeDeletePrefix()" class="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700 transition">Delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Add Service Binding Modal -->
   <div id="binding-modal" class="hidden modal-overlay">
     <div class="modal-content" style="max-width:480px">
@@ -1222,11 +1240,12 @@ export function renderDashboard(userEmail: string): string {
               '<div class="mb-3">' +
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Cloudflare API Token</label>' +
                 // Display row
-                '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2 rounded border border-cf-border">' +
+                '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2 rounded border border-cf-border text-[10px]">' +
                   '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
                   (a.api_token ? '<span class="font-mono">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid">No token set</span>') +
                   '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Validate</button>' +
                   '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>' +
+                  '<button onclick="deleteAccountToken(' + a.id + ',\\'' + escAttr(aid) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>' +
                 '</div>' +
                 '<div id="acct-token-test-result-' + escAttr(aid) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>' +
                 '<div id="acct-token-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
@@ -1298,6 +1317,15 @@ export function renderDashboard(userEmail: string): string {
       if (input) input.value = '';
       if (edit) edit.classList.add('hidden');
       if (display) display.classList.remove('hidden');
+    }
+
+    function deleteAccountToken(id, accountId) {
+      showConfirm({ title: 'Delete Cloudflare API Token', message: 'Delete the saved API token for this account?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
+        await fetch('/api/settings/' + id + '/token', { method: 'DELETE' });
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg('acct-token-msg-' + accountId, 'API token deleted.', 'success');
+      } });
     }
 
     async function updateAccountToken(accountId) {
@@ -2311,6 +2339,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
           (!isChildPrefixSpaceFull(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
+          (p.approved === 'P' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -3524,6 +3553,54 @@ export function renderDashboard(userEmail: string): string {
         }
       } catch (e) {
         showInlineMsg('delete-bgp-prefix-error', 'Delete failed: ' + e, 'error');
+        btn.disabled = false;
+        btn.textContent = 'Delete';
+      }
+    }
+
+    // ─── Delete Parent Prefix ─────────────────────────────────────
+    var pendingDeletePrefix = null;
+
+    function confirmDeletePrefix(prefixId, cidr) {
+      pendingDeletePrefix = { prefixId: prefixId, cidr: cidr };
+      document.getElementById('delete-prefix-message').innerHTML =
+        'Are you sure you want to delete the prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
+      document.getElementById('delete-prefix-btn').disabled = false;
+      document.getElementById('delete-prefix-btn').textContent = 'Delete';
+      clearInlineMsg('delete-prefix-error');
+      document.getElementById('delete-prefix-modal').classList.remove('hidden');
+    }
+
+    function closeDeletePrefixModal() {
+      document.getElementById('delete-prefix-modal').classList.add('hidden');
+      pendingDeletePrefix = null;
+    }
+
+    async function executeDeletePrefix() {
+      if (!pendingDeletePrefix) return;
+      var d = pendingDeletePrefix;
+      var btn = document.getElementById('delete-prefix-btn');
+      btn.disabled = true;
+      btn.textContent = 'Deleting...';
+
+      try {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '?account_id=' + activeAccountId, {
+          method: 'DELETE'
+        });
+        var data = await resp.json();
+        if (data.ok) {
+          closeDeletePrefixModal();
+          delete childData[d.prefixId];
+          delete expandedRows[d.prefixId];
+          await loadPrefixes();
+          refreshActivityLog();
+        } else {
+          showInlineMsg('delete-prefix-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
+          btn.disabled = false;
+          btn.textContent = 'Delete';
+        }
+      } catch (e) {
+        showInlineMsg('delete-prefix-error', 'Delete failed: ' + e, 'error');
         btn.disabled = false;
         btn.textContent = 'Delete';
       }
