@@ -281,7 +281,7 @@ export function renderDashboard(userEmail: string): string {
         <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Validation, RIR &amp; RPKI</h3>
         <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
           <div>&bull; Prefix re-validation (RPKI, IRR, ownership)</div>
-          <div>&bull; RIR credential management with auto-detection</div>
+          <div>&bull; RIR API key management with auto-detection</div>
           <div>&bull; Route &amp; autnum object automation (ensure-route, ensure-autnum)</div>
           <div>&bull; RPKI ROA detail view per origin</div>
           <div>&bull; LOA (Letter of Authorization) PDF upload</div>
@@ -395,7 +395,7 @@ export function renderDashboard(userEmail: string): string {
             <div class="flow-num">3</div>
             <div class="flow-body flow-cf">
               <div class="flow-title">Create prefix<span class="flow-tag flow-tag-cf">Cloudflare</span></div>
-              <div class="flow-desc">Creates the BYOIP prefix and returns the ownership_validation_token. Logs activity and enqueues a create_prefix notification. If the origin is AS13335 (Cloudflare) or no RIR credentials are saved, the flow stops here.</div>
+              <div class="flow-desc">Creates the BYOIP prefix and returns the ownership_validation_token. Logs activity and enqueues a create_prefix notification. If the origin is AS13335 (Cloudflare) or no RIR API keys are saved, the flow stops here.</div>
               <code class="flow-api">POST /api/prefixes  &rarr;  CF POST /accounts/{id}/addressing/prefixes
   body: { cidr, asn, delegate_loa_creation, description?, loa_document_id? }</code>
             </div>
@@ -405,7 +405,7 @@ export function renderDashboard(userEmail: string): string {
             <div class="flow-num">4</div>
             <div class="flow-body flow-lookup">
               <div class="flow-title">Detect RIR<span class="flow-tag flow-tag-lookup">Lookup</span></div>
-              <div class="flow-desc">Determine the responsible registry via RDAP (falls back to the first saved RIR credential).</div>
+              <div class="flow-desc">Determine the responsible registry via RDAP (falls back to the first saved RIR API key).</div>
               <code class="flow-api">GET /api/rir/detect?prefix=&hellip;  &rarr;  RDAP rdap.org &rarr; ARIN / RIPE bootstrap</code>
             </div>
           </div>
@@ -441,7 +441,7 @@ export function renderDashboard(userEmail: string): string {
             </div>
           </div>
         </div>
-        <p class="arch-caption">Steps 4&ndash;6 run automatically only for BYO-ASN prefixes (ASN &ne; 13335, Cloudflare&rsquo;s own ASN) with saved RIR credentials; otherwise the UI shows a manual copy-paste guide with the same token and objects.</p>
+        <p class="arch-caption">Steps 4&ndash;6 run automatically only for BYO-ASN prefixes (ASN &ne; 13335, Cloudflare&rsquo;s own ASN) with saved RIR API keys; otherwise the UI shows a manual copy-paste guide with the same token and objects.</p>
       </div>
 
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
@@ -628,10 +628,18 @@ export function renderDashboard(userEmail: string): string {
           <span id="activity-log-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
         </div>
         <div class="flex items-center gap-2">
+          <select id="activity-log-window" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogDays(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Time window">
+            <option value="30">Last 30 days</option>
+            <option value="90">Last 90 days</option>
+            <option value="180">Last 180 days</option>
+          </select>
           <select id="activity-log-source" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogSource(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by source">
             <option value="all">All sources</option>
             <option value="local">Local tool</option>
             <option value="audit">Audit log</option>
+          </select>
+          <select id="activity-log-action" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogAction(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by action">
+            <option value="all">All actions</option>
           </select>
           <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
           <button id="activity-log-refresh" onclick="event.stopPropagation();loadActivityLog()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
@@ -733,7 +741,7 @@ export function renderDashboard(userEmail: string): string {
   </div>
 
   <!-- Generic App Confirm Modal -->
-  <div id="app-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAppConfirmModal()">
+  <div id="app-confirm-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAppConfirmModal()" style="z-index:200">
     <div class="modal-content" style="max-width:420px">
       <div class="p-4 border-b border-cf-border">
         <h3 id="app-confirm-title" class="text-sm font-semibold" style="color:var(--text-strong)">Confirm</h3>
@@ -1052,6 +1060,9 @@ export function renderDashboard(userEmail: string): string {
     var activityLogExpanded = false;
     var activityLogEntries = [];
     var activityLogSource = 'all';
+    var activityLogAction = 'all';
+    var activityLogDays = 30;
+    var activityLogSortDir = 'desc';
     var activityLogAuditError = '';
     var notifQueueLoaded = false;
     var notifQueueExpanded = false;
@@ -1210,13 +1221,23 @@ export function renderDashboard(userEmail: string): string {
               // API Token
               '<div class="mb-3">' +
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Cloudflare API Token</label>' +
-                '<div class="flex gap-2">' +
-                  '<input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token to update" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">' +
-                  '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Validate</button>' +
-                  '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Update Token</button>' +
+                // Display row
+                '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2 rounded border border-cf-border">' +
+                  '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
+                  (a.api_token ? '<span class="font-mono">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid">No token set</span>') +
+                  '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Validate</button>' +
+                  '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>' +
                 '</div>' +
                 '<div id="acct-token-test-result-' + escAttr(aid) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>' +
                 '<div id="acct-token-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
+                // Edit row (hidden)
+                '<div id="acct-token-edit-' + escAttr(aid) + '" class="hidden p-2 rounded border border-cf-orange mt-1" style="background:var(--input-bg)">' +
+                  '<div class="flex gap-2 items-end flex-wrap">' +
+                    '<div class="flex-1"><label class="block text-[10px] text-cf-gray">New API Token</label><input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token" class="w-full px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white font-mono focus:border-cf-orange focus:outline-none"></div>' +
+                    '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>' +
+                    '<button onclick="cancelEditAccountToken(\\'' + escAttr(aid) + '\\')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>' +
+                  '</div>' +
+                '</div>' +
               '</div>' +
               // API Rate Limit
               '<div class="mb-3">' +
@@ -1232,9 +1253,9 @@ export function renderDashboard(userEmail: string): string {
                 '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Notifications <span class="font-normal">(channels &amp; per-event subscriptions for this account)</span></label>' +
                 '<div id="acct-notif-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
               '</div>' +
-              // RIR Credentials
+              // RIR API Keys
               '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR Credentials <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR API Keys <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
                 '<div id="acct-rir-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
               '</div>' +
               // API Access & Integrations
@@ -1261,6 +1282,22 @@ export function renderDashboard(userEmail: string): string {
         sec.classList.add('hidden');
         if (chev) chev.style.transform = '';
       }
+    }
+
+    function editAccountToken(accountId) {
+      var display = document.getElementById('acct-token-display-' + accountId);
+      var edit = document.getElementById('acct-token-edit-' + accountId);
+      if (display) display.classList.add('hidden');
+      if (edit) edit.classList.remove('hidden');
+    }
+
+    function cancelEditAccountToken(accountId) {
+      var display = document.getElementById('acct-token-display-' + accountId);
+      var edit = document.getElementById('acct-token-edit-' + accountId);
+      var input = document.getElementById('acct-token-' + accountId);
+      if (input) input.value = '';
+      if (edit) edit.classList.add('hidden');
+      if (display) display.classList.remove('hidden');
     }
 
     async function updateAccountToken(accountId) {
@@ -1678,7 +1715,7 @@ export function renderDashboard(userEmail: string): string {
             html += '<button onclick="editRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>';
             html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>';
             html += '</div>';
-            html += '<div id="rir-cred-validate-result-' + c.id + '" class="text-[10px] mt-1 px-2"></div>';
+            html += '<div id="rir-cred-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1 px-2"></div>';
             // Edit row (hidden)
             html += '<div id="' + credRowId + '-edit" class="hidden p-2 rounded border border-cf-orange" style="background:var(--input-bg)">';
             html += '<div class="flex gap-2 items-end flex-wrap">';
@@ -1689,7 +1726,7 @@ export function renderDashboard(userEmail: string): string {
             html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
             html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>';
             html += '</div>';
-            html += '<div id="rir-edit-validate-result-' + c.id + '" class="text-[10px] mt-1"></div>';
+            html += '<div id="rir-edit-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>';
             html += '</div>';
             html += '</div>';
           });
@@ -1704,11 +1741,11 @@ export function renderDashboard(userEmail: string): string {
         html += '<button onclick="validateRirCredentialInput(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 border border-blue-500 text-blue-400 text-[10px] font-medium rounded hover:bg-blue-500 hover:text-white transition">Validate</button>';
         html += '<button onclick="saveAccountRirCredential(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
         html += '</div>';
-        html += '<div id="acct-rir-validate-result-' + escAttr(accountId) + '" class="text-[10px] mt-1"></div>';
+        html += '<div id="acct-rir-validate-result-' + escAttr(accountId) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>';
 
         el.innerHTML = html;
       } catch (e) {
-        el.innerHTML = '<span class="text-red-400">Failed to load RIR credentials</span>';
+        el.innerHTML = '<span class="text-red-400">Failed to load RIR API keys</span>';
       }
     }
 
@@ -1725,17 +1762,17 @@ export function renderDashboard(userEmail: string): string {
       var data = await r.json();
       if (data.ok) {
         await loadAccountRirCredentials(accountId);
-        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credentials saved.', 'success');
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'API key saved.', 'success');
       } else {
-        showInlineMsg('acct-rir-validate-result-' + accountId, data.error || 'Failed to save credentials', 'error');
+        showInlineMsg('acct-rir-validate-result-' + accountId, data.error || 'Failed to save API key', 'error');
       }
     }
 
     async function deleteRirCredential(id, accountId) {
-      showConfirm({ title: 'Delete RIR Credential', message: 'Delete this RIR credential?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
+      showConfirm({ title: 'Delete RIR API Key', message: 'Delete this RIR API key?', confirmLabel: 'Delete', danger: true, onConfirm: async function() {
         await fetch('/api/rir/credentials/' + id, { method: 'DELETE' });
         await loadAccountRirCredentials(accountId);
-        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credential deleted.', 'success');
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'API key deleted.', 'success');
       } });
     }
 
@@ -1766,9 +1803,25 @@ export function renderDashboard(userEmail: string): string {
       var data = await r.json();
       if (data.ok) {
         await loadAccountRirCredentials(accountId);
-        showInlineMsg('acct-rir-validate-result-' + accountId, 'Credentials updated.', 'success');
+        showInlineMsg('acct-rir-validate-result-' + accountId, 'API key updated.', 'success');
       } else {
-        showInlineMsg('rir-edit-validate-result-' + id, data.error || 'Failed to update credentials', 'error');
+        showInlineMsg('rir-edit-validate-result-' + id, data.error || 'Failed to update API key', 'error');
+      }
+    }
+
+    // Render a RIR validation result as badge pills (matches the CF token style).
+    function renderRirValidationBadges(el, data) {
+      if (!el) return;
+      if (data.valid) {
+        var html = '<span class="badge-valid">&#10003; Valid</span>';
+        if (data.orgName) html += '<span class="badge-unknown">' + escHtml(data.orgName) + '</span>';
+        if (data.adminC) html += '<span class="badge-unknown">Admin: ' + escHtml(data.adminC) + '</span>';
+        if (data.techC) html += '<span class="badge-unknown">Tech: ' + escHtml(data.techC) + '</span>';
+        if (data.apiKeyValid === true) html += '<span class="badge-valid">API key OK</span>';
+        else if (data.apiKeyValid === false) html += '<span class="badge-invalid">API key rejected</span>';
+        el.innerHTML = html;
+      } else {
+        el.innerHTML = '<span class="badge-invalid">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
       }
     }
 
@@ -1790,18 +1843,9 @@ export function renderDashboard(userEmail: string): string {
           body: JSON.stringify(body)
         });
         var data = await r.json();
-        if (data.valid) {
-          var msg = '<span class="text-green-400">&#10003; Valid</span>';
-          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
-          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ', Tech: ' + escHtml(data.techC) + ')</span>';
-          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
-          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
-          resultEl.innerHTML = msg;
-        } else {
-          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
-        }
+        renderRirValidationBadges(resultEl, data);
       } catch (e) {
-        resultEl.innerHTML = '<span class="text-red-400">Validation request failed: ' + escHtml(String(e)) + '</span>';
+        resultEl.innerHTML = '<span class="badge-invalid">Validation request failed: ' + escHtml(String(e)) + '</span>';
       }
     }
 
@@ -1821,18 +1865,9 @@ export function renderDashboard(userEmail: string): string {
           body: JSON.stringify(body)
         });
         var data = await r.json();
-        if (data.valid) {
-          var msg = '<span class="text-green-400">&#10003; Valid</span>';
-          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
-          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ')</span>';
-          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
-          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
-          resultEl.innerHTML = msg;
-        } else {
-          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
-        }
+        renderRirValidationBadges(resultEl, data);
       } catch (e) {
-        resultEl.innerHTML = '<span class="text-red-400">Validation request failed</span>';
+        resultEl.innerHTML = '<span class="badge-invalid">Validation request failed</span>';
       }
     }
 
@@ -1847,18 +1882,9 @@ export function renderDashboard(userEmail: string): string {
           body: JSON.stringify({ rir: rir, account_id: accountId, maintainer: maintainer })
         });
         var data = await r.json();
-        if (data.valid) {
-          var msg = '<span class="text-green-400">&#10003; Valid</span>';
-          if (data.orgName) msg += ' <span class="text-cf-gray">&mdash; ' + escHtml(data.orgName) + '</span>';
-          if (data.adminC) msg += ' <span class="text-cf-gray">(Admin: ' + escHtml(data.adminC) + ', Tech: ' + escHtml(data.techC) + ')</span>';
-          if (data.apiKeyValid === true) msg += ' <span class="text-green-400">| API key OK</span>';
-          else if (data.apiKeyValid === false) msg += ' <span class="text-red-400">| API key rejected</span>';
-          resultEl.innerHTML = msg;
-        } else {
-          resultEl.innerHTML = '<span class="text-red-400">&#10007; ' + escHtml(data.error || 'Validation failed') + '</span>';
-        }
+        renderRirValidationBadges(resultEl, data);
       } catch (e) {
-        resultEl.innerHTML = '<span class="text-red-400">Validation request failed</span>';
+        resultEl.innerHTML = '<span class="badge-invalid">Validation request failed</span>';
       }
     }
 
@@ -3914,10 +3940,10 @@ export function renderDashboard(userEmail: string): string {
           if (data.credentials && data.credentials.length > 0) {
             var rirs = data.credentials.map(function(c) { return c.rir.toUpperCase(); }).join(' / ');
             noteEl.style.color = '#22c55e';
-            noteEl.textContent = 'RIR credentials saved (' + rirs + '). IRR route object and aut-num will be auto-created after prefix onboarding.';
+            noteEl.textContent = 'RIR API keys saved (' + rirs + '). IRR route object and aut-num will be auto-created after prefix onboarding.';
           } else {
             noteEl.style.color = 'var(--muted)';
-            noteEl.textContent = 'Add RIR credentials in Account Settings to auto-create IRR route and aut-num records after prefix onboarding.';
+            noteEl.textContent = 'Add RIR API keys in Account Settings to auto-create IRR route and aut-num records after prefix onboarding.';
           }
         })
         .catch(function() {
@@ -4161,9 +4187,9 @@ export function renderDashboard(userEmail: string): string {
       if (isCustomAsn && summary.ready) {
         html += '<div style="padding:6px 0">';
         if (hasRirCreds) {
-          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved credentials.</div>';
+          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
         } else {
-          html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR credentials in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
+          html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR API keys in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
         }
         html += '</div>';
       } else if (summary.warnings.length > 0) {
@@ -4467,7 +4493,7 @@ export function renderDashboard(userEmail: string): string {
             detectedRir = credsFallback[0].rir.toLowerCase();
             postCreationState.rir = detectedRir;
             postCreationState.rirSupported = true;
-            document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR credentials: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
+            document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR API keys: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
           } else {
             document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detected (' + escHtml(d.rir_name || 'unknown') + ') but automated creation not supported</span>';
             anyFailed = true;
@@ -4480,7 +4506,7 @@ export function renderDashboard(userEmail: string): string {
           detectedRir = credsFallback2[0].rir.toLowerCase();
           postCreationState.rir = detectedRir;
           postCreationState.rirSupported = true;
-          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR credentials: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
+          document.getElementById('auto-step-detect').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Using saved RIR API keys: <strong>' + escHtml(detectedRir.toUpperCase()) + '</strong></span>';
         } else {
           document.getElementById('auto-step-detect').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">RIR detection failed</span>';
           anyFailed = true;
@@ -4714,7 +4740,7 @@ export function renderDashboard(userEmail: string): string {
         }
         // Inline credential fallback
         html += '<div class="mt-2">';
-        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different credentials' : 'Enter RIR credentials to create automatically') + '</summary>';
+        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different API keys' : 'Enter RIR API keys to create automatically') + '</summary>';
         html += '<div class="mt-1 flex gap-2 items-end flex-wrap">';
         html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="pcg-route-rir" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white">';
         html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
@@ -4737,7 +4763,7 @@ export function renderDashboard(userEmail: string): string {
           html += '</button>';
         }
         html += '<div class="mt-2">';
-        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different credentials' : 'Enter RIR credentials to update automatically') + '</summary>';
+        html += '<details class="text-[10px]"><summary class="cursor-pointer text-cf-gray hover:text-cf-orange">' + (supported ? 'Or use different API keys' : 'Enter RIR API keys to update automatically') + '</summary>';
         html += '<div class="mt-1 flex gap-2 items-end flex-wrap">';
         html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="pcg-autnum-rir" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white">';
         html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
@@ -5966,12 +5992,16 @@ export function renderDashboard(userEmail: string): string {
       var hint = document.getElementById('activity-log-hint');
       var refreshBtn = document.getElementById('activity-log-refresh');
       var sourceSel = document.getElementById('activity-log-source');
+      var actionSel = document.getElementById('activity-log-action');
+      var windowSel = document.getElementById('activity-log-window');
       if (activityLogExpanded) {
         body.classList.remove('hidden');
         chevron.classList.add('open');
         if (hint) hint.textContent = 'Click to collapse';
         if (refreshBtn) refreshBtn.classList.remove('hidden');
         if (sourceSel) sourceSel.classList.remove('hidden');
+        if (actionSel) actionSel.classList.remove('hidden');
+        if (windowSel) windowSel.classList.remove('hidden');
         if (!activityLogLoaded) loadActivityLog();
       } else {
         body.classList.add('hidden');
@@ -5979,17 +6009,23 @@ export function renderDashboard(userEmail: string): string {
         if (hint) hint.textContent = 'Click to expand';
         if (refreshBtn) refreshBtn.classList.add('hidden');
         if (sourceSel) sourceSel.classList.add('hidden');
+        if (actionSel) actionSel.classList.add('hidden');
+        if (windowSel) windowSel.classList.add('hidden');
       }
     }
 
     async function loadActivityLog() {
       try {
-        var url = '/api/activity' + (activeAccountId ? '?account_id=' + encodeURIComponent(activeAccountId) : '');
+        var params = [];
+        if (activeAccountId) params.push('account_id=' + encodeURIComponent(activeAccountId));
+        params.push('days=' + encodeURIComponent(activityLogDays));
+        var url = '/api/activity?' + params.join('&');
         var resp = await fetch(url);
         var data = await resp.json();
         activityLogLoaded = true;
         activityLogEntries = data.activity || [];
         activityLogAuditError = data.audit_error || '';
+        updateActivityLogActionFilter(activityLogEntries);
         renderActivityLog(activityLogEntries);
       } catch (e) {
         document.getElementById('activity-log-content').innerHTML =
@@ -6000,6 +6036,47 @@ export function renderDashboard(userEmail: string): string {
     function setActivityLogSource(value) {
       activityLogSource = value;
       renderActivityLog(activityLogEntries);
+    }
+
+    function setActivityLogAction(value) {
+      activityLogAction = value;
+      renderActivityLog(activityLogEntries);
+    }
+
+    function setActivityLogDays(value) {
+      activityLogDays = parseInt(value, 10) || 30;
+      loadActivityLog();
+    }
+
+    function toggleActivityLogSort() {
+      activityLogSortDir = activityLogSortDir === 'desc' ? 'asc' : 'desc';
+      renderActivityLog(activityLogEntries);
+    }
+
+    function activityLogActionLabel(action) {
+      return formatActionBadge(action)
+        .replace(/<[^>]*>/g, '')
+        .trim() || action;
+    }
+
+    function updateActivityLogActionFilter(entries) {
+      var sel = document.getElementById('activity-log-action');
+      if (!sel) return;
+      var labels = {};
+      (entries || []).forEach(function(e) {
+        var label = activityLogActionLabel(e.action);
+        if (label) labels[label] = true;
+      });
+      var sorted = Object.keys(labels).sort();
+      var current = activityLogAction;
+      var html = '<option value="all">All actions</option>';
+      sorted.forEach(function(label) {
+        html += '<option value="' + escAttr(label) + '">' + escHtml(label) + '</option>';
+      });
+      sel.innerHTML = html;
+      // Preserve the current selection if still available, else reset to all.
+      if (current !== 'all' && !labels[current]) activityLogAction = 'all';
+      sel.value = activityLogAction;
     }
 
     function refreshActivityLog() {
@@ -6063,9 +6140,23 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    function activityLogTs(v) {
+      var s = String(v || '');
+      var norm = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z';
+      var t = new Date(norm).getTime();
+      return isNaN(t) ? 0 : t;
+    }
+
     function renderActivityLog(entries) {
       var filtered = (entries || []).filter(function(e) {
-        return activityLogSource === 'all' || (e.source || 'local') === activityLogSource;
+        var sourceOk = activityLogSource === 'all' || (e.source || 'local') === activityLogSource;
+        var actionOk = activityLogAction === 'all' || activityLogActionLabel(e.action) === activityLogAction;
+        return sourceOk && actionOk;
+      });
+
+      filtered.sort(function(a, b) {
+        var diff = activityLogTs(a.created_at) - activityLogTs(b.created_at);
+        return activityLogSortDir === 'asc' ? diff : -diff;
       });
 
       var countEl = document.getElementById('activity-log-count');
@@ -6089,9 +6180,10 @@ export function renderDashboard(userEmail: string): string {
         return;
       }
 
+      var sortArrow = activityLogSortDir === 'asc' ? ' &#9650;' : ' &#9660;';
       var html = banner + '<table class="w-full text-xs">' +
         '<thead><tr class="border-b border-cf-border text-left">' +
-        '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Date / Time</th>' +
+        '<th class="px-4 py-2.5 text-cf-gray font-medium cursor-pointer select-none hover:text-cf-orange transition" style="min-width:150px" onclick="toggleActivityLogSort()" title="Sort by date">Date / Time' + sortArrow + '</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:70px">Source</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">Action</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium">Details</th>' +

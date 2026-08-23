@@ -20,7 +20,7 @@ import {
   RipestatVisibilityResultSchema,
 } from '../schemas/lookups';
 import { ActivityLogEntrySchema } from '../schemas/activity';
-import { ErrorResponseSchema, AccountIdQuerySchema } from '../schemas/common';
+import { ErrorResponseSchema, AccountIdQuerySchema, ActivityQuerySchema } from '../schemas/common';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 
@@ -206,7 +206,7 @@ export class GetActivity extends OpenAPIRoute {
       'Get local activity log entries for the authenticated user, merged with ' +
       'Cloudflare addressing audit-log entries for the specified account.',
     request: {
-      query: AccountIdQuerySchema,
+      query: ActivityQuerySchema,
     },
     responses: {
       '200': {
@@ -222,12 +222,14 @@ export class GetActivity extends OpenAPIRoute {
   async handle(c: AppContext) {
     const email = c.get('userEmail');
     const data = await this.getValidatedData<typeof this.schema>();
+    const days = data.query.days;
+    const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
     // Local tool activity (user-scoped).
     const rows = await c.env.DB.prepare(
-      'SELECT * FROM activity_log WHERE user_email = ? ORDER BY created_at DESC LIMIT 50',
+      "SELECT * FROM activity_log WHERE user_email = ? AND created_at >= datetime('now', ?) ORDER BY created_at DESC LIMIT 50",
     )
-      .bind(email)
+      .bind(email, `-${days} days`)
       .all();
 
     const localEntries = (rows.results || []).map((r: Record<string, unknown>) => ({
@@ -253,8 +255,8 @@ export class GetActivity extends OpenAPIRoute {
         let storedRows: Array<Record<string, unknown>> = [];
         try {
           const stored = await c.env.DB.prepare(
-            'SELECT * FROM audit_log_events WHERE account_id = ? ORDER BY action_time DESC LIMIT 100',
-          ).bind(acct.account_id).all<Record<string, unknown>>();
+            'SELECT * FROM audit_log_events WHERE account_id = ? AND action_time >= ? ORDER BY action_time DESC LIMIT 100',
+          ).bind(acct.account_id, sinceIso).all<Record<string, unknown>>();
           storedRows = stored.results || [];
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -275,7 +277,7 @@ export class GetActivity extends OpenAPIRoute {
           // Fallback path — no Logpush data yet; poll the live Audit Logs API.
           const token = await getToken(c.env.DB, email, acct.account_id);
           const now = new Date();
-          const since = new Date(now.getTime() - 180 * 24 * 60 * 60 * 1000);
+          const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
           const [entries, prefixMap] = await Promise.all([
             listAuditLogs(acct.account_id, token, since.toISOString(), now.toISOString()),
             buildPrefixCidrMap(acct.account_id, token).catch(() => ({} as Record<string, string>)),
