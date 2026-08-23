@@ -255,7 +255,9 @@ export class GetPrefixStats extends OpenAPIRoute {
 
       const allBgpPrefixes = bgpResults.flat();
 
-      // Per-prefix child advertisement summary for filtering
+      // Per-prefix child advertisement summary for filtering. Parent advertisement
+      // status is derived from these BGP sub-prefixes (the parent-level `advertised`
+      // field is deprecated by Cloudflare in favor of the BGP Prefixes API).
       const perPrefix: Record<string, { has_advertised_child: boolean; has_withdrawn_child: boolean }> = {};
       for (let i = 0; i < prefixes.length; i++) {
         const children = bgpResults[i];
@@ -265,11 +267,25 @@ export class GetPrefixStats extends OpenAPIRoute {
         };
       }
 
+      // Roll up each parent into a single advertisement status derived from its
+      // children: fully advertised, fully withdrawn, or partial (mixed).
+      let parentAdvertised = 0;
+      let parentWithdrawn = 0;
+      let parentPartial = 0;
+      for (const p of prefixes) {
+        if (p.approved === 'P') continue;
+        const { has_advertised_child: hasAdv, has_withdrawn_child: hasWith } = perPrefix[p.id];
+        if (hasAdv && hasWith) parentPartial++;
+        else if (hasAdv) parentAdvertised++;
+        else if (hasWith) parentWithdrawn++;
+      }
+
       const stats = {
         parent: {
           total: prefixes.length,
-          advertised: prefixes.filter((p) => p.advertised === true).length,
-          withdrawn: prefixes.filter((p) => p.advertised === false).length,
+          advertised: parentAdvertised,
+          withdrawn: parentWithdrawn,
+          partial: parentPartial,
           locked: prefixes.filter((p) => p.on_demand_locked === true).length,
           pending: prefixes.filter((p) => p.approved === 'P').length,
         },

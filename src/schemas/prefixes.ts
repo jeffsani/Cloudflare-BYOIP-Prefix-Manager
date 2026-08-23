@@ -5,8 +5,9 @@ export const CfPrefixSchema = z.object({
   account_id: z.string(),
   cidr: z.string(),
   asn: z.number().nullable(),
-  advertised: z.boolean().nullable(),
-  advertised_modified_at: z.string().nullable(),
+  // Parent-level `advertised` / `advertised_modified_at` are deprecated by
+  // Cloudflare (prefer the BGP Prefixes API). Omitted intentionally — parent
+  // advertisement status is derived from the prefix's BGP sub-prefixes.
   approved: z.string(),
   description: z.string(),
   irr_validation_state: z.string(),
@@ -126,6 +127,7 @@ export const PrefixStatsResponseSchema = z.object({
       total: z.number(),
       advertised: z.number(),
       withdrawn: z.number(),
+      partial: z.number(),
       locked: z.number(),
       pending: z.number(),
     }),

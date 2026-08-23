@@ -88,21 +88,25 @@ async function getMonitoredCidrs(env: Env, acct: AccountRow): Promise<string[]> 
   // Refresh the control-plane advertised flag on any existing state rows. This
   // is an UPDATE-only pass, so it never creates rows ahead of a Radar
   // observation (which would confuse reconcile's first-observation logic).
+  // `advertised` is null when the control-plane state is unknown (e.g. a parent
+  // prefix with no BGP sub-prefixes to derive status from).
   for (const [cidr, advertised] of advertisedByCidr) {
     await env.DB.prepare(
       `UPDATE prefix_radar_state SET cf_advertised = ?, updated_at = datetime('now')
        WHERE account_id = ? AND cidr = ?`
-    ).bind(advertised ? 1 : 0, acct.account_id, cidr).run();
+    ).bind(advertised === null ? null : (advertised ? 1 : 0), acct.account_id, cidr).run();
   }
   return cidrs;
 }
 
 /**
  * Enumerate announced CIDRs (BGP sub-prefixes where present, else parent
- * prefixes) mapped to their control-plane advertised flag.
+ * prefixes) mapped to their control-plane advertised flag. The flag is derived
+ * from BGP sub-prefixes (the parent-level `advertised` field is deprecated); a
+ * parent CIDR with no sub-prefixes maps to `null` (status unknown).
  */
-async function enumerateCidrs(acct: AccountRow): Promise<Map<string, boolean>> {
-  const out = new Map<string, boolean>();
+async function enumerateCidrs(acct: AccountRow): Promise<Map<string, boolean | null>> {
+  const out = new Map<string, boolean | null>();
   const prefixResp = await listPrefixes(acct.account_id, acct.api_token);
   if (!prefixResp.success) return out;
   for (const p of prefixResp.result || []) {
@@ -117,7 +121,7 @@ async function enumerateCidrs(acct: AccountRow): Promise<Map<string, boolean>> {
     } catch {
       // Ignore per-prefix listing failures; fall back to the parent CIDR.
     }
-    if (!hasChild && p.cidr) out.set(p.cidr, !!p.advertised);
+    if (!hasChild && p.cidr) out.set(p.cidr, null);
   }
   return out;
 }

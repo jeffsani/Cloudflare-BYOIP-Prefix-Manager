@@ -67,6 +67,7 @@ export function renderDashboard(userEmail: string): string {
     .theme-toggle-icon:not(.active) { color: var(--muted); }
     .badge-advertised { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
     .badge-withdrawn { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
+    .badge-partial { background: rgba(249,115,22,0.15); color: #f97316; border: 1px solid rgba(249,115,22,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
     .badge-pending { background: rgba(234,179,8,0.15); color: #eab308; border: 1px solid rgba(234,179,8,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.7rem; font-weight: 600; }
     .badge-valid { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
     .badge-invalid { background: rgba(239,68,68,0.15); color: #ef4444; border: 1px solid rgba(239,68,68,0.3); padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; }
@@ -2064,7 +2065,9 @@ export function renderDashboard(userEmail: string): string {
         if (s.parent.pending > 0) totalSub += ' / ' + s.parent.pending + ' Pending';
         document.getElementById('stat-total-sub').textContent = totalSub;
         document.getElementById('stat-advertised').textContent = s.parent.advertised + s.bgp.advertised;
-        document.getElementById('stat-advertised-sub').textContent = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' Child';
+        var advSub = s.parent.advertised + ' Parent / ' + s.bgp.advertised + ' Child';
+        if (s.parent.partial > 0) advSub += ' / ' + s.parent.partial + ' Partial';
+        document.getElementById('stat-advertised-sub').textContent = advSub;
         document.getElementById('stat-withdrawn').textContent = s.parent.withdrawn + s.bgp.withdrawn;
         document.getElementById('stat-withdrawn-sub').textContent = s.parent.withdrawn + ' Parent / ' + s.bgp.withdrawn + ' Child';
         document.getElementById('stat-locked').textContent = s.parent.locked;
@@ -2076,8 +2079,8 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-rpki-sub').textContent = s.rpki.valid + ' Valid / ' + s.rpki.invalid + ' Issues';
         document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (s.rpki.invalid > 0 ? 'text-yellow-400' : 'text-green-400');
       } else {
-        var advertised = allPrefixes.filter(function(p) { return p.advertised === true; }).length;
-        var withdrawn = allPrefixes.filter(function(p) { return p.advertised === false; }).length;
+        var advertised = allPrefixes.filter(function(p) { return p._has_advertised_child === true; }).length;
+        var withdrawn = allPrefixes.filter(function(p) { return p._has_withdrawn_child === true && p._has_advertised_child !== true; }).length;
         var locked = allPrefixes.filter(function(p) { return p.on_demand_locked === true; }).length;
         var pendingCount = allPrefixes.filter(function(p) { return p.approved === 'P'; }).length;
         document.getElementById('stat-total').textContent = total;
@@ -2141,8 +2144,8 @@ export function renderDashboard(userEmail: string): string {
 
       filteredPrefixes = allPrefixes.filter(function(p) {
         if (statusFilter === 'pending' && p.approved !== 'P') return false;
-        if (statusFilter === 'advertised' && p.advertised !== true && !p._has_advertised_child) return false;
-        if (statusFilter === 'withdrawn' && p.advertised !== false && !p._has_withdrawn_child) return false;
+        if (statusFilter === 'advertised' && !p._has_advertised_child) return false;
+        if (statusFilter === 'withdrawn' && !p._has_withdrawn_child) return false;
         if (statusFilter === 'locked' && !p.on_demand_locked) return false;
         if (statusFilter === 'unlocked' && p.on_demand_locked) return false;
         if (prefixFilter && (!p.cidr || p.cidr.toLowerCase().indexOf(prefixFilter) === -1)) return false;
@@ -2290,7 +2293,7 @@ export function renderDashboard(userEmail: string): string {
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
       var delegationIcon = hasDelegations(p.id) ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg><span class="info-bubble" style="width:220px">This prefix has ' + childData[p.id].delegations.length + ' delegation(s) to other accounts.</span></span>' : '';
-      var statusBadge = statusBadgeHtml(p.advertised, p.approved);
+      var statusBadge = statusBadgeHtml(p);
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
       var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
       var isChecked = selectedPrefixes.has(p.id);
@@ -2299,16 +2302,23 @@ export function renderDashboard(userEmail: string): string {
       // Parent-level toggle button — shown only for active on-demand prefixes.
       // Locked prefixes still render the toggle (disabled) so the lock reason is visible,
       // but pending/unknown (inactive) prefixes get no toggle at all.
+      // Parent advertisement status is derived from BGP sub-prefixes (the
+      // parent-level advertised field is deprecated). The toggle acts on all
+      // BGP routes under the prefix; a partial prefix is treated as advertised.
       var parentToggleHtml = '';
-      if (p.on_demand_enabled && p.approved !== 'P' && (p.advertised === true || p.advertised === false)) {
-        var isAdv = p.advertised === true;
+      var advStatus = parentAdvStatus(p);
+      if (p.on_demand_enabled && (advStatus === 'advertised' || advStatus === 'withdrawn' || advStatus === 'partial')) {
+        var isAdv = advStatus === 'advertised' || advStatus === 'partial';
+        var newState = isAdv ? 'false' : 'true';
         var toggleTip = p.on_demand_locked
           ? 'This prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
-          : isAdv
-            ? 'Currently advertised. Click to withdraw this prefix and stop announcing it via BGP to the Internet.'
-            : 'Currently withdrawn. Click to advertise this prefix and begin announcing it via BGP to the Internet.';
+          : advStatus === 'partial'
+            ? 'Partially advertised. Click to withdraw all BGP routes under this prefix.'
+            : isAdv
+              ? 'Currently advertised. Click to withdraw this prefix and stop announcing it via BGP to the Internet.'
+              : 'Currently withdrawn. Click to advertise this prefix and begin announcing it via BGP to the Internet.';
         parentToggleHtml = '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (isAdv ? ' active' : '') + '"' +
-          (p.on_demand_locked ? ' disabled' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + (isAdv ? 'false' : 'true') + ',\\'' + escAttr(p.cidr) + '\\')"') +
+          (p.on_demand_locked ? ' disabled' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + newState + ',\\'' + escAttr(p.cidr) + '\\')"') +
           '><span class="toggle-knob"></span></button><span class="validation-tip">' + toggleTip + '</span></span>';
       }
 
@@ -2339,7 +2349,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
           (!isChildPrefixSpaceFull(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
-          (p.approved === 'P' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
+          (p.approved !== 'V' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -2708,7 +2718,7 @@ export function renderDashboard(userEmail: string): string {
       }).filter(Boolean);
 
       var listHtml = selected.map(function(p) {
-        var badge = statusBadgeHtml(p.advertised);
+        var badge = statusBadgeHtml(p);
         var lockNote = p.on_demand_locked ? ' <span class="text-yellow-400">(locked - will be skipped)</span>' : '';
         return '<div class="flex items-center gap-2 py-1">' + badge + ' <span>' + escHtml(p.cidr) + '</span>' + lockNote + '</div>';
       }).join('');
@@ -5991,23 +6001,40 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Helpers ──────────────────────────────────────────────────
-    function statusBadgeHtml(advertised, approved) {
-      if (approved === 'P') return '<span class="badge-pending">Pending Approval</span>';
-      if (advertised === true) return '<span class="badge-advertised">Advertised</span>';
-      if (advertised === false) return '<span class="badge-withdrawn">Withdrawn</span>';
-      return '<span class="badge-unknown">Unknown</span>';
+    // Derive a parent prefix's advertisement status from its BGP sub-prefixes.
+    // The parent-level advertised field is deprecated by Cloudflare; the flags
+    // below come from the stats endpoint's per-prefix child summary.
+    //   'pending' | 'advertised' | 'withdrawn' | 'partial' | 'none'
+    function parentAdvStatus(p) {
+      if (p.approved === 'P') return 'pending';
+      var hasAdv = p._has_advertised_child === true;
+      var hasWith = p._has_withdrawn_child === true;
+      if (hasAdv && hasWith) return 'partial';
+      if (hasAdv) return 'advertised';
+      if (hasWith) return 'withdrawn';
+      return 'none';
+    }
+
+    function statusBadgeHtml(p) {
+      switch (parentAdvStatus(p)) {
+        case 'pending': return '<span class="badge-pending">Pending Approval</span>';
+        case 'advertised': return '<span class="badge-advertised">Advertised</span>';
+        case 'partial': return '<span class="badge-partial">Partial</span>';
+        case 'withdrawn': return '<span class="badge-withdrawn">Withdrawn</span>';
+        default: return '<span class="badge-unknown">Unknown</span>';
+      }
     }
 
     // A prefix can be advertised/withdrawn (via in-row toggle or bulk multi-select) only when:
     //  - on-demand advertisement is enabled for it (i.e. it has BGP bindings), AND
     //  - it is not locked, AND
     //  - it is not pending approval, AND
-    //  - it is active (advertised state is known — true/false, not "Unknown")
+    //  - it has BGP sub-prefixes whose advertisement state is known
     function canToggleAdvertisement(p) {
       return p.on_demand_enabled === true &&
         p.on_demand_locked !== true &&
         p.approved !== 'P' &&
-        (p.advertised === true || p.advertised === false);
+        (p._has_advertised_child === true || p._has_withdrawn_child === true);
     }
 
     // Human-readable reason why a prefix cannot be advertised/withdrawn (for tooltips).
@@ -6015,7 +6042,7 @@ export function renderDashboard(userEmail: string): string {
       if (p.on_demand_locked) return 'locked';
       if (p.approved === 'P') return 'pending approval';
       if (!p.on_demand_enabled) return 'no BGP bindings / on-demand not enabled';
-      if (p.advertised !== true && p.advertised !== false) return 'inactive (status unknown)';
+      if (p._has_advertised_child !== true && p._has_withdrawn_child !== true) return 'inactive (no BGP routes)';
       return '';
     }
 

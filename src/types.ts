@@ -177,8 +177,11 @@ export interface CfPrefix {
   account_id: string;
   cidr: string;
   asn: number | null;
-  advertised: boolean | null;
-  advertised_modified_at: string | null;
+  // NOTE: the parent-level `advertised` / `advertised_modified_at` fields are
+  // deprecated by Cloudflare in favor of the BGP Prefixes API (which supports
+  // advertising multiple BGP routes within one IP prefix). We intentionally do
+  // not model or read them; parent advertisement status is derived from the
+  // prefix's BGP sub-prefixes instead.
   approved: string;
   description: string;
   irr_validation_state: string;
