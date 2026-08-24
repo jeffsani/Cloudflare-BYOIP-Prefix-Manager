@@ -2349,7 +2349,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
           (!isChildPrefixSpaceFull(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
-          (p.approved !== 'V' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
+          '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix (unapproved prefixes only)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
         '</td>' +
       '</tr>';
     }
@@ -2423,7 +2423,7 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + bgpDelegationIcon + '</td>' +
             '<td class="px-3 pl-8 font-mono" style="color:var(--text-strong)"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
             '<td class="px-3 text-cf-gray">' + (bp.asn != null ? bp.asn : '—') + '</td>' +
-            '<td class="px-3">' + statusBadgeHtml(bgpAdv) + '</td>' +
+            '<td class="px-3">' + bgpStatusBadgeHtml(bp.on_demand ? bp.on_demand.advertised : undefined) + '</td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
@@ -2874,6 +2874,65 @@ export function renderDashboard(userEmail: string): string {
       } else {
         return (a.network & b.mask) === b.network;
       }
+    }
+
+    // Robust (IPv6-normalized) CIDR equality via parseCIDR; falls back to string compare.
+    function cidrEquals(a, b) {
+      var pa = parseCIDR(a), pb = parseCIDR(b);
+      if (!pa || !pb) return a === b;
+      return pa.v6 === pb.v6 && pa.maskLen === pb.maskLen && pa.network === pb.network;
+    }
+
+    function parentCidrFor(prefixId) {
+      var p = allPrefixes.find(function(x){ return x.id === prefixId; });
+      return p ? p.cidr : '';
+    }
+
+    // Dependent resources that must be removed before a prefix (or its
+    // equal-to-parent BGP prefix) can be deleted. Child BGP prefixes are those
+    // whose CIDR differs from the parent; the equal-to-parent BGP prefix is not
+    // counted as a dependency.
+    function blockingDependencies(prefixId, parentCidr) {
+      var d = childData[prefixId] || {};
+      var childBgp = (d.bgp_prefixes || []).filter(function(bp){ return !(parentCidr && cidrEquals(bp.cidr, parentCidr)); });
+      var bindings = (d.bindings || []).length;
+      var delegations = (d.delegations || []).length;
+      return { childBgp: childBgp.length, bindings: bindings, delegations: delegations,
+               total: childBgp.length + bindings + delegations };
+    }
+
+    function dependencyBlockMessage(deps) {
+      var items = [];
+      if (deps.childBgp > 0) items.push(deps.childBgp + ' child BGP prefix' + (deps.childBgp === 1 ? '' : 'es'));
+      if (deps.bindings > 0) items.push(deps.bindings + ' service binding' + (deps.bindings === 1 ? '' : 's'));
+      if (deps.delegations > 0) items.push(deps.delegations + ' delegation' + (deps.delegations === 1 ? '' : 's'));
+      return '<span class="text-yellow-400">This prefix still has ' + items.join(', ') +
+             '.</span><br><br>Please remove ' + (items.length > 1 ? 'them' : 'it') + ' first, then delete this prefix.';
+    }
+
+    // Fetch child data (BGP prefixes, bindings, delegations) if not already
+    // cached — used by the delete guards where the row may not be expanded.
+    async function ensureChildData(prefixId) {
+      if (childData[prefixId] && !childData[prefixId].loading) return childData[prefixId];
+      try {
+        var results = await Promise.all([
+          fetch('/api/prefixes/' + prefixId + '/bgp?account_id=' + activeAccountId),
+          fetch('/api/prefixes/' + prefixId + '/bindings?account_id=' + activeAccountId),
+          fetch('/api/prefixes/' + prefixId + '/delegations?account_id=' + activeAccountId)
+        ]);
+        var bgpData = await results[0].json();
+        var bindData = await results[1].json();
+        var delData = await results[2].json();
+        childData[prefixId] = {
+          bgp_prefixes: bgpData.bgp_prefixes || [],
+          bindings: bindData.bindings || [],
+          delegations: delData.delegations || [],
+          loading: false
+        };
+      } catch (e) {
+        childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
+      }
+      return childData[prefixId];
     }
 
     function ipToString(n, v6) {
@@ -6023,6 +6082,14 @@ export function renderDashboard(userEmail: string): string {
         case 'withdrawn': return '<span class="badge-withdrawn">Withdrawn</span>';
         default: return '<span class="badge-unknown">Unknown</span>';
       }
+    }
+
+    // Badge for a BGP sub-prefix, derived from its own on_demand.advertised flag.
+    // (statusBadgeHtml expects a parent prefix object, so it cannot be reused here.)
+    function bgpStatusBadgeHtml(advertised) {
+      if (advertised === true) return '<span class="badge-advertised">Advertised</span>';
+      if (advertised === false) return '<span class="badge-withdrawn">Withdrawn</span>';
+      return '<span class="badge-unknown">Unknown</span>';
     }
 
     // A prefix can be advertised/withdrawn (via in-row toggle or bulk multi-select) only when:
