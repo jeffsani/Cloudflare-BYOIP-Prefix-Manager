@@ -516,6 +516,14 @@ export function renderDashboard(userEmail: string): string {
         <input id="filter-prefix" type="text" placeholder="e.g. 192.168.1" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-36 font-mono">
       </div>
       <div class="flex items-center gap-2">
+        <label class="text-xs text-cf-gray font-medium">Family:</label>
+        <select id="filter-family" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          <option value="all">All</option>
+          <option value="ipv4">IPv4</option>
+          <option value="ipv6">IPv6</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
         <label class="text-xs text-cf-gray font-medium">ASN:</label>
         <input id="filter-asn" type="text" placeholder="Filter by ASN" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-28">
       </div>
@@ -541,7 +549,7 @@ export function renderDashboard(userEmail: string): string {
     <div id="prefix-msg" class="mb-3 empty:hidden"></div>
 
     <!-- Stats Row -->
-    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
       <div class="panel p-3 text-center">
         <div id="stat-total" class="text-xl font-bold" style="color:var(--text-strong)">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Total Prefixes</div>
@@ -571,6 +579,11 @@ export function renderDashboard(userEmail: string): string {
         <div id="stat-rpki" class="text-xl font-bold text-green-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">RPKI</div>
         <div id="stat-rpki-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
+      </div>
+      <div class="panel p-3 text-center">
+        <div id="stat-family" class="text-xl font-bold"><span class="text-blue-400">0</span> / <span class="text-purple-400">0</span></div>
+        <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">IP Version</div>
+        <div id="stat-family-sub" class="text-[10px] text-cf-gray font-normal mt-0.5">IPv4 / IPv6</div>
       </div>
     </div>
 
@@ -779,7 +792,7 @@ export function renderDashboard(userEmail: string): string {
   <div id="delete-bgp-prefix-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteBgpPrefixModal()">
     <div class="modal-content" style="max-width:420px">
       <div class="p-4 border-b border-cf-border">
-        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Delete BGP Child Prefix</h3>
+        <h3 id="delete-bgp-prefix-title" class="text-sm font-semibold" style="color:var(--text-strong)">Delete BGP Child Prefix</h3>
       </div>
       <div class="p-4">
         <p id="delete-bgp-prefix-message" class="text-xs text-cf-gray mb-3"></p>
@@ -2058,6 +2071,14 @@ export function renderDashboard(userEmail: string): string {
 
     function updateStats() {
       var total = allPrefixes.length;
+      var ipv6Count = allPrefixes.filter(function(p) { return p.cidr && p.cidr.indexOf(':') !== -1; }).length;
+      var ipv4Count = total - ipv6Count;
+      var famEl = document.getElementById('stat-family');
+      if (famEl) {
+        famEl.innerHTML = '<span class="text-blue-400">' + ipv4Count + '</span> / <span class="text-purple-400">' + ipv6Count + '</span>';
+      }
+      var famSub = document.getElementById('stat-family-sub');
+      if (famSub) famSub.textContent = 'IPv4 / IPv6';
       if (prefixStats) {
         var s = prefixStats;
         document.getElementById('stat-total').textContent = s.parent.total + s.bgp.total;
@@ -2141,6 +2162,7 @@ export function renderDashboard(userEmail: string): string {
       var prefixFilter = document.getElementById('filter-prefix').value.trim().toLowerCase();
       var asnFilter = document.getElementById('filter-asn').value.trim();
       var tagFilter = document.getElementById('filter-tag').value;
+      var familyFilter = document.getElementById('filter-family').value;
 
       filteredPrefixes = allPrefixes.filter(function(p) {
         if (statusFilter === 'pending' && p.approved !== 'P') return false;
@@ -2152,6 +2174,9 @@ export function renderDashboard(userEmail: string): string {
         if (asnFilter && p.asn !== null && String(p.asn).indexOf(asnFilter) === -1) return false;
         if (asnFilter && p.asn === null) return false;
         if (tagFilter !== 'all' && extractTags(p.description).indexOf(tagFilter) === -1) return false;
+        var isV6 = p.cidr && p.cidr.indexOf(':') !== -1;
+        if (familyFilter === 'ipv4' && isV6) return false;
+        if (familyFilter === 'ipv6' && !isV6) return false;
         return true;
       });
 
@@ -2396,8 +2421,12 @@ export function renderDashboard(userEmail: string): string {
       }
       // BGP sub-prefixes
       if (data.bgp_prefixes && data.bgp_prefixes.length > 0) {
+        var bgpParentCidr = parentCidrFor(prefixId);
         for (var j = 0; j < data.bgp_prefixes.length; j++) {
           var bp = data.bgp_prefixes[j];
+          // A BGP prefix equal to its parent is the whole-prefix advertisement,
+          // not a more-specific "child" prefix.
+          var bgpIsFullPrefix = bgpParentCidr && cidrEquals(bp.cidr, bgpParentCidr);
           var isLast = j === data.bgp_prefixes.length - 1 && (!data.bindings || data.bindings.length === 0 || j > 0);
           var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
           var bgpAdv = bp.on_demand && bp.on_demand.advertised;
@@ -2415,7 +2444,7 @@ export function renderDashboard(userEmail: string): string {
             (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
             '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
           var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
-          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
+          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="' + (bgpIsFullPrefix ? 'Delete BGP Prefix' : 'Delete Child Prefix') + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
 
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
@@ -3584,11 +3613,25 @@ export function renderDashboard(userEmail: string): string {
 
     function confirmDeleteBgpPrefix(prefixId, bgpPrefixId, cidr) {
       pendingDeleteBgpPrefix = { prefixId: prefixId, bgpPrefixId: bgpPrefixId, cidr: cidr };
-      document.getElementById('delete-bgp-prefix-message').innerHTML =
-        'Are you sure you want to delete the BGP child prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
-      document.getElementById('delete-bgp-prefix-btn').disabled = false;
-      document.getElementById('delete-bgp-prefix-btn').textContent = 'Delete';
+      var parentCidr = parentCidrFor(prefixId);
+      var isFullPrefix = parentCidr && cidrEquals(cidr, parentCidr);
+      var noun = isFullPrefix ? 'BGP prefix' : 'BGP child prefix';
+      document.getElementById('delete-bgp-prefix-title').textContent = isFullPrefix ? 'Delete BGP Prefix' : 'Delete BGP Child Prefix';
+      var btn = document.getElementById('delete-bgp-prefix-btn');
+      btn.textContent = 'Delete';
       clearInlineMsg('delete-bgp-prefix-error');
+
+      // A BGP prefix equal to the parent can only be removed once nothing else
+      // depends on the prefix (other BGP prefixes, service bindings, delegations).
+      var deps = isFullPrefix ? blockingDependencies(prefixId, parentCidr) : { total: 0 };
+      if (deps.total > 0) {
+        document.getElementById('delete-bgp-prefix-message').innerHTML = dependencyBlockMessage(deps);
+        btn.disabled = true;
+      } else {
+        document.getElementById('delete-bgp-prefix-message').innerHTML =
+          'Are you sure you want to delete the ' + noun + ' <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
+        btn.disabled = false;
+      }
       document.getElementById('delete-bgp-prefix-modal').classList.remove('hidden');
     }
 
@@ -3630,14 +3673,31 @@ export function renderDashboard(userEmail: string): string {
     // ─── Delete Parent Prefix ─────────────────────────────────────
     var pendingDeletePrefix = null;
 
-    function confirmDeletePrefix(prefixId, cidr) {
+    async function confirmDeletePrefix(prefixId, cidr) {
       pendingDeletePrefix = { prefixId: prefixId, cidr: cidr };
-      document.getElementById('delete-prefix-message').innerHTML =
-        'Are you sure you want to delete the prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
-      document.getElementById('delete-prefix-btn').disabled = false;
-      document.getElementById('delete-prefix-btn').textContent = 'Delete';
+      var msgEl = document.getElementById('delete-prefix-message');
+      var btn = document.getElementById('delete-prefix-btn');
+      btn.textContent = 'Delete';
+      btn.disabled = true;
       clearInlineMsg('delete-prefix-error');
+      msgEl.innerHTML = 'Checking dependencies for <strong class="font-mono">' + escHtml(cidr) + '</strong>...';
       document.getElementById('delete-prefix-modal').classList.remove('hidden');
+
+      // The parent prefix can only be deleted once its dependent resources are
+      // gone (child BGP prefixes, service bindings, delegations). The default
+      // BGP prefix equal to the parent is not counted as a dependency.
+      await ensureChildData(prefixId);
+      // Bail if the modal was closed or switched to another prefix meanwhile.
+      if (!pendingDeletePrefix || pendingDeletePrefix.prefixId !== prefixId) return;
+
+      var deps = blockingDependencies(prefixId, cidr);
+      if (deps.total > 0) {
+        msgEl.innerHTML = dependencyBlockMessage(deps);
+        btn.disabled = true;
+      } else {
+        msgEl.innerHTML = 'Are you sure you want to delete the prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
+        btn.disabled = false;
+      }
     }
 
     function closeDeletePrefixModal() {
@@ -6082,6 +6142,13 @@ export function renderDashboard(userEmail: string): string {
         case 'withdrawn': return '<span class="badge-withdrawn">Withdrawn</span>';
         default: return '<span class="badge-unknown">Unknown</span>';
       }
+    }
+
+    // Advertisement badge for a single BGP sub-prefix (based on its on_demand state).
+    function bgpStatusBadgeHtml(advertised) {
+      if (advertised === true) return '<span class="badge-advertised">Advertised</span>';
+      if (advertised === false) return '<span class="badge-withdrawn">Withdrawn</span>';
+      return '<span class="badge-unknown">Unknown</span>';
     }
 
     // Badge for a BGP sub-prefix, derived from its own on_demand.advertised flag.
