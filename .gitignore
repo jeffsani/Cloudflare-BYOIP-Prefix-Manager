@@ -2,3 +2,9 @@ node_modules/
 .wrangler/
 wrangler.toml
 .dev.vars
+
+# Local database dumps / backups (may contain secrets & PII)
+backup.sql
+*.sqlite
+*.sqlite3
+*.dump
