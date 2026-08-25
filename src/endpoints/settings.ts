@@ -2,7 +2,7 @@ import { OpenAPIRoute, contentJson } from 'chanfana';
 import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env, UserAccount } from '../types';
-import { maskToken } from '../helpers';
+import { maskToken, isRealSecret } from '../helpers';
 import { verifyTokenPermissions } from '../api';
 import {
   AccountSchema,
@@ -84,8 +84,13 @@ export class CreateAccount extends OpenAPIRoute {
 
     const rateLimit = body.api_rate_limit_5min && body.api_rate_limit_5min > 0 ? body.api_rate_limit_5min : 1200;
 
+    // The UI shows a masked token (maskToken) and echoes it back unchanged when
+    // the user doesn't edit it. Treat a masked placeholder as "no change" so we
+    // never overwrite the real stored token with bullet characters.
+    const tokenProvided = isRealSecret(body.api_token);
+
     if (existing) {
-      if (body.api_token) {
+      if (tokenProvided) {
         await c.env.DB.prepare(
           `UPDATE user_accounts SET account_label = ?, api_token = ?, api_rate_limit_5min = ?, updated_at = datetime('now')
            WHERE id = ? AND user_email = ?`,
@@ -113,7 +118,7 @@ export class CreateAccount extends OpenAPIRoute {
         `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default, api_rate_limit_5min)
          VALUES (?, ?, ?, ?, ?, ?)`,
       )
-        .bind(email, body.account_label || '', body.account_id, body.api_token || '', isDefault, rateLimit)
+        .bind(email, body.account_label || '', body.account_id, tokenProvided ? body.api_token : '', isDefault, rateLimit)
         .run();
     }
 
@@ -156,9 +161,39 @@ export class DeleteAccount extends OpenAPIRoute {
       .first<UserAccount>();
     if (!row) return c.json({ error: 'Not found' }, 404);
 
-    await c.env.DB.prepare('DELETE FROM user_accounts WHERE id = ? AND user_email = ?')
-      .bind(id, email)
-      .run();
+    const accountId = row.account_id;
+
+    // Purge everything scoped to this (user, account). Critically this revokes
+    // machine credentials — API keys and inbound webhook secrets keep working
+    // otherwise, since they authenticate by hash → account_id and never join
+    // back to user_accounts. These tables carry a user_email/owner_email column
+    // so deletion is safe even when another user shares the same account_id.
+    await c.env.DB.batch([
+      c.env.DB.prepare('DELETE FROM user_accounts WHERE id = ? AND user_email = ?').bind(id, email),
+      c.env.DB.prepare('DELETE FROM api_keys WHERE owner_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM webhook_endpoints WHERE owner_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM notification_channels WHERE user_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM notification_subscriptions WHERE user_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM notification_log WHERE user_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM rir_credentials WHERE user_email = ? AND account_id = ?').bind(email, accountId),
+      c.env.DB.prepare('DELETE FROM prefix_monitor_cache WHERE user_email = ? AND account_id = ?').bind(email, accountId),
+    ]);
+
+    // Account-scoped tables have no user_email column, so only purge them once
+    // no other user still has this Cloudflare account configured.
+    const others = await c.env.DB.prepare(
+      'SELECT COUNT(*) as cnt FROM user_accounts WHERE account_id = ?',
+    )
+      .bind(accountId)
+      .first<{ cnt: number }>();
+    if ((others?.cnt || 0) === 0) {
+      await c.env.DB.batch([
+        c.env.DB.prepare('DELETE FROM prefix_radar_state WHERE account_id = ?').bind(accountId),
+        c.env.DB.prepare('DELETE FROM delegation_descriptions WHERE account_id = ?').bind(accountId),
+        c.env.DB.prepare('DELETE FROM webhook_events WHERE account_id = ?').bind(accountId),
+        c.env.DB.prepare('DELETE FROM audit_log_events WHERE account_id = ?').bind(accountId),
+      ]);
+    }
 
     // Auto-activate next if deleted was default
     if (row.is_default) {
@@ -289,8 +324,8 @@ export class TestToken extends OpenAPIRoute {
     const body = data.body;
 
     // For a saved account the token is masked in the UI, so resolve the stored
-    // token from the DB when the request omits it.
-    let token = body.api_token;
+    // token from the DB when the request omits it (or echoes back the mask).
+    let token = isRealSecret(body.api_token) ? body.api_token : '';
     if (!token) {
       const stored = await c.env.DB.prepare(
         'SELECT api_token FROM user_accounts WHERE user_email = ? AND account_id = ?',

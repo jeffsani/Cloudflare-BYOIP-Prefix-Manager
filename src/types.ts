@@ -2,6 +2,9 @@ export interface Env {
   DB: D1Database;
   ENVIRONMENT: string;
   CF_ACCESS_TEAM_DOMAIN: string;
+  // Access Application Audience (AUD) tag. Required in production to fully
+  // validate the CF Access JWT; set via `wrangler secret put CF_ACCESS_AUD`.
+  CF_ACCESS_AUD?: string;
   NOTIFY_QUEUE: Queue<NotifyMessage>;
   RESEND_API_KEY?: string;
   ALERT_FROM_EMAIL?: string;

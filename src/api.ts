@@ -605,7 +605,7 @@ export async function createAuditLogpushJob(
   token: string,
   webhookUrl: string,
   webhookSecret: string,
-  name = 'network-tools-audit-logs',
+  name = 'prefix-mgr-audit-logs',
 ): Promise<CfApiResponse<LogpushJobResult>> {
   const destination_conf =
     `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(webhookSecret)}`;

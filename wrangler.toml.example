@@ -12,6 +12,11 @@ zone_name = "example.com"
 # Set ENVIRONMENT to "development" to bypass auth during local dev
 ENVIRONMENT = "production"
 CF_ACCESS_TEAM_DOMAIN = "YOUR_ACCESS_TEAM_NAME"
+# CF_ACCESS_AUD — the Access Application "Audience (AUD) Tag" for the app that
+# protects this Worker. REQUIRED in production: the Worker verifies the Access
+# JWT signature + issuer + audience + expiry, and fails closed (HTTP 500) if
+# this is unset. Store it as a secret, not here:
+#   npx wrangler secret put CF_ACCESS_AUD
 
 [[d1_databases]]
 binding = "DB"

@@ -52,10 +52,19 @@ export async function resolveAccount(
     .first<UserAccount>();
 }
 
+// Character used to mask secrets for display. A submitted value containing it
+// is a masked placeholder echoed back by the UI, never a real secret.
+export const MASK_CHAR = '•';
+
 // Mask API token for display
 export function maskToken(token: string): string {
   if (!token || token.length < 8) return '••••••••';
   return token.slice(0, 4) + '••••' + token.slice(-4);
+}
+
+// True when a submitted secret is a real value, not a masked placeholder.
+export function isRealSecret(value: string | undefined | null): value is string {
+  return !!value && !value.includes(MASK_CHAR);
 }
 
 // Helper to resolve RIR credentials from request body or DB
