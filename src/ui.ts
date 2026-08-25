@@ -476,7 +476,7 @@ export function renderDashboard(userEmail: string): string {
           <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
         <div>
-          <label class="block text-xs text-cf-gray mb-1">API rate limit (req / 5 min)</label>
+          <label class="block text-xs text-cf-gray mb-1">API rate limit (req / 5 min)${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>
           <input id="set-rate-limit" type="number" min="1" value="1200" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
       </div>
@@ -1274,7 +1274,7 @@ export function renderDashboard(userEmail: string): string {
               '</div>' +
               // API Rate Limit
               '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API rate limit <span class="font-normal">(requests / 5 min &mdash; used to pace the Radar advertisement poller)</span></label>' +
+                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API rate limit <span class="font-normal">(requests / 5 min &mdash; used to pace the Radar advertisement poller)</span>' + `${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}` + '</label>' +
                 '<div class="flex gap-2">' +
                   '<input id="acct-rl-' + escAttr(aid) + '" type="number" min="1" value="' + (a.api_rate_limit_5min || 1200) + '" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
                   '<button onclick="updateAccountRateLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
