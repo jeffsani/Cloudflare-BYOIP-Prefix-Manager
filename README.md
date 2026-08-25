@@ -223,6 +223,31 @@ Inbound payloads are parsed heuristically (CIDRs + advertise/withdraw intent ext
 `webhook_advertise` / `webhook_withdraw` / `webhook_event` notification events. Cloudflare's
 "test" ping is acknowledged with `200` and makes no state changes.
 
+> **Important:** The `/webhooks/*` path must be excluded from your Cloudflare Access
+> application, otherwise Cloudflare's delivery/validation requests are redirected (302) to
+> the Access login page before they reach the Worker. See
+> [Excluding machine paths from Access](#excluding-machine-paths-from-access).
+
+## Audit Log Streaming (Logpush)
+
+The Worker can ingest an account's **Audit Logs v2** via a Cloudflare **Logpush** job that
+streams to `/webhooks/logpush`, so the Activity panel loads instantly instead of polling the
+Audit Logs API. This requires an **Enterprise** plan and an API token with **Logs Write**.
+
+### Setup
+
+1. In **Settings → (expand an account) → API Access & Integrations**, click
+   **Enable audit log streaming**. The Worker mints a dedicated secret and attempts to
+   create the `audit_logs_v2` Logpush job automatically.
+2. On success, a job id is shown and logs begin streaming shortly. If auto-setup fails, the
+   ready-to-paste HTTP destination URL is displayed for manual creation in the dashboard.
+
+> **Important:** Before enabling, exclude `/webhooks/*` from Cloudflare Access (see
+> [Excluding machine paths from Access](#excluding-machine-paths-from-access)). When Logpush
+> creates a job it validates the destination by POSTing a test payload; if Access is in the
+> way you'll see `error validating destination: ... status:302`. This is **not** a missing
+> API permission — it's the Access edge redirect.
+
 ## API Token Permissions
 
 Each user creates their own Cloudflare API tokens in the Settings panel. Tokens need these permissions:
@@ -245,6 +270,26 @@ To mitigate this, add multiple API tokens per account in the Settings panel (all
 The worker is protected by a Cloudflare Access application. In production, the `Cf-Access-Jwt-Assertion` header is decoded to extract the user's email from the JWT payload. All data (accounts, tokens, activity) is scoped to the authenticated user's email.
 
 In development (`ENVIRONMENT != "production"`), auth is bypassed with `dev@localhost`.
+
+### Excluding machine paths from Access
+
+Cloudflare Access runs **at the edge, before the Worker executes**. The machine-facing
+routes (`/webhooks/*` and `/api/public/*`) carry their own authentication (the
+`cf-webhook-auth` secret and per-account API keys, enforced in `machine-auth.ts`), so the
+in-Worker Access bypass in `auth.ts` is *not enough* — Access will 302-redirect any
+unauthenticated request to these paths (e.g. Cloudflare's Logpush destination-validation
+POST, inbound notification webhooks) to the IdP login page before the Worker ever runs.
+
+To fix this, create a **separate self-hosted Access application** scoped to the machine
+subpaths, with a single **Bypass** policy (Include: **Everyone**). Access evaluates the
+most-specific application first, so this overrides the main app for those paths only:
+
+- `prefix-mgr.example.com/webhooks/*`
+- `prefix-mgr.example.com/api/public/*`
+- (optionally `/health`, `/api/docs`, `/api/openapi.json`)
+
+Symptom if this is missing: enabling Logpush fails with
+`error validating destination: error writing object: error uploading to https: status:302`.
 
 ## Project Structure
 

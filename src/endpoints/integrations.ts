@@ -166,14 +166,31 @@ export async function enableAuditLogpush(
       return { ok: true, auto: true, job_id: res.result?.id, destination, secret };
     }
     // Auto-create failed — hand back manual-setup details plus the CF error.
-    return {
-      ok: true, auto: false, destination, secret,
-      error: res.errors?.[0]?.message || 'Logpush job creation failed',
-    };
+    const rawError = res.errors?.[0]?.message || 'Logpush job creation failed';
+    return { ok: true, auto: false, destination, secret, error: explainLogpushError(rawError) };
   } catch (e) {
-    return {
-      ok: true, auto: false, destination, secret,
-      error: e instanceof Error ? e.message : 'Logpush job creation failed',
-    };
+    const rawError = e instanceof Error ? e.message : 'Logpush job creation failed';
+    return { ok: true, auto: false, destination, secret, error: explainLogpushError(rawError) };
   }
+}
+
+/**
+ * Turn opaque Cloudflare Logpush errors into actionable guidance. The most
+ * common failure is a `status:302` during destination validation: Cloudflare
+ * Access intercepts the validation POST at the edge (before the Worker runs)
+ * and redirects it to the IdP login page. This is not an API-permission issue —
+ * it requires a Zero Trust Access *Bypass* policy for the `/webhooks/*` path.
+ */
+function explainLogpushError(raw: string): string {
+  const lower = raw.toLowerCase();
+  if (lower.includes('validating destination') || lower.includes('status:302') || lower.includes('status: 302')) {
+    return (
+      `${raw} — This is a Cloudflare Access redirect (302), not an API-permission problem. ` +
+      `The destination-validation request is being blocked at the edge before it reaches this Worker. ` +
+      `In Zero Trust → Access → Applications, add a self-hosted app for this host's ` +
+      `"/webhooks/*" path with a Bypass (Everyone) policy, then retry. ` +
+      `(Those routes stay protected by the cf-webhook-auth secret.)`
+    );
+  }
+  return raw;
 }
