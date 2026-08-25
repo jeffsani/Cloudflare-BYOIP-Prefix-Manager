@@ -4,7 +4,7 @@
   "private": true,
   "description": "Prefix Manager — BYOIP Prefix Manager for Cloudflare Workers",
   "scripts": {
-    "dev": "wrangler dev",
+    "dev": "wrangler dev --var ENVIRONMENT:development",
     "deploy": "wrangler deploy",
     "db:create": "wrangler d1 create prefix-mgr-db",
     "db:init": "wrangler d1 execute prefix-mgr-db --local --file=schema.sql",
