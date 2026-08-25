@@ -1,5 +1,6 @@
 node_modules/
 .wrangler/
+.devin/
 wrangler.toml
 .dev.vars
 
