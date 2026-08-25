@@ -612,7 +612,7 @@ export function renderDashboard(userEmail: string): string {
               <th class="px-3 py-2.5 text-cf-gray font-medium">IRR</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">RPKI</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">Description / Tags</th>
-              <th class="px-3 py-2.5 text-cf-gray font-medium w-10"><span class="info-tip" tabindex="0" style="cursor:pointer" onclick="openAddPrefixModal()"><svg class="w-4 h-4 text-cf-orange hover:text-orange-400 transition" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg><span class="info-bubble" style="width:auto;white-space:nowrap">Add a new prefix</span></span></th>
+              <th class="px-3 py-2.5 text-cf-gray font-medium text-right"><button onclick="openAddPrefixModal()" title="Add a new prefix" class="px-2.5 py-1 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>Add Prefix</button></th>
             </tr>
           </thead>
           <tbody id="prefix-table-body">
