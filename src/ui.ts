@@ -846,7 +846,7 @@ export function renderDashboard(userEmail: string): string {
         <div id="binding-validation" class="text-[10px] mb-3 hidden"></div>
         <div id="binding-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="confirmCloseBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="closeBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="binding-submit-btn" onclick="submitBinding()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Binding</button>
         </div>
       </div>
@@ -872,7 +872,7 @@ export function renderDashboard(userEmail: string): string {
         </div>
         <div id="child-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="confirmCloseChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="closeChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="child-prefix-submit-btn" onclick="submitChildPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Child Prefix</button>
         </div>
       </div>
@@ -906,7 +906,7 @@ export function renderDashboard(userEmail: string): string {
         </div>
         <div id="delegation-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
-          <button onclick="confirmCloseDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button onclick="closeDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
           <button id="delegation-submit-btn" onclick="submitDelegation()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Delegation</button>
         </div>
       </div>
@@ -1041,7 +1041,7 @@ export function renderDashboard(userEmail: string): string {
             Validate IRR / ROA
           </button>
           <div class="flex gap-2">
-            <button onclick="confirmCloseAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+            <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
             <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
           </div>
         </div>
@@ -3195,19 +3195,6 @@ export function renderDashboard(userEmail: string): string {
       childPrefixModalContext = null;
     }
 
-    function isChildPrefixDirty() {
-      var ip = document.getElementById('child-prefix-ip');
-      return ip && ip.value.trim() !== '' && ip.defaultValue !== ip.value;
-    }
-
-    function confirmCloseChildPrefixModal() {
-      if (isChildPrefixDirty()) {
-        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeChildPrefixModal });
-      } else {
-        closeChildPrefixModal();
-      }
-    }
-
     function validateChildPrefix() {
       if (!childPrefixModalContext) return null;
       var parentCidr = childPrefixModalContext.parentCidr;
@@ -3440,20 +3427,6 @@ export function renderDashboard(userEmail: string): string {
     function closeBindingModal() {
       document.getElementById('binding-modal').classList.add('hidden');
       bindingModalContext = null;
-    }
-
-    function isBindingDirty() {
-      var svc = document.getElementById('binding-service');
-      var ip = document.getElementById('binding-ip');
-      return (svc && svc.value !== '') || (ip && ip.value.trim() !== '' && !ip.disabled);
-    }
-
-    function confirmCloseBindingModal() {
-      if (isBindingDirty()) {
-        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeBindingModal });
-      } else {
-        closeBindingModal();
-      }
     }
 
     function validateBinding() {
@@ -3798,20 +3771,6 @@ export function renderDashboard(userEmail: string): string {
       delegationModalContext = null;
     }
 
-    function isDelegationDirty() {
-      var acctId = document.getElementById('delegation-account-id');
-      var desc = document.getElementById('delegation-description');
-      return (acctId && acctId.value.trim() !== '') || (desc && desc.value.trim() !== '');
-    }
-
-    function confirmCloseDelegationModal() {
-      if (isDelegationDirty()) {
-        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeDelegationModal });
-      } else {
-        closeDelegationModal();
-      }
-    }
-
     function validateDelegation() {
       if (!delegationModalContext) return 'No context';
       var parentCidr = delegationModalContext.parentCidr;
@@ -4066,29 +4025,6 @@ export function renderDashboard(userEmail: string): string {
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
       addPrefixIpFamily = null;
-    }
-
-    function isAddPrefixDirty() {
-      var ip = document.getElementById('add-prefix-ip');
-      var desc = document.getElementById('add-prefix-description');
-      var customAsn = document.getElementById('add-prefix-custom-asn');
-      var asnCustom = document.querySelector('input[name="add-prefix-asn-mode"][value="custom"]');
-      var loaUpload = document.querySelector('input[name="add-prefix-loa-mode"][value="upload"]');
-      if (ip && ip.value.trim() !== '') return true;
-      if (desc && desc.value.trim() !== '') return true;
-      if (asnCustom && asnCustom.checked && customAsn && customAsn.value.trim() !== '') return true;
-      if (loaUpload && loaUpload.checked) return true;
-      if (addPrefixLoaDocumentId) return true;
-      if (addPrefixValidationResult) return true;
-      return false;
-    }
-
-    function confirmCloseAddPrefixModal() {
-      if (isAddPrefixDirty()) {
-        showConfirm({ title: 'Discard changes?', message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', danger: true, onConfirm: closeAddPrefixModal });
-      } else {
-        closeAddPrefixModal();
-      }
     }
 
     function setAddPrefixFamily(family) {
