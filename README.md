@@ -16,12 +16,24 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **Tag-Based Filtering** — Add `#tags` to prefix descriptions (e.g. `My prefix #production #us-east`) to organize prefixes. Tags appear as clickable badges in the description column and auto-populate a Tag filter dropdown. Click any tag badge to instantly filter by that tag
 - **Advertisement Toggle** — Advertise or withdraw individual BGP sub-prefixes with a toggle switch and confirmation dialog; all changes are logged to an activity feed
 
+![Add Prefix](src/add-prefix.png)
+
+![Add Child BGP Prefix](src/add-child-bgp-prefix.png)
+
+![Add Service Binding](src/add-service-binding.png)
+
+![Delegate Prefix](src/delegate-prefix.png)
+
 ### Looking Glass
 - **BGP Route Visualization** — Click the search icon on any prefix or sub-prefix to open the looking glass modal
 - **AS-Path Graph** — SVG-rendered graph showing BGP routing paths from origin to collectors, with RPKI validation coloring and ASN metadata (org name, country flag)
 - **Route Table** — Tabular view of raw BGP routes including collector, AS path, next hop, and peer ASN
 
 ![Looking Glass — AS-Path Graph](src/looking-glass.png)
+
+### Activity Log
+
+![Activity Log](src/activity-log.png)
 
 ### Multi-Account & Multi-Token
 - **Per-User Accounts** — Each user (identified via Cloudflare Access JWT with Google IdP) can configure multiple Cloudflare accounts, each with its own label and account ID
@@ -50,9 +62,10 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 ### Prerequisites
 
-- Node.js 18+
-- Wrangler CLI (`npm install -g wrangler`)
-- A Cloudflare account with BYOIP prefixes
+- **Node.js 18+** — required to run Wrangler and install dependencies
+- **Wrangler CLI v4+** — install globally with `npm install -g wrangler`, then authenticate with `wrangler login`
+- **A Cloudflare account** — with a zone (domain) you control and BYOIP prefixes to manage
+- **Workers Paid plan** — required for D1, Queues, and Cron Triggers (the free tier does not support Queues)
 
 ### 1. Clone and install
 
@@ -62,42 +75,179 @@ cd prefix-mgr
 npm install
 ```
 
-### 2. Configure Wrangler
+### 2. Create the D1 database
+
+Create a new D1 database in your Cloudflare account and note the `database_id` from the output:
+
+```bash
+npx wrangler d1 create prefix-mgr-db
+```
+
+The output will look like:
+
+```
+✅ Successfully created DB 'prefix-mgr-db'
+
+[[d1_databases]]
+binding = "DB"
+database_name = "prefix-mgr-db"
+database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+```
+
+Copy the `database_id` value — you will need it in the next step.
+
+### 3. Configure `wrangler.toml`
 
 ```bash
 cp wrangler.toml.example wrangler.toml
-# Edit wrangler.toml:
-#   - Set database_id to your D1 database ID
-#   - Set CF_ACCESS_TEAM_DOMAIN to your Access team name
-#   - Set ENVIRONMENT to "production" for deployment
 ```
 
-### 3. Create and initialize D1 database
+Open `wrangler.toml` and make the following changes:
+
+1. **Set the D1 database ID** — paste the `database_id` from step 2:
+   ```toml
+   [[d1_databases]]
+   binding = "DB"
+   database_name = "prefix-mgr-db"
+   database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← your actual ID
+   ```
+
+2. **Set your route** — replace with your actual domain and zone:
+   ```toml
+   [[routes]]
+   pattern = "prefix-mgr.yourdomain.com/*"
+   zone_name = "yourdomain.com"
+   ```
+
+3. **Set your Cloudflare Access team name** — this is the subdomain of your Access organization (e.g. `mycompany` for `mycompany.cloudflareaccess.com`):
+   ```toml
+   [vars]
+   ENVIRONMENT = "production"
+   CF_ACCESS_TEAM_DOMAIN = "mycompany"
+   ```
+
+4. **(Optional) Add notification support** — if you want email/webhook/PagerDuty notifications for prefix events, add these blocks to `wrangler.toml`:
+   ```toml
+   [vars]
+   ALERT_FROM_EMAIL = "alerts@yourdomain.com"   # must be a verified Resend sender
+
+   # Queue producer (sends notifications)
+   [[queues.producers]]
+   binding = "NOTIFY_QUEUE"
+   queue = "prefix-mgr-notifications"
+
+   # Queue consumer (delivers notifications)
+   [[queues.consumers]]
+   queue = "prefix-mgr-notifications"
+   max_batch_size = 10
+   max_retries = 3
+   dead_letter_queue = "prefix-mgr-notifications-dlq"
+
+   # Cron trigger for Radar-based external advertisement monitoring
+   [triggers]
+   crons = ["* * * * *"]
+   ```
+
+### 4. Initialize the database schema
+
+Apply the full schema to both your local dev database and the remote production database:
 
 ```bash
-npm run db:create
-# Copy the database_id into wrangler.toml
-npm run db:init          # local
-npm run db:init:remote   # production
+# Initialize local D1 (for wrangler dev)
+npm run db:init
+
+# Initialize remote/production D1
+npm run db:init:remote
 ```
 
-If upgrading from an earlier version (before multi-token support):
+This creates all required tables (`user_accounts`, `account_tokens`, `activity_log`, `notification_channels`, `notification_log`, `prefix_radar_state`, `api_keys`, `webhook_endpoints`, `audit_log_events`, etc.). The schema uses `CREATE TABLE IF NOT EXISTS`, so it is safe to re-run.
+
+### 5. Set up Cloudflare Access (authentication)
+
+The dashboard is protected by Cloudflare Access. You need to create an Access Application in the [Cloudflare Zero Trust dashboard](https://one.dash.cloudflare.com/):
+
+1. Go to **Zero Trust → Access → Applications → Add an application**
+2. Choose **Self-hosted** and configure:
+   - **Application domain:** `prefix-mgr.yourdomain.com`
+   - **Path:** leave blank (protects the entire domain)
+3. Add an **Allow** policy with your desired identity rules (e.g. emails ending in `@yourcompany.com`)
+4. Choose your **Identity provider** (Google, Okta, Azure AD, etc.) — the user's email from the IdP JWT becomes their identity in the tool
+5. After saving, copy the **Application Audience (AUD) Tag** from the application's overview page
+
+Then store the AUD tag as a Wrangler secret (it is used to cryptographically verify Access JWTs):
+
 ```bash
-npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-multi-token.sql
+npx wrangler secret put CF_ACCESS_AUD
+# Paste the AUD tag value when prompted
 ```
 
-### 4. Local development
+> **Important:** Both `CF_ACCESS_TEAM_DOMAIN` (set in `wrangler.toml` `[vars]`) and `CF_ACCESS_AUD` (set as a secret) are **required** in production. The Worker fails closed with HTTP 500 if either is missing.
+
+#### Excluding machine paths from Access
+
+If you plan to use inbound webhooks, Logpush, or the Query API, you must create a **second** Access application to bypass Access on machine-facing paths. See [Excluding machine paths from Access](#excluding-machine-paths-from-access) for detailed instructions.
+
+### 6. (Optional) Set up notification secrets
+
+If you enabled notifications in step 3 and want email delivery via [Resend](https://resend.com):
+
+1. Create the notification queues:
+   ```bash
+   npx wrangler queues create prefix-mgr-notifications
+   npx wrangler queues create prefix-mgr-notifications-dlq
+   ```
+
+2. Store your Resend API key as a secret:
+   ```bash
+   npx wrangler secret put RESEND_API_KEY
+   # Paste your Resend API key when prompted
+   ```
+
+3. Make sure `ALERT_FROM_EMAIL` in `wrangler.toml` `[vars]` is set to a verified sender address in your Resend account.
+
+Webhook and PagerDuty notification channels do not require any server-side secrets — they are configured per-account in the Settings panel after deployment.
+
+### 7. Local development
 
 ```bash
 npm run dev
 ```
 
-Set `ENVIRONMENT = "development"` in `wrangler.toml` to bypass Cloudflare Access auth during local dev (uses `dev@localhost` as the user).
+This starts a local dev server at `http://localhost:8787` with `ENVIRONMENT=development`, which bypasses Cloudflare Access authentication and uses `dev@localhost` as the user identity. You can immediately open the dashboard, add Cloudflare accounts, and test features.
 
-### 5. Deploy
+### 8. Deploy to production
 
 ```bash
 npm run deploy
+```
+
+After deployment, your dashboard will be live at the route you configured (e.g. `https://prefix-mgr.yourdomain.com`). Verify by visiting the URL — you should be redirected to your Cloudflare Access login.
+
+### 9. First-time configuration in the dashboard
+
+Once deployed and logged in:
+
+1. **Add a Cloudflare account** — click the gear icon (Settings), then add an account with:
+   - **Label:** a friendly name (e.g. "Production")
+   - **Account ID:** your Cloudflare account ID (found in the Cloudflare dashboard under Account Home)
+   - **API Token:** a Cloudflare API token with the required permissions (see [API Token Permissions](#api-token-permissions))
+2. **Test the token** — click the "Test" button next to the token to verify it has the correct permissions
+3. **Set as default** — if you have multiple accounts, set one as default
+4. **View prefixes** — your BYOIP prefixes should now load in the main dashboard
+
+### Upgrading
+
+When pulling new versions, re-run the schema against your remote database. The schema is additive (`CREATE TABLE IF NOT EXISTS` / `CREATE INDEX IF NOT EXISTS`), so it is safe to re-apply:
+
+```bash
+npm run db:init:remote
+npm run deploy
+```
+
+For specific migrations (e.g. Query API tables), apply the dedicated migration file:
+
+```bash
+npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql
 ```
 
 ## Notifications & Reliable Delivery
@@ -140,6 +290,8 @@ In **Settings → (expand an account)** you can:
 
 Delivery status (queued / sent / retrying / failed / dead-letter) is shown in the collapsible
 **Notifications Queue** panel on the dashboard, with a manual retry for dead-lettered/failed items.
+
+![Notifications Queue](src/notifications-queue.png)
 
 ### How external detection works
 
@@ -299,7 +451,7 @@ prefix-mgr/
 ├── tsconfig.json
 ├── wrangler.toml.example
 ├── schema.sql                  — Full schema (user_accounts + account_tokens + activity_log)
-├── migrate-multi-token.sql     — Migration for existing deployments
+├── migrate-query-api.sql       — Migration for existing deployments (Query API tables)
 └── src/
     ├── index.ts                — Hono app, chanfana OpenAPI setup, route registration
     ├── helpers.ts              — Shared helpers (getToken, logActivity, resolveAccount)

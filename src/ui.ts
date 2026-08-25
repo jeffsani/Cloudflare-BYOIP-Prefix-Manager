@@ -774,7 +774,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
       <div class="p-4">
         <p id="delete-binding-message" class="text-xs text-cf-gray mb-3"></p>
-        <p class="text-[10px] text-yellow-400 mb-4">Changes take 4–6 hours to propagate. This action cannot be undone.</p>
+        <p class="text-[10px] text-red-500 mb-4">Changes take 4–6 hours to propagate. This action cannot be undone.</p>
         <div id="delete-binding-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteBindingModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -792,7 +792,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
       <div class="p-4">
         <p id="delete-bgp-prefix-message" class="text-xs text-cf-gray mb-3"></p>
-        <p class="text-[10px] text-yellow-400 mb-4">This action cannot be undone.</p>
+        <p class="text-[10px] text-red-500 mb-4">This action cannot be undone.</p>
         <div id="delete-bgp-prefix-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteBgpPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -810,7 +810,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
       <div class="p-4">
         <p id="delete-prefix-message" class="text-xs text-cf-gray mb-3"></p>
-        <p class="text-[10px] text-yellow-400 mb-4">This action cannot be undone. Only unapproved prefixes can be deleted.</p>
+        <p class="text-[10px] text-red-500 mb-4">This action cannot be undone. Only unapproved prefixes can be deleted.</p>
         <div id="delete-prefix-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeletePrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -921,7 +921,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
       <div class="p-4">
         <p id="delete-delegation-message" class="text-xs text-cf-gray mb-3"></p>
-        <p class="text-[10px] text-yellow-400 mb-4">The delegated account will lose access to this prefix range. This action cannot be undone.</p>
+        <p class="text-[10px] text-red-500 mb-4">The delegated account will lose access to this prefix range. This action cannot be undone.</p>
         <div id="delete-delegation-error" class="mb-3 empty:hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeDeleteDelegationModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -940,7 +940,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4">
         <p id="bulk-confirm-message" class="text-xs text-cf-gray mb-3"></p>
         <div id="bulk-confirm-list" class="max-h-48 overflow-y-auto mb-3 border border-cf-border rounded-lg p-2 text-xs font-mono"></div>
-        <div id="bulk-confirm-warning" class="text-[10px] text-yellow-400 mb-3 hidden"></div>
+        <div id="bulk-confirm-warning" class="text-[10px] text-red-500 mb-3 hidden"></div>
         <div id="bulk-confirm-results" class="hidden mb-3 text-xs"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeBulkConfirmModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -1478,7 +1478,7 @@ export function renderDashboard(userEmail: string): string {
           '</div>';
         });
       } else if (logpush && logpush.error) {
-        html += '<div class="text-[10px] text-yellow-400 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
+        html += '<div class="text-[10px] text-red-500 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
       } else {
         html += '<div class="text-[10px] text-cf-gray mb-2">No audit-log Logpush job configured yet.</div>';
       }
@@ -2533,7 +2533,7 @@ export function renderDashboard(userEmail: string): string {
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> the BGP prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
-        '<span class="text-yellow-400">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' this prefix to the Internet.</span>';
+        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' this prefix to the Internet.</span>';
       document.getElementById('confirm-modal').classList.remove('hidden');
     }
 
@@ -2582,7 +2582,7 @@ export function renderDashboard(userEmail: string): string {
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
-        '<span class="text-yellow-400">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>';
+        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>';
 
       // We need to fetch BGP sub-prefixes to toggle them
       pendingToggle = { prefixId: prefixId, advertised: newState, cidr: cidr, isParent: true };
@@ -2773,7 +2773,7 @@ export function renderDashboard(userEmail: string): string {
 
       var listHtml = selected.map(function(p) {
         var badge = statusBadgeHtml(p);
-        var lockNote = p.on_demand_locked ? ' <span class="text-yellow-400">(locked - will be skipped)</span>' : '';
+        var lockNote = p.on_demand_locked ? ' <span class="text-red-500">(locked - will be skipped)</span>' : '';
         return '<div class="flex items-center gap-2 py-1">' + badge + ' <span>' + escHtml(p.cidr) + '</span>' + lockNote + '</div>';
       }).join('');
 
@@ -2960,7 +2960,7 @@ export function renderDashboard(userEmail: string): string {
       if (deps.childBgp > 0) items.push(deps.childBgp + ' child BGP prefix' + (deps.childBgp === 1 ? '' : 'es'));
       if (deps.bindings > 0) items.push(deps.bindings + ' service binding' + (deps.bindings === 1 ? '' : 's'));
       if (deps.delegations > 0) items.push(deps.delegations + ' delegation' + (deps.delegations === 1 ? '' : 's'));
-      return '<span class="text-yellow-400">This prefix still has ' + items.join(', ') +
+      return '<span class="text-red-500">This prefix still has ' + items.join(', ') +
              '.</span><br><br>Please remove ' + (items.length > 1 ? 'them' : 'it') + ' first, then delete this prefix.';
     }
 
@@ -3429,7 +3429,7 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('binding-ip').disabled = true;
         maskSel.disabled = true;
         var valEl = document.getElementById('binding-validation');
-        valEl.innerHTML = '<span class="text-yellow-400">First binding must cover the entire prefix (' + escHtml(parentCidr) + ').</span>';
+        valEl.innerHTML = '<span class="text-red-500">First binding must cover the entire prefix (' + escHtml(parentCidr) + ').</span>';
         valEl.classList.remove('hidden');
       } else {
         document.getElementById('binding-ip').disabled = false;
@@ -4828,7 +4828,7 @@ export function renderDashboard(userEmail: string): string {
       if (anyFailed) {
         var fb = document.getElementById('auto-fallback');
         var fbHtml = '<div class="p-3 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
-        fbHtml += '<div class="text-yellow-400 font-semibold mb-1 text-[11px]">Some steps failed. Complete them manually:</div>';
+        fbHtml += '<div class="text-red-500 font-semibold mb-1 text-[11px]">Some steps failed. Complete them manually:</div>';
         fbHtml += '<div class="text-[10px] space-y-1" style="color:var(--text-primary)">';
         fbHtml += '<div class="font-semibold">Validation Token:</div>';
         fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
@@ -4895,7 +4895,7 @@ export function renderDashboard(userEmail: string): string {
 
         // Validation states info
         html += '<div class="p-2 rounded-lg border border-yellow-500/30" style="background:rgba(234,179,8,0.1)">';
-        html += '<div class="text-yellow-400 font-semibold mb-1 text-[11px]">BYO-ASN requires all four validation states:</div>';
+        html += '<div class="text-red-500 font-semibold mb-1 text-[11px]">BYO-ASN requires all four validation states:</div>';
         html += '<div class="text-[10px] space-y-0.5">';
         html += '<div>&bull; <strong>irr_validation_state</strong> &mdash; exact route/route6 with correct origin</div>';
         html += '<div>&bull; <strong>rpki_validation_state</strong> &mdash; valid ROA authorizing your ASN</div>';
@@ -6430,7 +6430,7 @@ export function renderDashboard(userEmail: string): string {
 
       var banner = '';
       if (activityLogAuditError && activityLogSource !== 'local') {
-        banner = '<div class="px-4 py-2 text-[11px] text-yellow-400 border-b border-cf-border" style="background:rgba(234,179,8,0.08)">' +
+        banner = '<div class="px-4 py-2 text-[11px] text-red-500 border-b border-cf-border" style="background:rgba(234,179,8,0.08)">' +
           '&#9888; Audit log unavailable: ' + escHtml(activityLogAuditError) +
           '. The Audit Logs v2 API requires the <strong>Account Settings: Read</strong> token permission.</div>';
       }
