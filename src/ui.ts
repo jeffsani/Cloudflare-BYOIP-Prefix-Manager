@@ -493,47 +493,49 @@ export function renderDashboard(userEmail: string): string {
   <!-- Main Content -->
   <main class="max-w-7xl mx-auto px-4 py-4">
     <!-- Filter Bar -->
-    <div class="panel p-3 mb-4 flex flex-wrap items-center gap-3">
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Account:</label>
-        <select id="filter-account" onchange="onAccountChange()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none min-w-[180px]">
-          <option value="">No accounts configured</option>
-        </select>
+    <div class="panel p-3 mb-4 flex flex-col gap-2">
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">Account:</label>
+          <select id="filter-account" onchange="onAccountChange()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none min-w-[180px]">
+            <option value="">No accounts configured</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">Status:</label>
+          <select id="filter-status" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            <option value="all">All</option>
+            <option value="pending">Pending Approval</option>
+            <option value="advertised">Advertised</option>
+            <option value="withdrawn">Withdrawn</option>
+            <option value="locked">Locked</option>
+            <option value="unlocked">Unlocked</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">Prefix:</label>
+          <input id="filter-prefix" type="text" placeholder="e.g. 192.168.1" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-36 font-mono">
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">Family:</label>
+          <select id="filter-family" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            <option value="all">All</option>
+            <option value="ipv4">IPv4</option>
+            <option value="ipv6">IPv6</option>
+          </select>
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">ASN:</label>
+          <input id="filter-asn" type="text" placeholder="Filter by ASN" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-28">
+        </div>
+        <div class="flex items-center gap-2">
+          <label class="text-xs text-cf-gray font-medium">Tag:${infoTip('Add #tags to any prefix description to organize and filter prefixes. For example: <strong>#production</strong>, <strong>#us-east</strong>, <strong>#customer-xyz</strong>. Tags are case-insensitive and support letters, numbers, hyphens, and underscores.')}</label>
+          <select id="filter-tag" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            <option value="all">All</option>
+          </select>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Status:</label>
-        <select id="filter-status" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-          <option value="all">All</option>
-          <option value="pending">Pending Approval</option>
-          <option value="advertised">Advertised</option>
-          <option value="withdrawn">Withdrawn</option>
-          <option value="locked">Locked</option>
-          <option value="unlocked">Unlocked</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Prefix:</label>
-        <input id="filter-prefix" type="text" placeholder="e.g. 192.168.1" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-36 font-mono">
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Family:</label>
-        <select id="filter-family" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-          <option value="all">All</option>
-          <option value="ipv4">IPv4</option>
-          <option value="ipv6">IPv6</option>
-        </select>
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">ASN:</label>
-        <input id="filter-asn" type="text" placeholder="Filter by ASN" oninput="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-28">
-      </div>
-      <div class="flex items-center gap-2">
-        <label class="text-xs text-cf-gray font-medium">Tag:${infoTip('Add #tags to any prefix description to organize and filter prefixes. For example: <strong>#production</strong>, <strong>#us-east</strong>, <strong>#customer-xyz</strong>. Tags are case-insensitive and support letters, numbers, hyphens, and underscores.')}</label>
-        <select id="filter-tag" onchange="applyFilters()" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-          <option value="all">All</option>
-        </select>
-      </div>
-      <div class="ml-auto flex items-center gap-2">
+      <div class="flex justify-end items-center gap-2">
         <button onclick="openAddPrefixModal()" class="px-3 py-1.5 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition flex items-center gap-1">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
           Add Prefix
