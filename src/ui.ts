@@ -1633,7 +1633,14 @@ export function renderDashboard(userEmail: string): string {
       // Subscriptions matrix
       var subMap = {};
       subs.forEach(function(s) { subMap[s.event_type] = s; });
-      html += '<div class="font-semibold text-cf-gray mb-1">Event subscriptions</div>';
+      var configuredCount = subs.filter(function(s) { return s.channel_ids && s.channel_ids.length > 0; }).length;
+      var subsCollapsed = configuredCount > 0;
+      html += '<div class="flex items-center gap-1 cursor-pointer mb-1" onclick="toggleNotifSubs(\\'' + aid + '\\')">' +
+        '<span id="notif-subs-chev-' + aid + '" class="chevron text-cf-gray text-xs' + (subsCollapsed ? '' : ' open') + '">&#9654;</span>' +
+        '<span class="font-semibold text-cf-gray">Event subscriptions</span>' +
+        (configuredCount > 0 ? '<span class="text-cf-gray font-normal ml-1">(' + configuredCount + ' configured)</span>' : '') +
+      '</div>';
+      html += '<div id="notif-subs-body-' + aid + '"' + (subsCollapsed ? ' class="hidden"' : '') + '>';
       if (channels.length === 0) {
         html += '<div class="text-cf-gray">Add a channel to subscribe to events.</div>';
       } else {
@@ -1654,6 +1661,7 @@ export function renderDashboard(userEmail: string): string {
         html += '</div>';
         html += '<button onclick="saveNotifSubs(\\'' + aid + '\\')" class="mt-2 px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Save subscriptions</button>';
       }
+      html += '</div>';
 
       return html;
     }
@@ -1725,6 +1733,19 @@ export function renderDashboard(userEmail: string): string {
         showInlineMsg('notif-msg-' + accountId, 'Subscriptions saved.', 'success');
       } catch (e) {
         showInlineMsg('notif-msg-' + accountId, 'Failed to save subscriptions: ' + e, 'error');
+      }
+    }
+
+    function toggleNotifSubs(accountId) {
+      var body = document.getElementById('notif-subs-body-' + accountId);
+      var chev = document.getElementById('notif-subs-chev-' + accountId);
+      if (!body) return;
+      if (body.classList.contains('hidden')) {
+        body.classList.remove('hidden');
+        if (chev) chev.classList.add('open');
+      } else {
+        body.classList.add('hidden');
+        if (chev) chev.classList.remove('open');
       }
     }
 
