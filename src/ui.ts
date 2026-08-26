@@ -419,8 +419,9 @@ export function renderDashboard(userEmail: string): string {
               <div class="flow-title">Ensure route object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
               <div class="flow-desc">Add descr: cf-validation: &lt;token&gt; to the route / route6 object at the registrar.</div>
               <code class="flow-api">POST /api/rir/ensure-route
-  ARIN: GET/POST/PUT reg.arin.net/rest/irr/route/{ip}/{mask}/AS{asn} (ApiKey, RPSL/XML)
-  RIPE: PUT/POST rest.db.ripe.net/ripe/route[6] (Basic, JSON)</code>
+  GET &rarr; PUT (update) or POST (create) at the detected RIR
+  ARIN: reg.arin.net/rest/irr/route/{ip}/{mask}/AS{asn} (ApiKey, RPSL/XML)
+  RIPE: rest.db.ripe.net/ripe/route[6] (Basic, JSON)</code>
             </div>
           </div>
           <div class="flow-arrow">&darr;</div>
@@ -430,8 +431,9 @@ export function renderDashboard(userEmail: string): string {
               <div class="flow-title">Ensure aut-num object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
               <div class="flow-desc">Add the same cf-validation token to the aut-num object for the origin ASN.</div>
               <code class="flow-api">POST /api/rir/ensure-autnum
-  ARIN: GET/POST/PUT reg.arin.net/rest/irr/aut-num/AS{asn} (+POCs from whois.arin.net)
-  RIPE: PUT rest.db.ripe.net/ripe/aut-num</code>
+  GET &rarr; PUT (update) or POST (create) at the detected RIR
+  ARIN: reg.arin.net/rest/irr/aut-num/AS{asn} (ApiKey, RPSL/XML)
+  RIPE: rest.db.ripe.net/ripe/aut-num (Basic, JSON)</code>
             </div>
           </div>
           <div class="flow-arrow">&darr;</div>
