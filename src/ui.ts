@@ -457,36 +457,49 @@ export function renderDashboard(userEmail: string): string {
 
   <!-- Settings Panel -->
   <div id="settings-panel" class="hidden max-w-7xl mx-auto px-4 mt-3 fade-in">
-    <div class="panel p-4">
-      <div class="flex justify-between items-start mb-3">
-        <h2 class="text-sm font-semibold" style="color:var(--text-strong)">Account Settings</h2>
-        <button onclick="toggleSettings()" class="text-cf-gray hover:text-cf-orange text-xs">Close</button>
+    <div class="panel p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <button onclick="toggleSettings()" class="text-cf-gray hover:text-cf-orange" title="Close settings">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+          <h2 class="text-sm font-semibold" style="color:var(--text-strong)">Accounts</h2>
+        </div>
+        <button onclick="showAddAccount()" class="px-3 py-1 text-xs font-semibold rounded-lg border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Add Account</button>
       </div>
-      <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
-        <div>
-          <label class="block text-xs text-cf-gray mb-1">Account Label</label>
-          <input id="set-label" type="text" placeholder="e.g. Production" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+
+      <!-- Saved accounts list -->
+      <div id="accounts-list" class="space-y-2"></div>
+
+      <!-- Add account form (hidden by default) -->
+      <div id="account-form" class="hidden border border-cf-border rounded-lg p-4 space-y-3">
+        <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Add Account</h3>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div>
+            <label class="block text-xs font-medium text-cf-gray mb-1">Account Label</label>
+            <input id="set-label" type="text" placeholder="e.g. Production" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-cf-gray mb-1">Account ID</label>
+            <input id="set-account-id" type="text" placeholder="Cloudflare Account ID" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-cf-gray mb-1">API Token</label>
+            <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-cf-gray mb-1">API rate limit (req / 5 min)${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>
+            <input id="set-rate-limit" type="number" min="1" value="1200" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          </div>
         </div>
-        <div>
-          <label class="block text-xs text-cf-gray mb-1">Account ID</label>
-          <input id="set-account-id" type="text" placeholder="Cloudflare Account ID" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        <div class="flex gap-2 items-center">
+          <button onclick="saveAccount()" class="px-4 py-1.5 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:bg-orange-600 transition">Save Account</button>
+          <button onclick="testNewAccountToken()" class="px-4 py-1.5 border border-cf-border text-cf-gray text-xs font-semibold rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Test Token</button>
+          <button onclick="hideAccountForm()" class="px-4 py-1.5 text-xs text-cf-gray hover:text-white">Cancel</button>
+          <div id="test-token-result" class="flex items-center text-xs"></div>
         </div>
-        <div>
-          <label class="block text-xs text-cf-gray mb-1">API Token</label>
-          <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-        </div>
-        <div>
-          <label class="block text-xs text-cf-gray mb-1">API rate limit (req / 5 min)${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>
-          <input id="set-rate-limit" type="number" min="1" value="1200" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-        </div>
+        <div id="set-account-msg"></div>
       </div>
-      <div class="flex gap-2 mb-4">
-        <button onclick="saveAccount()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Account</button>
-        <button onclick="testNewAccountToken()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Test Token</button>
-        <div id="test-token-result" class="flex items-center text-[10px]"></div>
-      </div>
-      <div id="set-account-msg" class="mb-4"></div>
-      <div id="accounts-list"></div>
     </div>
   </div>
 
@@ -1182,7 +1195,31 @@ export function renderDashboard(userEmail: string): string {
       if (!p.classList.contains('hidden')) {
         document.getElementById('about-panel').classList.add('hidden');
         renderAccountsList();
+      } else {
+        hideAccountForm();
       }
+    }
+
+    function showAddAccount() {
+      var form = document.getElementById('account-form');
+      if (form) form.classList.remove('hidden');
+    }
+
+    function hideAccountForm() {
+      var form = document.getElementById('account-form');
+      if (form) form.classList.add('hidden');
+      var label = document.getElementById('set-label');
+      var accId = document.getElementById('set-account-id');
+      var token = document.getElementById('set-api-token');
+      var rl = document.getElementById('set-rate-limit');
+      var msg = document.getElementById('set-account-msg');
+      var result = document.getElementById('test-token-result');
+      if (label) label.value = '';
+      if (accId) accId.value = '';
+      if (token) token.value = '';
+      if (rl) rl.value = '1200';
+      if (msg) msg.innerHTML = '';
+      if (result) result.innerHTML = '';
     }
 
     // ─── Accounts ─────────────────────────────────────────────────
@@ -1220,76 +1257,79 @@ export function renderDashboard(userEmail: string): string {
       var el = document.getElementById('accounts-list');
       if (!el) return;
       if (savedAccounts.length === 0) {
-        el.innerHTML = '<p class="text-xs text-cf-gray">No accounts configured yet.</p>';
+        el.innerHTML = '<p class="text-xs text-cf-gray">No accounts configured. Click "+ Add Account" to get started.</p>';
         return;
       }
       el.innerHTML = '<div class="space-y-2">' + savedAccounts.map(function(a) {
-        var defBadge = a.is_default ? '<span class="badge-advertised ml-2">Default</span>' : '';
-        var tokenDisplay = a.api_token ? '<span class="text-cf-gray font-mono text-[10px] ml-1">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid ml-1">No token</span>';
+        var tokenBadge = a.api_token
+          ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-900 text-green-300">Token saved</span>'
+          : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-900 text-red-300">No token</span>';
+        var defBadge = a.is_default ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-900 text-orange-300">Default</span>' : '';
         var aid = a.account_id;
 
-        return '<div class="rounded-lg border border-cf-border">' +
+        return '<div class="rounded-lg border border-cf-border' + (a.is_default ? ' border-orange-700' : '') + '">' +
             // Header row (clickable to expand)
-            '<div class="flex items-center justify-between p-2.5 cursor-pointer" onclick="toggleAccountExpand(\\'' + escAttr(aid) + '\\')">' +
-              '<div class="flex items-center gap-2 text-xs">' +
-                '<svg id="acct-chev-' + escAttr(aid) + '" class="w-3 h-3 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' +
-                '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(a.account_label || 'Untitled') + '</span>' +
-                '<span class="text-cf-gray font-mono text-[10px]">' + aid + '</span>' +
-                tokenDisplay +
+            '<div class="flex items-center justify-between px-3 py-2.5 cursor-pointer bg-cf-dark rounded-t-lg" onclick="toggleAccountExpand(\\'' + escAttr(aid) + '\\')">' +
+              '<div class="flex items-center gap-3">' +
+                '<svg id="acct-chev-' + escAttr(aid) + '" class="w-4 h-4 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' +
+                '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(a.account_label || 'Untitled') + '</span>' +
+                '<span class="text-xs text-cf-gray font-mono">' + aid + '</span>' +
+                tokenBadge +
                 defBadge +
               '</div>' +
-              '<div class="flex gap-1" onclick="event.stopPropagation()">' +
-                (a.is_default ? '' : '<button onclick="setDefault(' + a.id + ')" class="text-[10px] text-cf-gray hover:text-cf-orange px-1.5 py-0.5 border border-cf-border rounded hover:border-cf-orange">Set Default</button>') +
-                '<button onclick="deleteAccount(' + a.id + ')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400">Delete</button>' +
+              '<div class="flex gap-2" onclick="event.stopPropagation()">' +
+                (a.is_default ? '' : '<button onclick="setDefault(' + a.id + ')" class="text-xs text-cf-gray hover:text-cf-orange">Set Default</button>') +
+                '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-xs text-cf-gray hover:text-cf-orange">Edit</button>' +
+                '<button onclick="deleteAccount(' + a.id + ')" class="text-xs text-cf-gray hover:text-red-400">Delete</button>' +
               '</div>' +
             '</div>' +
             // Expandable edit section
-            '<div id="acct-expand-' + escAttr(aid) + '" class="hidden border-t border-cf-border p-3">' +
+            '<div id="acct-expand-' + escAttr(aid) + '" class="hidden border-t border-cf-border p-4">' +
               // API Token
-              '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Cloudflare API Token</label>' +
+              '<div class="pb-3">' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Cloudflare API Token</label>' +
                 // Display row
-                '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2 rounded border border-cf-border text-[10px]">' +
+                '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2.5 rounded-lg border border-cf-border text-xs">' +
                   '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
-                  (a.api_token ? '<span class="font-mono">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid">No token set</span>') +
-                  '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Validate</button>' +
-                  '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>' +
-                  '<button onclick="deleteAccountToken(' + a.id + ',\\'' + escAttr(aid) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>' +
+                  (a.api_token ? '<span class="font-mono text-cf-gray">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid">No token set</span>') +
+                  '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>' +
+                  '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>' +
+                  '<button onclick="deleteAccountToken(' + a.id + ',\\'' + escAttr(aid) + '\\')" class="text-red-400 hover:text-red-300 text-xs ml-1">Delete</button>' +
                 '</div>' +
-                '<div id="acct-token-test-result-' + escAttr(aid) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>' +
+                '<div id="acct-token-test-result-' + escAttr(aid) + '" class="flex items-center flex-wrap gap-1 text-xs mt-1"></div>' +
                 '<div id="acct-token-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
                 // Edit row (hidden)
-                '<div id="acct-token-edit-' + escAttr(aid) + '" class="hidden p-2 rounded border border-cf-orange mt-1" style="background:var(--input-bg)">' +
+                '<div id="acct-token-edit-' + escAttr(aid) + '" class="hidden p-3 rounded-lg border border-cf-orange mt-2" style="background:var(--input-bg)">' +
                   '<div class="flex gap-2 items-end flex-wrap">' +
-                    '<div class="flex-1"><label class="block text-[10px] text-cf-gray">New API Token</label><input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token" class="w-full px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white font-mono focus:border-cf-orange focus:outline-none"></div>' +
-                    '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>' +
-                    '<button onclick="cancelEditAccountToken(\\'' + escAttr(aid) + '\\')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>' +
+                    '<div class="flex-1"><label class="block text-xs text-cf-gray mb-1">New API Token</label><input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none"></div>' +
+                    '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>' +
+                    '<button onclick="cancelEditAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange">Cancel</button>' +
                   '</div>' +
                 '</div>' +
               '</div>' +
               // API Rate Limit
-              '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API rate limit <span class="font-normal">(requests / 5 min &mdash; used to pace the Radar advertisement poller)</span>${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>' +
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">API rate limit <span class="font-normal text-cf-gray">(requests / 5 min &mdash; used to pace the Radar advertisement poller)</span>${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>' +
                 '<div class="flex gap-2">' +
-                  '<input id="acct-rl-' + escAttr(aid) + '" type="number" min="1" value="' + (a.api_rate_limit_5min || 1200) + '" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
-                  '<button onclick="updateAccountRateLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-[10px] font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
+                  '<input id="acct-rl-' + escAttr(aid) + '" type="number" min="1" value="' + (a.api_rate_limit_5min || 1200) + '" class="w-40 px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="updateAccountRateLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
                 '</div>' +
                 '<div id="acct-rl-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
               // Notifications
-              '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">Notifications <span class="font-normal">(channels &amp; per-event subscriptions for this account)</span></label>' +
-                '<div id="acct-notif-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">Notifications <span class="font-normal text-cf-gray">(channels &amp; per-event subscriptions for this account)</span></label>' +
+                '<div id="acct-notif-' + escAttr(aid) + '" class="text-xs text-cf-gray">Loading...</div>' +
               '</div>' +
               // RIR API Keys
-              '<div class="mb-3">' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">RIR API Keys <span class="font-normal">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
-                '<div id="acct-rir-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">RIR API Keys <span class="font-normal text-cf-gray">(optional &mdash; for automated IRR record creation at ARIN / RIPE)</span></label>' +
+                '<div id="acct-rir-' + escAttr(aid) + '" class="text-xs text-cf-gray">Loading...</div>' +
               '</div>' +
               // API Access & Integrations
-              '<div>' +
-                '<label class="block text-[10px] text-cf-gray mb-1 font-semibold">API Access &amp; Integrations <span class="font-normal">(read-only Query API keys &amp; inbound Cloudflare webhooks)</span></label>' +
-                '<div id="acct-integrations-' + escAttr(aid) + '" class="text-[10px] text-cf-gray">Loading...</div>' +
+              '<div class="border-t border-cf-border pt-3">' +
+                '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">API Access &amp; Integrations <span class="font-normal text-cf-gray">(read-only Query API keys &amp; inbound Cloudflare webhooks)</span></label>' +
+                '<div id="acct-integrations-' + escAttr(aid) + '" class="text-xs text-cf-gray">Loading...</div>' +
               '</div>' +
             '</div>' +
           '</div>';
@@ -1396,7 +1436,7 @@ export function renderDashboard(userEmail: string): string {
         ]);
         renderAccountIntegrations(accountId, results[0].keys || [], results[1].webhooks || [], results[2] || {});
       } catch (e) {
-        el.innerHTML = '<p class="text-[10px] text-red-400">Failed to load integrations.</p>';
+        el.innerHTML = '<p class="text-xs text-red-400">Failed to load integrations.</p>';
       }
     }
 
@@ -1411,92 +1451,128 @@ export function renderDashboard(userEmail: string): string {
       html += '<div id="intg-secret-' + aid + '" class="mb-2"></div>';
 
       // ── API keys (Query API) ──
-      html += '<div class="mb-3">';
-      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Query API keys</div>';
+      html += '<div class="mb-4">';
+      html += '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-xs font-semibold text-cf-gray">Query API keys</span>' +
+        '<button onclick="showApiKeyForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Create Key</button>' +
+      '</div>';
       html += '<div class="space-y-1 mb-2">';
       if (keys.length === 0) {
-        html += '<div class="text-[10px] text-cf-gray">No API keys yet.</div>';
+        html += '<div class="text-xs text-cf-gray">No API keys yet.</div>';
       } else {
         keys.forEach(function(k) {
           var used = k.last_used_at ? ('last used ' + escHtml(k.last_used_at)) : 'never used';
-          html += '<div class="flex items-center justify-between gap-2 px-2 py-1 rounded border border-cf-border">' +
+          html += '<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-cf-border text-xs">' +
             '<div class="min-w-0">' +
               '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(k.name) + '</span> ' +
               '<span class="font-mono text-cf-gray">' + escHtml(k.key_prefix) + '&hellip;</span> ' +
               '<span class="text-cf-gray">(' + used + ')</span>' +
             '</div>' +
-            '<button onclick="deleteAccountApiKey(' + k.id + ', \\'' + aid + '\\')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400 shrink-0">Revoke</button>' +
+            '<button onclick="deleteAccountApiKey(' + k.id + ', \\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400">Revoke</button>' +
           '</div>';
         });
       }
       html += '</div>';
-      html += '<div class="flex gap-2">' +
-        '<input id="intg-key-name-' + aid + '" type="text" placeholder="Key name (e.g. monitoring)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-[11px] text-white focus:border-cf-orange focus:outline-none">' +
-        '<button onclick="createAccountApiKey(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition shrink-0">Create Key</button>' +
+      // Hidden create key form
+      html += '<div id="intg-key-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Key Name</label>' +
+        '<input id="intg-key-name-' + aid + '" type="text" placeholder="Key name (e.g. monitoring)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
+      html += '<div class="flex gap-2 items-center">' +
+        '<button onclick="createAccountApiKey(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Key</button>' +
+        '<button onclick="hideApiKeyForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
       '</div>';
+      html += '</div>';
       html += '</div>';
 
       // ── Inbound webhooks ──
-      html += '<div>';
-      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Inbound Cloudflare webhooks</div>';
-      html += '<div class="text-[10px] text-cf-gray mb-1">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span></div>';
+      html += '<div class="mb-4 pt-3 border-t border-cf-border">';
+      html += '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-xs font-semibold text-cf-gray">Inbound Cloudflare webhooks</span>' +
+        '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Create Secret</button>' +
+      '</div>';
+      html += '<div class="text-xs text-cf-gray mb-2">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span></div>';
       html += '<div class="space-y-1 mb-2">';
       if (webhooks.length === 0) {
-        html += '<div class="text-[10px] text-cf-gray">No webhook secrets yet.</div>';
+        html += '<div class="text-xs text-cf-gray">No webhook secrets yet.</div>';
       } else {
         webhooks.forEach(function(w) {
           var seen = w.last_seen_at ? ('last seen ' + escHtml(w.last_seen_at)) : 'never received';
-          html += '<div class="flex items-center justify-between gap-2 px-2 py-1 rounded border border-cf-border">' +
+          html += '<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-cf-border text-xs">' +
             '<div class="min-w-0">' +
               '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(w.name) + '</span> ' +
               '<span class="text-cf-gray">(' + seen + ')</span>' +
             '</div>' +
-            '<button onclick="deleteAccountWebhook(' + w.id + ', \\'' + aid + '\\')" class="text-[10px] text-red-400 hover:text-red-300 px-1.5 py-0.5 border border-cf-border rounded hover:border-red-400 shrink-0">Revoke</button>' +
+            '<button onclick="deleteAccountWebhook(' + w.id + ', \\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400">Revoke</button>' +
           '</div>';
         });
       }
       html += '</div>';
-      html += '<div class="flex gap-2">' +
-        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="Webhook name (e.g. network-flow)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-[11px] text-white focus:border-cf-orange focus:outline-none">' +
-        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition shrink-0">Create Secret</button>' +
+      // Hidden create webhook form
+      html += '<div id="intg-wh-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Webhook Name</label>' +
+        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="Webhook name (e.g. network-flow)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
+      html += '<div class="flex gap-2 items-center">' +
+        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Secret</button>' +
+        '<button onclick="hideWebhookForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
       '</div>';
+      html += '</div>';
       html += '</div>';
 
       // ── Audit log streaming (Logpush) ──
-      html += '<div class="mt-3 pt-3 border-t border-cf-border">';
-      html += '<div class="text-[10px] font-semibold text-cf-gray mb-1">Audit log streaming (Logpush)</div>';
-      html += '<div class="text-[10px] text-cf-gray mb-2">Streams the account\\'s Audit Logs v2 to this tool so the Activity panel loads instantly instead of polling the API. Requires an Enterprise plan and a token with <span class="font-mono">Logs Write</span>.</div>';
+      html += '<div class="pt-3 border-t border-cf-border">';
+      html += '<div class="text-xs font-semibold text-cf-gray mb-1">Audit log streaming (Logpush)</div>';
+      html += '<div class="text-xs text-cf-gray mb-2">Streams the account\\'s Audit Logs v2 to this tool so the Activity panel loads instantly instead of polling the API. Requires an Enterprise plan and a token with <span class="font-mono">Logs Write</span>.</div>';
       var jobs = (logpush && logpush.jobs) || [];
       if (jobs.length) {
         jobs.forEach(function(j) {
           var state = j.enabled ? 'enabled' : 'disabled';
           var err = j.last_error || j.error_message;
-          html += '<div class="px-2 py-1 rounded border border-cf-border mb-2 text-[10px]">' +
+          html += '<div class="px-3 py-2 rounded-lg border border-cf-border mb-2 text-xs">' +
             '<span style="color:var(--text-strong)" class="font-medium">Job #' + escHtml(String(j.id)) + '</span> ' +
             '<span class="text-cf-gray">(' + escHtml(state) + ')</span>' +
             (err ? '<div class="text-red-400 mt-0.5">' + escHtml(String(err)) + '</div>' : '') +
           '</div>';
         });
       } else if (logpush && logpush.error) {
-        html += '<div class="text-[10px] text-red-500 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
+        html += '<div class="text-xs text-red-500 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
       } else {
-        html += '<div class="text-[10px] text-cf-gray mb-2">No audit-log Logpush job configured yet.</div>';
+        html += '<div class="text-xs text-cf-gray mb-2">No audit-log Logpush job configured yet.</div>';
       }
-      html += '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-[10px] font-medium rounded-lg hover:bg-orange-600 transition">Enable audit log streaming</button>';
+      html += '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Enable audit log streaming</button>';
       html += '</div>';
 
       el.innerHTML = html;
+    }
+
+    function showApiKeyForm(accountId) {
+      var f = document.getElementById('intg-key-form-' + accountId);
+      if (f) f.classList.remove('hidden');
+    }
+
+    function hideApiKeyForm(accountId) {
+      var f = document.getElementById('intg-key-form-' + accountId);
+      if (f) f.classList.add('hidden');
+    }
+
+    function showWebhookForm(accountId) {
+      var f = document.getElementById('intg-wh-form-' + accountId);
+      if (f) f.classList.remove('hidden');
+    }
+
+    function hideWebhookForm(accountId) {
+      var f = document.getElementById('intg-wh-form-' + accountId);
+      if (f) f.classList.add('hidden');
     }
 
     // Show a generated secret exactly once (it cannot be retrieved again).
     function showIntegrationSecret(accountId, label, value) {
       var el = document.getElementById('intg-secret-' + accountId);
       if (!el) return;
-      el.innerHTML = '<div class="px-2 py-2 rounded border border-cf-orange" style="background:rgba(246,130,31,0.08)">' +
-        '<div class="text-[10px] font-semibold mb-1" style="color:var(--text-strong)">' + escHtml(label) + ' &mdash; copy it now, it will not be shown again</div>' +
+      el.innerHTML = '<div class="px-3 py-2.5 rounded-lg border border-cf-orange" style="background:rgba(246,130,31,0.08)">' +
+        '<div class="text-xs font-semibold mb-1" style="color:var(--text-strong)">' + escHtml(label) + ' &mdash; copy it now, it will not be shown again</div>' +
         '<div class="flex items-center gap-2">' +
-          '<code class="flex-1 font-mono text-[11px] break-all" style="color:var(--text-strong)">' + escHtml(value) + '</code>' +
-          '<button onclick="navigator.clipboard && navigator.clipboard.writeText(\\'' + escAttr(value) + '\\')" class="px-2 py-1 text-[10px] border border-cf-border rounded hover:border-cf-orange hover:text-cf-orange shrink-0">Copy</button>' +
+          '<code class="flex-1 font-mono text-sm break-all" style="color:var(--text-strong)">' + escHtml(value) + '</code>' +
+          '<button onclick="navigator.clipboard && navigator.clipboard.writeText(\\'' + escAttr(value) + '\\')" class="px-3 py-1 text-xs border border-cf-border rounded-lg hover:border-cf-orange hover:text-cf-orange shrink-0">Copy</button>' +
           '<span class="inline-msg-close" onclick="this.parentNode.parentNode.parentNode.innerHTML=\\'\\'" role="button" aria-label="Dismiss">&times;</span>' +
         '</div>' +
       '</div>';
@@ -1598,37 +1674,49 @@ export function renderDashboard(userEmail: string): string {
       // Inline status message area
       html += '<div id="notif-msg-' + aid + '" class="mb-2"></div>';
 
+      // Notification channels header + add button
+      html += '<div class="flex items-center justify-between mb-2">' +
+        '<span class="text-xs font-semibold text-cf-gray">Notification Channels</span>' +
+        '<button onclick="showNotifChannelForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Add Channel</button>' +
+      '</div>';
+
       // Existing channels
       html += '<div class="space-y-1 mb-2">';
       if (channels.length === 0) {
-        html += '<div class="text-cf-gray">No channels yet.</div>';
+        html += '<div class="text-xs text-cf-gray">No channels configured.</div>';
       } else {
         channels.forEach(function(ch) {
           var cfg = ch.config || {};
           var target = cfg.email || cfg.url || cfg.routing_key || '';
-          html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border">' +
-            '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(ch.type) + '</span>' +
-            '<span>' + escHtml(ch.name) + '</span>' +
-            '<span class="text-cf-gray font-mono">' + escHtml(target) + '</span>' +
+          var typeBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-900 text-blue-300 uppercase font-semibold">' + escHtml(ch.type) + '</span>';
+          html += '<div class="flex items-center gap-3 px-3 py-2 rounded-lg border border-cf-border">' +
+            typeBadge +
+            '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(ch.name) + '</span>' +
+            '<span class="text-xs text-cf-gray font-mono">' + escHtml(target) + '</span>' +
             (ch.enabled ? '' : '<span class="badge-invalid">disabled</span>') +
-            '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="ml-auto text-blue-400 hover:text-blue-300">Test</button>' +
-            '<button onclick="deleteNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="text-red-400 hover:text-red-300">Delete</button>' +
+            '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="ml-auto text-cf-orange hover:underline text-xs">Test</button>' +
+            '<button onclick="deleteNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400">Delete</button>' +
           '</div>';
         });
       }
       html += '</div>';
 
-      // Add channel form
-      html += '<div class="flex gap-2 items-end flex-wrap mb-3">' +
-        '<div><label class="block text-cf-gray">Type</label>' +
-          '<select id="notif-type-' + aid + '" onchange="onNotifTypeChange(\\'' + aid + '\\')" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white">' +
+      // Add channel form (hidden by default)
+      html += '<div id="notif-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2 mb-3">';
+      html += '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Type</label>' +
+          '<select id="notif-type-' + aid + '" onchange="onNotifTypeChange(\\'' + aid + '\\')" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white">' +
             '<option value="email">Email</option><option value="webhook">Webhook</option><option value="pagerduty">PagerDuty</option>' +
-          '</select></div>' +
-        '<div><label class="block text-cf-gray">Name</label><input id="notif-name-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-40" placeholder="Label"></div>' +
-        '<div id="notif-f1-wrap-' + aid + '"><label class="block text-cf-gray" id="notif-f1-label-' + aid + '">Email address</label><input id="notif-f1-' + aid + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-48" placeholder="alerts@example.com"></div>' +
-        '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-cf-gray">Token (optional)</label><input id="notif-f2-' + aid + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-white w-40" placeholder="Bearer token"></div>' +
-        '<button onclick="addNotifChannel(\\'' + aid + '\\')" class="px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Add channel</button>' +
+          '</select></div>';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Name</label><input id="notif-name-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Label"></div>';
+      html += '<div id="notif-f1-wrap-' + aid + '"><label class="block text-xs font-medium text-cf-gray mb-1" id="notif-f1-label-' + aid + '">Email address</label><input id="notif-f1-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="alerts@example.com"></div>';
+      html += '</div>';
+      html += '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-xs font-medium text-cf-gray mb-1">Token (optional)</label><input id="notif-f2-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token"></div>';
+      html += '<div class="flex gap-2 items-center">' +
+        '<button onclick="addNotifChannel(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save Channel</button>' +
+        '<button onclick="hideNotifChannelForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
       '</div>';
+      html += '</div>';
 
       // Subscriptions matrix
       var subMap = {};
@@ -1637,29 +1725,29 @@ export function renderDashboard(userEmail: string): string {
       var subsCollapsed = configuredCount > 0;
       html += '<div class="flex items-center gap-1 cursor-pointer mb-1" onclick="toggleNotifSubs(\\'' + aid + '\\')">' +
         '<span id="notif-subs-chev-' + aid + '" class="chevron text-cf-gray text-xs' + (subsCollapsed ? '' : ' open') + '">&#9654;</span>' +
-        '<span class="font-semibold text-cf-gray">Event subscriptions</span>' +
-        (configuredCount > 0 ? '<span class="text-cf-gray font-normal ml-1">(' + configuredCount + ' configured)</span>' : '') +
+        '<span class="text-xs font-semibold text-cf-gray">Event subscriptions</span>' +
+        (configuredCount > 0 ? '<span class="text-xs text-cf-gray font-normal ml-1">(' + configuredCount + ' configured)</span>' : '') +
       '</div>';
       html += '<div id="notif-subs-body-' + aid + '"' + (subsCollapsed ? ' class="hidden"' : '') + '>';
       if (channels.length === 0) {
-        html += '<div class="text-cf-gray">Add a channel to subscribe to events.</div>';
+        html += '<div class="text-xs text-cf-gray">Add a channel to subscribe to events.</div>';
       } else {
         html += '<div class="space-y-1">';
         Object.keys(events).forEach(function(evt) {
           var sub = subMap[evt] || { channel_ids: [], enabled: true };
           var chBoxes = channels.map(function(ch) {
             var checked = (sub.channel_ids || []).indexOf(ch.id) !== -1 ? ' checked' : '';
-            return '<label class="inline-flex items-center gap-1 mr-2">' +
+            return '<label class="inline-flex items-center gap-1 mr-2 text-xs">' +
               '<input type="checkbox" data-evt="' + escAttr(evt) + '" data-ch="' + ch.id + '" class="notif-sub-' + aid + '"' + checked + '>' +
               '<span>' + escHtml(ch.name || ch.type) + '</span></label>';
           }).join('');
-          html += '<div class="flex items-start gap-2 p-1.5 rounded border border-cf-border">' +
-            '<span style="min-width:180px;color:var(--text-strong)">' + escHtml(events[evt]) + '</span>' +
+          html += '<div class="flex items-start gap-2 p-2 rounded-lg border border-cf-border text-xs">' +
+            '<span class="font-medium" style="min-width:180px;color:var(--text-strong)">' + escHtml(events[evt]) + '</span>' +
             '<div class="flex flex-wrap">' + chBoxes + '</div>' +
           '</div>';
         });
         html += '</div>';
-        html += '<button onclick="saveNotifSubs(\\'' + aid + '\\')" class="mt-2 px-2 py-1 bg-cf-orange text-white font-medium rounded hover:bg-orange-600">Save subscriptions</button>';
+        html += '<button onclick="saveNotifSubs(\\'' + aid + '\\')" class="mt-2 px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save subscriptions</button>';
       }
       html += '</div>';
 
@@ -1749,6 +1837,26 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    function showNotifChannelForm(accountId) {
+      var f = document.getElementById('notif-form-' + accountId);
+      if (f) f.classList.remove('hidden');
+    }
+
+    function hideNotifChannelForm(accountId) {
+      var f = document.getElementById('notif-form-' + accountId);
+      if (f) f.classList.add('hidden');
+    }
+
+    function showRirForm(accountId) {
+      var f = document.getElementById('rir-form-' + accountId);
+      if (f) f.classList.remove('hidden');
+    }
+
+    function hideRirForm(accountId) {
+      var f = document.getElementById('rir-form-' + accountId);
+      if (f) f.classList.add('hidden');
+    }
+
     async function loadAccountRirCredentials(accountId) {
       var el = document.getElementById('acct-rir-' + accountId);
       if (!el) return;
@@ -1757,6 +1865,13 @@ export function renderDashboard(userEmail: string): string {
         var data = await r.json();
         var creds = data.credentials || [];
         var html = '';
+        var aid = escAttr(accountId);
+
+        // Header with + Add Key button
+        html += '<div class="flex items-center justify-between mb-2">' +
+          '<span class="text-xs font-semibold text-cf-gray">Saved Keys</span>' +
+          '<button onclick="showRirForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Add Key</button>' +
+        '</div>';
 
         // Show existing credentials
         if (creds.length > 0) {
@@ -1765,45 +1880,52 @@ export function renderDashboard(userEmail: string): string {
             var credRowId = 'rir-cred-row-' + c.id;
             html += '<div id="' + credRowId + '">';
             // Display row
-            html += '<div id="' + credRowId + '-display" class="flex items-center gap-3 p-2 rounded border border-cf-border">';
+            html += '<div id="' + credRowId + '-display" class="flex items-center gap-3 px-3 py-2 rounded-lg border border-cf-border text-xs">';
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
-            html += '<span class="font-mono">' + escHtml(c.api_key) + '</span>';
+            html += '<span class="font-mono text-cf-gray">' + escHtml(c.api_key) + '</span>';
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
-            html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-[10px]">Validate</button>';
-            html += '<button onclick="editRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-[10px] ml-1">Edit</button>';
-            html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\')" class="text-red-400 hover:text-red-300 text-[10px] ml-1">Delete</button>';
+            html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>';
+            html += '<button onclick="editRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>';
+            html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + aid + '\\')" class="text-red-400 hover:text-red-300 text-xs ml-1">Delete</button>';
             html += '</div>';
-            html += '<div id="rir-cred-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1 px-2"></div>';
+            html += '<div id="rir-cred-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-xs mt-1 px-2"></div>';
             // Edit row (hidden)
-            html += '<div id="' + credRowId + '-edit" class="hidden p-2 rounded border border-cf-orange" style="background:var(--input-bg)">';
+            html += '<div id="' + credRowId + '-edit" class="hidden p-3 rounded-lg border border-cf-orange mt-1" style="background:var(--input-bg)">';
             html += '<div class="flex gap-2 items-end flex-wrap">';
-            html += '<div><label class="block text-[10px] text-cf-gray">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
-            html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
-            html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
-            html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-blue-500 text-blue-400 text-[10px] font-medium rounded hover:bg-blue-500 hover:text-white transition">Validate</button>';
-            html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + escAttr(accountId) + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
-            html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-2 py-1 border border-cf-border text-cf-gray text-[10px] font-medium rounded hover:border-cf-orange">Cancel</button>';
+            html += '<div><label class="block text-xs text-cf-gray mb-1">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
+            html += '<div><label class="block text-xs text-cf-gray mb-1">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
+            html += '<div><label class="block text-xs text-cf-gray mb-1">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-32" placeholder="e.g. DC-403"></div>';
+            html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
+            html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>';
+            html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange">Cancel</button>';
             html += '</div>';
-            html += '<div id="rir-edit-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>';
+            html += '<div id="rir-edit-validate-result-' + c.id + '" class="flex items-center flex-wrap gap-1 text-xs mt-1"></div>';
             html += '</div>';
             html += '</div>';
           });
           html += '</div>';
+        } else {
+          html += '<div class="text-xs text-cf-gray mb-2">No RIR API keys yet.</div>';
         }
 
-        // Add new credential form
-        html += '<div class="flex gap-2 items-end flex-wrap">';
-        html += '<div><label class="block text-[10px] text-cf-gray">RIR</label><select id="acct-rir-sel-' + escAttr(accountId) + '" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="acct-rir-key-' + escAttr(accountId) + '" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="acct-rir-mnt-' + escAttr(accountId) + '" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-32" placeholder="e.g. DC-403"></div>';
-        html += '<button onclick="validateRirCredentialInput(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 border border-blue-500 text-blue-400 text-[10px] font-medium rounded hover:bg-blue-500 hover:text-white transition">Validate</button>';
-        html += '<button onclick="saveAccountRirCredential(\\'' + escAttr(accountId) + '\\')" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Save</button>';
+        // Add new credential form (hidden by default)
+        html += '<div id="rir-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
+        html += '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">';
+        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">RIR</label><select id="acct-rir-sel-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
+        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">API Key</label><input id="acct-rir-key-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="API key"></div>';
+        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Org ID</label><input id="acct-rir-mnt-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="e.g. DC-403"></div>';
         html += '</div>';
-        html += '<div id="acct-rir-validate-result-' + escAttr(accountId) + '" class="flex items-center flex-wrap gap-1 text-[10px] mt-1"></div>';
+        html += '<div class="flex gap-2 items-center">';
+        html += '<button onclick="validateRirCredentialInput(\\'' + aid + '\\')" class="px-3 py-1 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
+        html += '<button onclick="saveAccountRirCredential(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save</button>';
+        html += '<button onclick="hideRirForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>';
+        html += '</div>';
+        html += '<div id="acct-rir-validate-result-' + aid + '" class="flex items-center flex-wrap gap-1 text-xs mt-1"></div>';
+        html += '</div>';
 
         el.innerHTML = html;
       } catch (e) {
-        el.innerHTML = '<span class="text-red-400">Failed to load RIR API keys</span>';
+        el.innerHTML = '<span class="text-xs text-red-400">Failed to load RIR API keys</span>';
       }
     }
 
@@ -2009,13 +2131,8 @@ export function renderDashboard(userEmail: string): string {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined, api_rate_limit_5min: rateLimit })
         });
-        document.getElementById('set-label').value = '';
-        document.getElementById('set-account-id').value = '';
-        document.getElementById('set-api-token').value = '';
-        document.getElementById('set-rate-limit').value = '1200';
-        document.getElementById('test-token-result').innerHTML = '';
         await loadAccounts();
-        showInlineMsg('set-account-msg', 'Account saved.', 'success');
+        hideAccountForm();
       } catch (e) {
         showInlineMsg('set-account-msg', 'Failed to save account: ' + e, 'error');
       }
