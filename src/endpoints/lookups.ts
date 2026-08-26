@@ -234,7 +234,9 @@ export class GetActivity extends OpenAPIRoute {
 
     const localEntries = (rows.results || []).map((r: Record<string, unknown>) => {
       const action = r.action as string;
-      const source = action.startsWith('webhook_') ? 'webhook' as const : 'local' as const;
+      const source = action.startsWith('webhook_') ? 'webhook' as const
+        : action.startsWith('external_') ? 'radar' as const
+        : 'local' as const;
       return {
         source,
         id: r.id as number,

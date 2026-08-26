@@ -1,6 +1,7 @@
 import type { Env } from './types';
 import { listPrefixes, listBgpPrefixes, lookupBgpRoutes } from './api';
 import { enqueueNotification } from './queue';
+import { logActivity } from './helpers';
 import { safeParse } from './notifications-db';
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // Refresh the monitored-CIDR list every 15 min.
@@ -188,6 +189,7 @@ async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: st
     if (recent) return; // Tool-driven change already surfaced inline.
   }
 
+  await logActivity(env.DB, acct.user_email, eventType, details);
   await enqueueNotification(env, {
     user_email: acct.user_email,
     account_id: acct.account_id,

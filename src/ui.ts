@@ -355,7 +355,7 @@ export function renderDashboard(userEmail: string): string {
             </div>
             <div class="arch-lane">
               <div class="arch-lane-title">Event auditing</div>
-              <div class="arch-lane-flow"><span class="arch-lane-step">Tool actions &rarr; D1 activity_log</span> + <span class="arch-lane-step">Cloudflare Audit Logs</span> &rarr; <span class="arch-lane-step">Merged Activity panel</span></div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">Tool actions + Webhooks + Radar poller &rarr; D1 activity_log</span> + <span class="arch-lane-step">Cloudflare Audit Logs</span> &rarr; <span class="arch-lane-step">Merged Activity panel</span></div>
             </div>
             <div class="arch-lane">
               <div class="arch-lane-title">Event notifications</div>
@@ -661,6 +661,7 @@ export function renderDashboard(userEmail: string): string {
             <option value="all">All sources</option>
             <option value="local">Local tool</option>
             <option value="webhook">Webhook</option>
+            <option value="radar">Radar</option>
             <option value="audit">Audit log</option>
           </select>
           <select id="activity-log-action" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogAction(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by action">
@@ -6519,6 +6520,9 @@ export function renderDashboard(userEmail: string): string {
       }
       if (source === 'webhook') {
         return '<span class="al-badge al-badge-green">Webhook</span>';
+      }
+      if (source === 'radar') {
+        return '<span class="al-badge al-badge-yellow">Radar</span>';
       }
       return '<span class="al-badge al-badge-blue">Local</span>';
     }
