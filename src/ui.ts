@@ -4490,9 +4490,9 @@ export function renderDashboard(userEmail: string): string {
       var html = '';
       for (var i = 0; i < loaPrefixRows.length; i++) {
         html += '<div class="flex items-center gap-2">';
-        html += '<input type="text" placeholder="e.g. 192.0.2.0/24" value="' + escAttr(loaPrefixRows[i].prefix) + '" oninput="updateLoaPrefixRow(' + i + ',\'prefix\',this.value)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        html += '<input type="text" placeholder="e.g. 192.0.2.0/24" value="' + escAttr(loaPrefixRows[i].prefix) + '" oninput="updateLoaPrefixRow(' + i + ',\\'prefix\\',this.value)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
         html += '<span class="text-cf-gray text-xs">AS</span>';
-        html += '<input type="number" placeholder="e.g. 13335" value="' + escAttr(loaPrefixRows[i].asn) + '" oninput="updateLoaPrefixRow(' + i + ',\'asn\',this.value)" class="w-28 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        html += '<input type="number" placeholder="e.g. 13335" value="' + escAttr(loaPrefixRows[i].asn) + '" oninput="updateLoaPrefixRow(' + i + ',\\'asn\\',this.value)" class="w-28 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
         if (loaPrefixRows.length > 1) {
           html += '<button type="button" onclick="removeLoaPrefixRow(' + i + ')" class="p-1 text-cf-gray hover:text-red-400 transition" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
         } else {
@@ -4653,7 +4653,7 @@ export function renderDashboard(userEmail: string): string {
               }),
               // Declaration
               new D.Paragraph({
-                children: [new D.TextRun({ text: 'As a representative of the Company that is the owner of the aforementioned IP address blocks / originating ASNs, I hereby declare that I am authorized to sign this LOA on the Company\'s behalf.', font: 'Calibri', size: 22 })],
+                children: [new D.TextRun({ text: 'As a representative of the Company that is the owner of the aforementioned IP address blocks / originating ASNs, I hereby declare that I am authorized to sign this LOA on the Company\\'s behalf.', font: 'Calibri', size: 22 })],
                 spacing: { after: 300 }
               }),
               // Contact
