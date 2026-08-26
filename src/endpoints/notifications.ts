@@ -27,7 +27,7 @@ export async function createChannel(
   if (!CHANNEL_TYPES.includes(type)) return { ok: false, error: 'Invalid channel type' };
   const config = body.config || {};
   if (type === 'webhook' && !config.url) return { ok: false, error: 'Webhook URL required' };
-  if (type === 'pagerduty' && !config.routing_key) return { ok: false, error: 'PagerDuty routing key required' };
+  if (type === 'pagerduty' && !config.integration_key) return { ok: false, error: 'PagerDuty integration key required' };
   if (type === 'email' && !config.email) return { ok: false, error: 'Email address required' };
   const name = (body.name || '').trim() || type;
 
@@ -52,7 +52,7 @@ export async function updateChannel(
     const incoming = { ...body.config };
     const prev = safeParse<Record<string, any>>(existing.config, {});
     // Keep existing secrets when the client sends masked placeholders.
-    if (incoming.routing_key && String(incoming.routing_key).startsWith('••')) incoming.routing_key = prev.routing_key;
+    if (incoming.integration_key && String(incoming.integration_key).startsWith('••')) incoming.integration_key = prev.integration_key;
     if (incoming.token && String(incoming.token).startsWith('••')) incoming.token = prev.token;
     config = JSON.stringify(incoming);
   }

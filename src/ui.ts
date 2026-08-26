@@ -1486,7 +1486,9 @@ export function renderDashboard(userEmail: string): string {
       html += '</div>';
 
       // ── Inbound webhooks ──
-      html += '<div class="mb-4 pt-3 border-t border-cf-border">';
+      var hasLogpush = webhooks.some(function(w) { return w.type === 'logpush'; });
+      var jobs = (logpush && logpush.jobs) || [];
+      html += '<div class="pt-3 border-t border-cf-border">';
       html += '<div class="flex items-center justify-between mb-2">' +
         '<span class="text-xs font-semibold text-cf-gray">Inbound Cloudflare webhooks</span>' +
         '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Create Secret</button>' +
@@ -1498,48 +1500,52 @@ export function renderDashboard(userEmail: string): string {
       } else {
         webhooks.forEach(function(w) {
           var seen = w.last_seen_at ? ('last seen ' + escHtml(w.last_seen_at)) : 'never received';
+          var typeBadge = w.type === 'logpush'
+            ? '<span class="al-badge al-badge-yellow" style="font-size:0.6rem;padding:1px 6px">Logpush</span> '
+            : '<span class="al-badge al-badge-blue" style="font-size:0.6rem;padding:1px 6px">Notification</span> ';
+          var jobInfo = '';
+          if (w.type === 'logpush' && jobs.length) {
+            jobs.forEach(function(j) {
+              var state = j.enabled ? 'enabled' : 'disabled';
+              var err = j.last_error || j.error_message;
+              jobInfo += ' <span class="text-cf-gray">&middot; Job #' + escHtml(String(j.id)) + ' (' + escHtml(state) + ')</span>';
+              if (err) jobInfo += ' <span class="text-red-400">' + escHtml(String(err)) + '</span>';
+            });
+          } else if (w.type === 'logpush' && logpush && logpush.error) {
+            jobInfo += ' <span class="text-red-400">&middot; ' + escHtml(logpush.error) + '</span>';
+          }
+          var action = w.type === 'logpush'
+            ? '<button onclick="disableAccountLogpush(\\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400 shrink-0">Disable</button>'
+            : '<button onclick="deleteAccountWebhook(' + w.id + ', \\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400 shrink-0">Revoke</button>';
           html += '<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-cf-border text-xs">' +
             '<div class="min-w-0">' +
+              typeBadge +
               '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(w.name) + '</span> ' +
               '<span class="text-cf-gray">(' + seen + ')</span>' +
+              jobInfo +
             '</div>' +
-            '<button onclick="deleteAccountWebhook(' + w.id + ', \\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400">Revoke</button>' +
+            action +
           '</div>';
         });
       }
       html += '</div>';
       // Hidden create webhook form
       html += '<div id="intg-wh-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
+      html += '<div class="grid grid-cols-2 gap-2">';
       html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Webhook Name</label>' +
-        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="Webhook name (e.g. network-flow)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
+        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="e.g. network-flow" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Type</label>' +
+        '<select id="intg-wh-type-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+        '<option value="notification">Notification</option>' +
+        (hasLogpush ? '' : '<option value="logpush">Logpush (Audit Logs)</option>') +
+        '</select></div>';
+      html += '</div>';
+      html += '<div class="text-[10px] text-cf-gray"><strong>Notification:</strong> receives network-flow messages (auto-advertisement, prefix state changes). <strong>Logpush:</strong> streams Audit Logs v2 so the Activity panel loads instantly (Enterprise, requires Logs Write).</div>';
       html += '<div class="flex gap-2 items-center">' +
         '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Secret</button>' +
         '<button onclick="hideWebhookForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
       '</div>';
       html += '</div>';
-      html += '</div>';
-
-      // ── Audit log streaming (Logpush) ──
-      html += '<div class="pt-3 border-t border-cf-border">';
-      html += '<div class="text-xs font-semibold text-cf-gray mb-1">Audit log streaming (Logpush)</div>';
-      html += '<div class="text-xs text-cf-gray mb-2">Streams the account\\'s Audit Logs v2 to this tool so the Activity panel loads instantly instead of polling the API. Requires an Enterprise plan and a token with <span class="font-mono">Logs Write</span>.</div>';
-      var jobs = (logpush && logpush.jobs) || [];
-      if (jobs.length) {
-        jobs.forEach(function(j) {
-          var state = j.enabled ? 'enabled' : 'disabled';
-          var err = j.last_error || j.error_message;
-          html += '<div class="px-3 py-2 rounded-lg border border-cf-border mb-2 text-xs">' +
-            '<span style="color:var(--text-strong)" class="font-medium">Job #' + escHtml(String(j.id)) + '</span> ' +
-            '<span class="text-cf-gray">(' + escHtml(state) + ')</span>' +
-            (err ? '<div class="text-red-400 mt-0.5">' + escHtml(String(err)) + '</div>' : '') +
-          '</div>';
-        });
-      } else if (logpush && logpush.error) {
-        html += '<div class="text-xs text-red-500 mb-2">Status unavailable: ' + escHtml(logpush.error) + '</div>';
-      } else {
-        html += '<div class="text-xs text-cf-gray mb-2">No audit-log Logpush job configured yet.</div>';
-      }
-      html += '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Enable audit log streaming</button>';
       html += '</div>';
 
       el.innerHTML = html;
@@ -1606,18 +1612,46 @@ export function renderDashboard(userEmail: string): string {
 
     async function createAccountWebhook(accountId) {
       var input = document.getElementById('intg-wh-name-' + accountId);
+      var typeSel = document.getElementById('intg-wh-type-' + accountId);
       var name = input ? input.value.trim() : '';
-      var resp = await fetch('/api/integrations/webhooks', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, name: name })
-      });
-      var d = await resp.json();
-      if (resp.ok && d.ok) {
-        if (input) input.value = '';
-        await loadAccountIntegrations(accountId);
-        showIntegrationSecret(accountId, 'Webhook secret (paste into cf-webhook-auth / Cloudflare secret field)', d.secret);
+      var whType = typeSel ? typeSel.value : 'notification';
+
+      if (whType === 'logpush') {
+        // Logpush path: enable audit log streaming
+        if (!name) name = 'Audit Logs (Logpush)';
+        showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
+        var resp = await fetch('/api/integrations/logpush', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId })
+        });
+        var d = await resp.json();
+        if (resp.ok && d.ok && d.auto) {
+          if (input) input.value = '';
+          await loadAccountIntegrations(accountId);
+          showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
+          if (d.secret) showIntegrationSecret(accountId, 'Logpush webhook secret', d.secret);
+        } else if (resp.ok && d.ok) {
+          if (input) input.value = '';
+          await loadAccountIntegrations(accountId);
+          showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
+          if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
+        } else {
+          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
+        }
       } else {
-        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to create webhook secret', 'error');
+        // Normal notification webhook
+        var resp = await fetch('/api/integrations/webhooks', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId, name: name })
+        });
+        var d = await resp.json();
+        if (resp.ok && d.ok) {
+          if (input) input.value = '';
+          await loadAccountIntegrations(accountId);
+          showIntegrationSecret(accountId, 'Webhook secret (paste into cf-webhook-auth / Cloudflare secret field)', d.secret);
+        } else {
+          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to create webhook secret', 'error');
+        }
       }
     }
 
@@ -1629,24 +1663,21 @@ export function renderDashboard(userEmail: string): string {
       } });
     }
 
-    async function enableAccountLogpush(accountId) {
-      showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
-      var resp = await fetch('/api/integrations/logpush', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId })
-      });
-      var d = await resp.json();
-      if (resp.ok && d.ok && d.auto) {
-        await loadAccountIntegrations(accountId);
-        showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
-      } else if (resp.ok && d.ok) {
-        // Auto-create failed — surface the error and the manual-setup details.
-        await loadAccountIntegrations(accountId);
-        showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
-        if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
-      } else {
-        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
-      }
+    async function disableAccountLogpush(accountId) {
+      showConfirm({ title: 'Disable audit log streaming', message: 'Disable audit log streaming? The Logpush job and its webhook secret will be deleted.', confirmLabel: 'Disable', danger: true, onConfirm: async function() {
+        showInlineMsg('intg-msg-' + accountId, 'Disabling audit log streaming…', 'success');
+        var resp = await fetch('/api/integrations/logpush', {
+          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId })
+        });
+        var d = await resp.json();
+        if (resp.ok && d.ok) {
+          await loadAccountIntegrations(accountId);
+          showInlineMsg('intg-msg-' + accountId, 'Audit log streaming disabled.', 'success');
+        } else {
+          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to disable audit log streaming', 'error');
+        }
+      } });
     }
 
     // ─── Per-account Notifications ────────────────────────────────
@@ -1688,11 +1719,17 @@ export function renderDashboard(userEmail: string): string {
       } else {
         channels.forEach(function(ch) {
           var cfg = ch.config || {};
-          var target = cfg.email || cfg.url || cfg.routing_key || '';
+          var target = cfg.email || cfg.url || cfg.integration_key || '';
           var typeBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-900 text-blue-300 uppercase font-semibold">' + escHtml(ch.type) + '</span>';
           html += '<div class="flex items-center gap-3 px-3 py-2 rounded-lg border border-cf-border">' +
             typeBadge +
-            '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(ch.name) + '</span>' +
+            '<span id="ch-name-display-' + ch.id + '" class="inline-flex items-center gap-1">' +
+              '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(ch.name) + '</span>' +
+              '<button onclick="event.stopPropagation();startEditChannelName(' + ch.id + ',\\'' + escAttr(ch.name) + '\\',\\'' + aid + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit name"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+            '</span>' +
+            '<span id="ch-name-edit-' + ch.id + '" class="hidden">' +
+              '<input type="text" value="' + escAttr(ch.name) + '" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-32" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveChannelName(' + ch.id + ',this.value,\\'' + aid + '\\')}else if(event.key===\\'Escape\\'){cancelEditChannelName(' + ch.id + ')}" onblur="saveChannelName(' + ch.id + ',this.value,\\'' + aid + '\\')">' +
+            '</span>' +
             '<span class="text-xs text-cf-gray font-mono">' + escHtml(target) + '</span>' +
             (ch.enabled ? '' : '<span class="badge-invalid">disabled</span>') +
             '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="ml-auto text-cf-orange hover:underline text-xs">Test</button>' +
@@ -1762,7 +1799,7 @@ export function renderDashboard(userEmail: string): string {
       var f2wrap = document.getElementById('notif-f2-wrap-' + accountId);
       if (t === 'email') { f1label.textContent = 'Email address'; f1.placeholder = 'alerts@example.com'; f2wrap.classList.add('hidden'); }
       else if (t === 'webhook') { f1label.textContent = 'Webhook URL'; f1.placeholder = 'https://…'; f2wrap.classList.remove('hidden'); }
-      else { f1label.textContent = 'Routing key'; f1.placeholder = 'PagerDuty routing key'; f2wrap.classList.add('hidden'); }
+      else { f1label.textContent = 'Integration key'; f1.placeholder = 'PagerDuty integration key'; f2wrap.classList.add('hidden'); }
     }
 
     async function addNotifChannel(accountId) {
@@ -1773,7 +1810,7 @@ export function renderDashboard(userEmail: string): string {
       var config = {};
       if (type === 'email') config.email = f1;
       else if (type === 'webhook') { config.url = f1; if (f2) config.token = f2; }
-      else config.routing_key = f1;
+      else config.integration_key = f1;
       if (!f1) { showInlineMsg('notif-msg-' + accountId, 'Enter the channel target.', 'error'); return; }
       var resp = await fetch('/api/notifications/channels', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -1801,6 +1838,47 @@ export function renderDashboard(userEmail: string): string {
       var d = await resp.json();
       if (resp.ok) showInlineMsg('notif-msg-' + accountId, 'Test notification sent.', 'success');
       else showInlineMsg('notif-msg-' + accountId, 'Test failed: ' + (d.error || 'unknown'), 'error');
+    }
+
+    function startEditChannelName(channelId, currentName, accountId) {
+      var display = document.getElementById('ch-name-display-' + channelId);
+      var edit = document.getElementById('ch-name-edit-' + channelId);
+      if (display) display.classList.add('hidden');
+      if (edit) {
+        edit.classList.remove('hidden');
+        var input = edit.querySelector('input');
+        if (input) { input.value = currentName || ''; input.focus(); input.select(); }
+      }
+    }
+
+    function cancelEditChannelName(channelId) {
+      var display = document.getElementById('ch-name-display-' + channelId);
+      var edit = document.getElementById('ch-name-edit-' + channelId);
+      if (display) display.classList.remove('hidden');
+      if (edit) edit.classList.add('hidden');
+    }
+
+    async function saveChannelName(channelId, newName, accountId) {
+      newName = newName.trim();
+      if (!newName) { cancelEditChannelName(channelId); return; }
+      try {
+        var resp = await fetch('/api/notifications/channels/' + channelId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: newName })
+        });
+        var d = await resp.json();
+        if (d.ok) {
+          await loadAccountNotifications(accountId);
+          showInlineMsg('notif-msg-' + accountId, 'Channel name updated.', 'success');
+        } else {
+          showInlineMsg('notif-msg-' + accountId, d.error || 'Failed to update name', 'error');
+          cancelEditChannelName(channelId);
+        }
+      } catch (e) {
+        showInlineMsg('notif-msg-' + accountId, 'Failed to update name: ' + e, 'error');
+        cancelEditChannelName(channelId);
+      }
     }
 
     async function saveNotifSubs(accountId) {
@@ -6402,10 +6480,10 @@ export function renderDashboard(userEmail: string): string {
 
     function formatActionBadge(action) {
       var map = {
-        'advertise': { label: 'Advertised', css: 'al-badge-green' },
-        'withdraw': { label: 'Withdrawn', css: 'al-badge-red' },
-        'bulk_advertise': { label: 'Bulk Advertised', css: 'al-badge-green' },
-        'bulk_withdraw': { label: 'Bulk Withdrawn', css: 'al-badge-red' },
+        'advertise': { label: 'Advertisement', css: 'al-badge-green' },
+        'withdraw': { label: 'Withdrawal', css: 'al-badge-red' },
+        'bulk_advertise': { label: 'Bulk Advertisement', css: 'al-badge-green' },
+        'bulk_withdraw': { label: 'Bulk Withdrawal', css: 'al-badge-red' },
         'create_prefix': { label: 'Create', css: 'al-badge-blue' },
         'delete_prefix': { label: 'Delete', css: 'al-badge-red' },
         'create_bgp_prefix': { label: 'Create', css: 'al-badge-blue' },
@@ -6418,6 +6496,12 @@ export function renderDashboard(userEmail: string): string {
         'rir_ensure_route': { label: 'Prefix Validation', css: 'al-badge-yellow' },
         'rir_ensure_autnum': { label: 'Prefix Validation', css: 'al-badge-yellow' },
         'validate': { label: 'IRR Validation', css: 'al-badge-yellow' },
+        'external_advertise': { label: 'Ext. Advertisement', css: 'al-badge-green' },
+        'external_withdraw': { label: 'Ext. Withdrawal', css: 'al-badge-red' },
+        'external_origin_change': { label: 'Origin Change', css: 'al-badge-yellow' },
+        'webhook_advertise': { label: 'Webhook Advert.', css: 'al-badge-green' },
+        'webhook_withdraw': { label: 'Webhook Withdrawal', css: 'al-badge-red' },
+        'webhook_event': { label: 'Webhook Event', css: 'al-badge-gray' },
         'create': { label: 'Create', css: 'al-badge-blue' },
         'update': { label: 'Update', css: 'al-badge-gray' },
         'delete': { label: 'Delete', css: 'al-badge-red' },
@@ -6599,7 +6683,7 @@ export function renderDashboard(userEmail: string): string {
         var detail = e.error ? ('<span class="text-red-400">' + escHtml(e.error) + '</span>') : escHtml(e.title || e.details || '');
         html += '<tr class="al-row">' +
           '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
-          '<td class="px-3 py-2.5" style="color:var(--text-primary)">' + escHtml(e.event_type) + '</td>' +
+          '<td class="px-3 py-2.5">' + formatActionBadge(e.event_type) + '</td>' +
           '<td class="px-3 py-2.5 text-cf-gray">' + escHtml(e.channel_type) + '</td>' +
           '<td class="px-3 py-2.5">' + notifStatusBadge(e.status) + '</td>' +
           '<td class="px-3 py-2.5 text-cf-gray">' + (e.attempts || 0) + '</td>' +

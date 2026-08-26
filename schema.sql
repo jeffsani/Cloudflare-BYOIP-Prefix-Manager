@@ -58,7 +58,7 @@ CREATE TABLE IF NOT EXISTS notification_channels (
   account_id   TEXT NOT NULL,
   type         TEXT NOT NULL,               -- 'email' | 'pagerduty' | 'webhook'
   name         TEXT NOT NULL DEFAULT '',
-  config       TEXT NOT NULL DEFAULT '{}',  -- JSON: {url,token} | {routing_key} | {email}
+  config       TEXT NOT NULL DEFAULT '{}',  -- JSON: {url,token} | {integration_key} | {email}
   enabled      INTEGER NOT NULL DEFAULT 1,
   created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -155,6 +155,7 @@ CREATE TABLE IF NOT EXISTS webhook_endpoints (
   account_id   TEXT NOT NULL,
   owner_email  TEXT NOT NULL,
   name         TEXT NOT NULL DEFAULT '',
+  type         TEXT NOT NULL DEFAULT 'notification', -- 'notification' | 'logpush'
   secret_hash  TEXT NOT NULL,             -- SHA-256(cf-webhook-auth secret)
   enabled      INTEGER NOT NULL DEFAULT 1,
   last_seen_at TEXT,

@@ -31,7 +31,7 @@ export async function sendWebhook(
  * Trigger a PagerDuty incident via the Events API v2.
  */
 export async function sendPagerDuty(
-  routingKey: string,
+  integrationKey: string,
   payload: NotificationPayload,
 ): Promise<{ ok: boolean; error?: string }> {
   try {
@@ -39,7 +39,7 @@ export async function sendPagerDuty(
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        routing_key: routingKey,
+        routing_key: integrationKey,
         event_action: 'trigger',
         dedup_key: `prefix-mgr-${payload.account_id}-${payload.event_type}-${payload.title}`,
         payload: {
@@ -115,8 +115,8 @@ export async function dispatchToChannel(
       if (!channel.config.url) return { ok: false, error: 'Webhook URL missing' };
       return sendWebhook(channel.config.url, payload, channel.config.token);
     case 'pagerduty':
-      if (!channel.config.routing_key) return { ok: false, error: 'PagerDuty routing key missing' };
-      return sendPagerDuty(channel.config.routing_key, payload);
+      if (!channel.config.integration_key) return { ok: false, error: 'PagerDuty integration key missing' };
+      return sendPagerDuty(channel.config.integration_key, payload);
     case 'email':
       if (!channel.config.email) return { ok: false, error: 'Email address missing' };
       return sendEmail(env, channel.config.email, payload);

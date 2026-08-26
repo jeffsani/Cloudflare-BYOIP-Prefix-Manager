@@ -57,8 +57,8 @@ export function mapLog(r: Record<string, unknown>): NotificationLog {
 
 /** Mask secret values in a channel config for safe display. */
 export function maskChannelConfig(c: NotificationChannel): NotificationChannel {
-  if (c.type === 'pagerduty' && c.config.routing_key) {
-    return { ...c, config: { routing_key: '••••' + c.config.routing_key.slice(-4) } };
+  if (c.type === 'pagerduty' && c.config.integration_key) {
+    return { ...c, config: { integration_key: '••••' + c.config.integration_key.slice(-4) } };
   }
   if (c.type === 'webhook' && c.config.token) {
     return { ...c, config: { ...c.config, token: '••••' + c.config.token.slice(-4) } };

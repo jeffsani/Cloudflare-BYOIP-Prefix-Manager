@@ -40,6 +40,7 @@ export interface WebhookEndpoint {
   account_id: string;
   owner_email: string;
   name: string;
+  type: 'notification' | 'logpush';
   enabled: boolean;
   last_seen_at: string | null;
   created_at: string;
@@ -96,8 +97,8 @@ export interface NotificationChannel {
   account_id: string;
   type: ChannelType;
   name: string;
-  /** {url, token} for webhook, {routing_key} for pagerduty, {email} for email. */
-  config: { url?: string; token?: string; routing_key?: string; email?: string };
+  /** {url, token} for webhook, {integration_key} for pagerduty, {email} for email. */
+  config: { url?: string; token?: string; integration_key?: string; email?: string };
   enabled: boolean;
   created_at?: string;
 }

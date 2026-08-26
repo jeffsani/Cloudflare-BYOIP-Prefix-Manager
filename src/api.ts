@@ -627,6 +627,19 @@ export async function createAuditLogpushJob(
   return r.json();
 }
 
+/** Delete a Logpush job by ID. */
+export async function deleteLogpushJob(
+  accountId: string,
+  token: string,
+  jobId: number,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/logpush/jobs/${jobId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
 /**
  * Build a map of prefix id -> CIDR covering both parent prefixes and their BGP
  * sub-prefixes, so audit-log resource IDs (which may be either) can be resolved.

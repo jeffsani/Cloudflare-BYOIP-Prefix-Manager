@@ -2,7 +2,7 @@ import type { Env, ApiKey, WebhookEndpoint } from '../types';
 import { safeParse } from '../notifications-db';
 import { sha256Hex, generateToken } from '../machine-auth';
 import { getToken } from '../helpers';
-import { createAuditLogpushJob, listLogpushJobs } from '../api';
+import { createAuditLogpushJob, listLogpushJobs, deleteLogpushJob } from '../api';
 
 const AUDIT_LOGPUSH_DATASET = 'audit_logs_v2';
 
@@ -29,6 +29,7 @@ function mapWebhook(r: Record<string, unknown>): WebhookEndpoint {
     account_id: r.account_id as string,
     owner_email: r.owner_email as string,
     name: r.name as string,
+    type: (r.type as 'notification' | 'logpush') || 'notification',
     enabled: !!r.enabled,
     last_seen_at: (r.last_seen_at as string) ?? null,
     created_at: r.created_at as string,
@@ -95,13 +96,14 @@ export async function createWebhookEndpoint(
   if (!(await ownsAccount(env, email, accountId))) return { ok: false, error: 'Unknown account' };
 
   const name = (body.name || '').trim() || 'Cloudflare webhook';
+  const type = body.type === 'logpush' ? 'logpush' : 'notification';
   const secret = generateToken(32);
   const secretHash = await sha256Hex(secret);
 
   const res = await env.DB.prepare(
-    `INSERT INTO webhook_endpoints (account_id, owner_email, name, secret_hash, enabled)
-     VALUES (?, ?, ?, ?, 1)`,
-  ).bind(accountId, email, name, secretHash).run();
+    `INSERT INTO webhook_endpoints (account_id, owner_email, name, type, secret_hash, enabled)
+     VALUES (?, ?, ?, ?, ?, 1)`,
+  ).bind(accountId, email, name, type, secretHash).run();
 
   // Secret is returned exactly once (paste into Cloudflare's webhook config).
   return { ok: true, id: res.meta.last_row_id as number, secret };
@@ -147,14 +149,20 @@ export async function enableAuditLogpush(
   if (!accountId) return { ok: false, error: 'account_id is required' };
   if (!(await ownsAccount(env, email, accountId))) return { ok: false, error: 'Unknown account' };
 
+  // Only one Logpush webhook per account.
+  const existing = await env.DB.prepare(
+    `SELECT id FROM webhook_endpoints WHERE owner_email = ? AND account_id = ? AND type = 'logpush'`,
+  ).bind(email, accountId).first<{ id: number }>();
+  if (existing) return { ok: false, error: 'Audit log streaming is already enabled for this account' };
+
   const webhookUrl = `${origin}/webhooks/logpush`;
 
   // Mint (and persist the hash of) a dedicated secret for this destination.
   const secret = generateToken(32);
   const secretHash = await sha256Hex(secret);
   await env.DB.prepare(
-    `INSERT INTO webhook_endpoints (account_id, owner_email, name, secret_hash, enabled)
-     VALUES (?, ?, ?, ?, 1)`,
+    `INSERT INTO webhook_endpoints (account_id, owner_email, name, type, secret_hash, enabled)
+     VALUES (?, ?, ?, 'logpush', ?, 1)`,
   ).bind(accountId, email, 'Audit Logs (Logpush)', secretHash).run();
 
   const destination = `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(secret)}`;
@@ -193,4 +201,38 @@ function explainLogpushError(raw: string): string {
     );
   }
   return raw;
+}
+
+/**
+ * Disable audit-log streaming: delete the Cloudflare Logpush job(s) for the
+ * `audit_logs_v2` dataset and remove the local logpush webhook endpoint(s).
+ */
+export async function disableAuditLogpush(
+  env: Env, email: string, body: Record<string, any>,
+): Promise<{ ok: boolean; error?: string }> {
+  const accountId = (body.account_id || '').trim();
+  if (!accountId) return { ok: false, error: 'account_id is required' };
+  if (!(await ownsAccount(env, email, accountId))) return { ok: false, error: 'Unknown account' };
+
+  // Delete the Cloudflare Logpush job(s) for audit_logs_v2.
+  try {
+    const token = await getToken(env.DB, email, accountId);
+    const res = await listLogpushJobs(accountId, token);
+    if (res.success) {
+      const auditJobs = (res.result || []).filter((j) => j.dataset === AUDIT_LOGPUSH_DATASET);
+      for (const job of auditJobs) {
+        await deleteLogpushJob(accountId, token, job.id);
+      }
+    }
+  } catch (e) {
+    // Best-effort: the CF job may already be gone or the token may lack permissions.
+    console.error('Failed to delete Logpush job(s):', e);
+  }
+
+  // Remove local logpush webhook endpoint(s) for this account.
+  await env.DB.prepare(
+    `DELETE FROM webhook_endpoints WHERE owner_email = ? AND account_id = ? AND type = 'logpush'`,
+  ).bind(email, accountId).run();
+
+  return { ok: true };
 }

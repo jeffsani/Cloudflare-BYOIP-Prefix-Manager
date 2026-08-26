@@ -28,7 +28,7 @@ import { listPrefixStates, lookupPrefixState, publicHealth } from './endpoints/p
 import {
   listApiKeys, createApiKey, deleteApiKey,
   listWebhookEndpoints, createWebhookEndpoint, deleteWebhookEndpoint,
-  enableAuditLogpush, getAuditLogpushStatus,
+  enableAuditLogpush, disableAuditLogpush, getAuditLogpushStatus,
 } from './endpoints/integrations';
 import type { NotifyMessage } from './types';
 
@@ -259,6 +259,11 @@ app.post('/api/integrations/logpush', async (c) => {
   const email = c.get('userEmail');
   const origin = new URL(c.req.url).origin;
   const res = await enableAuditLogpush(c.env, email, await c.req.json(), origin);
+  return c.json(res, res.ok ? 200 : 400);
+});
+app.delete('/api/integrations/logpush', async (c) => {
+  const email = c.get('userEmail');
+  const res = await disableAuditLogpush(c.env, email, await c.req.json());
   return c.json(res, res.ok ? 200 : 400);
 });
 
