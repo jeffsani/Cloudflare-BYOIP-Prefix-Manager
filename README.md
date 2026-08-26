@@ -35,6 +35,11 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 ![Activity Log](src/activity-log.png)
 
+### Notifications
+- **Notifications Queue** — Delivery status (queued / sent / retrying / failed / dead-letter) is shown in the collapsible **Notifications Queue** panel on the dashboard, with a manual retry for dead-lettered/failed items
+
+![Notifications Queue](src/notifications-queue.png)
+
 ### Multi-Account & Multi-Token
 - **Per-User Accounts** — Each user (identified via Cloudflare Access JWT with Google IdP) can configure multiple Cloudflare accounts, each with its own label and account ID
 - **Multi-Token Load Balancing** — Add multiple API tokens per account to distribute API requests via round-robin and avoid the Cloudflare API rate limit (1200 requests per endpoint per 5-minute window per token). Write operations (advertisement toggle) always use the first token for consistency.
@@ -287,11 +292,6 @@ In **Settings → (expand an account)** you can:
 - Set the **API rate limit (req / 5 min)** — used to pace the Radar poller within your account's limit.
 - Add **notification channels** (email / webhook / PagerDuty) and test them.
 - Choose, per event, which channels fire (**event subscriptions**).
-
-Delivery status (queued / sent / retrying / failed / dead-letter) is shown in the collapsible
-**Notifications Queue** panel on the dashboard, with a manual retry for dead-lettered/failed items.
-
-![Notifications Queue](src/notifications-queue.png)
 
 ### How external detection works
 
