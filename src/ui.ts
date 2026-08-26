@@ -19,6 +19,7 @@ export function renderDashboard(userEmail: string): string {
   </script>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@dagrejs/dagre@1.1.4/dist/dagre.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/docx@9.5.3/dist/index.iife.js"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <script>
@@ -1013,12 +1014,24 @@ export function renderDashboard(userEmail: string): string {
 
         <!-- LOA -->
         <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">Letter of Authorization (LOA)${infoTip('A LOA proves you are authorized to use this IP prefix. You can let Cloudflare auto-generate one, or upload your own PDF (max 10MB).')}</label>
+          <label class="block text-xs text-cf-gray mb-1">Letter of Authorization (LOA)${infoTip('A LOA proves you are authorized to use this IP prefix. You can let Cloudflare auto-generate one, generate one from the official template, or upload your own PDF (max 10MB).')}</label>
           <div class="flex flex-col gap-2">
             <label class="flex items-center gap-2 text-xs cursor-pointer">
               <input type="radio" name="add-prefix-loa-mode" value="delegate" checked onchange="onLoaModeChange()" style="accent-color:#F6821F">
               <span style="color:var(--text-primary)">Delegate LOA auto-generation to Cloudflare</span>
             </label>
+            <label class="flex items-center gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-loa-mode" value="generate" onchange="onLoaModeChange()" style="accent-color:#F6821F">
+              <span style="color:var(--text-primary)">Generate LOA from template</span>
+            </label>
+            <div id="add-prefix-loa-generate-wrap" class="hidden ml-5">
+              <p class="text-[10px] text-cf-gray mb-2">Create an editable Word document (.docx) from Cloudflare's official LOA template. Add your letterhead, sign it, save as PDF, then upload.</p>
+              <button type="button" onclick="openLoaGeneratorModal()" class="px-3 py-1.5 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition flex items-center gap-1.5">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                Open LOA Generator
+              </button>
+              <span id="add-prefix-loa-generate-status" class="text-[10px] ml-2"></span>
+            </div>
             <label class="flex items-center gap-2 text-xs cursor-pointer">
               <input type="radio" name="add-prefix-loa-mode" value="upload" onchange="onLoaModeChange()" style="accent-color:#F6821F">
               <span style="color:var(--text-primary)">Upload LOA document (PDF)</span>
@@ -1062,6 +1075,72 @@ export function renderDashboard(userEmail: string): string {
             <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOA Generator Modal -->
+  <div id="loa-generator-modal" class="hidden modal-overlay" style="z-index:110" onclick="if(event.target===this)closeLoaGeneratorModal()">
+    <div class="modal-content" style="max-width:560px">
+      <div class="p-4 border-b border-cf-border">
+        <h3 class="text-sm font-semibold" style="color:var(--text-strong)">LOA Generator</h3>
+        <p class="text-xs text-cf-gray mt-0.5">Generate an editable Letter of Agency (.docx) from the official Cloudflare template</p>
+      </div>
+      <div class="p-4" style="max-height:65vh;overflow-y:auto">
+        <!-- Company Name -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Company Name <span class="text-red-400">*</span></label>
+          <input id="loa-company-name" type="text" placeholder="e.g. Acme Corp" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Date -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Date <span class="text-red-400">*</span></label>
+          <input id="loa-date" type="date" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Prefixes & ASNs -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">IP Prefixes & Originating ASNs <span class="text-red-400">*</span></label>
+          <div id="loa-prefix-rows" class="space-y-2"></div>
+          <button type="button" onclick="addLoaPrefixRow()" class="mt-2 px-2 py-1 text-[11px] text-cf-orange border border-cf-orange rounded hover:bg-cf-orange hover:text-white transition flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add prefix
+          </button>
+        </div>
+        <!-- Email -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Email Address <span class="text-red-400">*</span></label>
+          <input id="loa-email" type="email" placeholder="e.g. network@example.com" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Telephone -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Telephone Number <span class="text-red-400">*</span></label>
+          <input id="loa-telephone" type="tel" placeholder="e.g. +1-555-123-4567" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Signatory Name -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Signatory Name <span class="text-red-400">*</span></label>
+          <input id="loa-signatory-name" type="text" placeholder="e.g. Jane Doe" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Signatory Title -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Signatory Title <span class="text-red-400">*</span></label>
+          <input id="loa-signatory-title" type="text" placeholder="e.g. Network Engineer" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+        <!-- Company Address -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Company Address <span class="text-red-400">*</span></label>
+          <textarea id="loa-company-address" rows="2" placeholder="e.g. 101 Townsend St, San Francisco, CA 94107" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none resize-none"></textarea>
+        </div>
+        <!-- Error -->
+        <div id="loa-generator-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
+      </div>
+      <!-- Buttons -->
+      <div class="p-4 pt-0 flex justify-end gap-2">
+        <button onclick="closeLoaGeneratorModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+        <button id="loa-generate-btn" onclick="generateLoaDocx()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg>
+          Generate &amp; Download
+        </button>
       </div>
     </div>
   </div>
@@ -4208,6 +4287,8 @@ export function renderDashboard(userEmail: string): string {
       var loaRadios = document.querySelectorAll('input[name="add-prefix-loa-mode"]');
       loaRadios.forEach(function(r, i) { r.checked = i === 0; });
       document.getElementById('add-prefix-loa-upload-wrap').classList.add('hidden');
+      document.getElementById('add-prefix-loa-generate-wrap').classList.add('hidden');
+      document.getElementById('add-prefix-loa-generate-status').innerHTML = '';
 
       // Reset file input
       var fileInput = document.getElementById('add-prefix-loa-file');
@@ -4321,10 +4402,17 @@ export function renderDashboard(userEmail: string): string {
     function onLoaModeChange() {
       var mode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       var uploadWrap = document.getElementById('add-prefix-loa-upload-wrap');
+      var generateWrap = document.getElementById('add-prefix-loa-generate-wrap');
+
+      uploadWrap.classList.add('hidden');
+      generateWrap.classList.add('hidden');
+
       if (mode === 'upload') {
         uploadWrap.classList.remove('hidden');
+      } else if (mode === 'generate') {
+        generateWrap.classList.remove('hidden');
       } else {
-        uploadWrap.classList.add('hidden');
+        // delegate mode — reset upload state
         addPrefixLoaDocumentId = null;
         document.getElementById('add-prefix-loa-status').innerHTML = '';
       }
@@ -4367,6 +4455,291 @@ export function renderDashboard(userEmail: string): string {
         }
       } catch (e) {
         statusEl.innerHTML = '<span class="text-red-400">Upload failed: ' + escHtml(String(e)) + '</span>';
+      }
+    }
+
+    // ─── LOA Generator ──────────────────────────────────────────────
+    var loaPrefixRows = [];
+
+    function openLoaGeneratorModal() {
+      document.getElementById('loa-company-name').value = '';
+      // Default date to today
+      var today = new Date();
+      var yyyy = today.getFullYear();
+      var mm = String(today.getMonth() + 1).padStart(2, '0');
+      var dd = String(today.getDate()).padStart(2, '0');
+      document.getElementById('loa-date').value = yyyy + '-' + mm + '-' + dd;
+      document.getElementById('loa-email').value = '';
+      document.getElementById('loa-telephone').value = '';
+      document.getElementById('loa-signatory-name').value = '';
+      document.getElementById('loa-signatory-title').value = '';
+      document.getElementById('loa-company-address').value = '';
+      document.getElementById('loa-generator-error').classList.add('hidden');
+      // Initialize with one empty prefix row
+      loaPrefixRows = [{ prefix: '', asn: '' }];
+      renderLoaPrefixRows();
+      document.getElementById('loa-generator-modal').classList.remove('hidden');
+    }
+
+    function closeLoaGeneratorModal() {
+      document.getElementById('loa-generator-modal').classList.add('hidden');
+    }
+
+    function renderLoaPrefixRows() {
+      var container = document.getElementById('loa-prefix-rows');
+      var html = '';
+      for (var i = 0; i < loaPrefixRows.length; i++) {
+        html += '<div class="flex items-center gap-2">';
+        html += '<input type="text" placeholder="e.g. 192.0.2.0/24" value="' + escAttr(loaPrefixRows[i].prefix) + '" oninput="updateLoaPrefixRow(' + i + ',\'prefix\',this.value)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        html += '<span class="text-cf-gray text-xs">AS</span>';
+        html += '<input type="number" placeholder="e.g. 13335" value="' + escAttr(loaPrefixRows[i].asn) + '" oninput="updateLoaPrefixRow(' + i + ',\'asn\',this.value)" class="w-28 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        if (loaPrefixRows.length > 1) {
+          html += '<button type="button" onclick="removeLoaPrefixRow(' + i + ')" class="p-1 text-cf-gray hover:text-red-400 transition" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
+        } else {
+          html += '<div class="w-5"></div>';
+        }
+        html += '</div>';
+      }
+      container.innerHTML = html;
+    }
+
+    function updateLoaPrefixRow(index, field, value) {
+      if (loaPrefixRows[index]) {
+        loaPrefixRows[index][field] = value;
+      }
+    }
+
+    function addLoaPrefixRow() {
+      loaPrefixRows.push({ prefix: '', asn: '' });
+      renderLoaPrefixRows();
+    }
+
+    function removeLoaPrefixRow(index) {
+      loaPrefixRows.splice(index, 1);
+      renderLoaPrefixRows();
+    }
+
+    function validateLoaForm() {
+      var companyName = document.getElementById('loa-company-name').value.trim();
+      if (!companyName) return 'Company name is required';
+      var date = document.getElementById('loa-date').value;
+      if (!date) return 'Date is required';
+      // Validate prefix rows
+      for (var i = 0; i < loaPrefixRows.length; i++) {
+        var p = loaPrefixRows[i].prefix.trim();
+        var a = loaPrefixRows[i].asn.trim();
+        if (!p) return 'Prefix is required in row ' + (i + 1);
+        if (!a) return 'ASN is required in row ' + (i + 1);
+        var asnNum = parseInt(a, 10);
+        if (isNaN(asnNum) || asnNum < 1 || asnNum > 4294967295) return 'Invalid ASN in row ' + (i + 1);
+      }
+      var email = document.getElementById('loa-email').value.trim();
+      if (!email) return 'Email address is required';
+      var telephone = document.getElementById('loa-telephone').value.trim();
+      if (!telephone) return 'Telephone number is required';
+      var sigName = document.getElementById('loa-signatory-name').value.trim();
+      if (!sigName) return 'Signatory name is required';
+      var sigTitle = document.getElementById('loa-signatory-title').value.trim();
+      if (!sigTitle) return 'Signatory title is required';
+      var address = document.getElementById('loa-company-address').value.trim();
+      if (!address) return 'Company address is required';
+      return null;
+    }
+
+    async function generateLoaDocx() {
+      var err = validateLoaForm();
+      if (err) {
+        var errEl = document.getElementById('loa-generator-error');
+        errEl.textContent = err;
+        errEl.classList.remove('hidden');
+        return;
+      }
+      document.getElementById('loa-generator-error').classList.add('hidden');
+
+      var companyName = document.getElementById('loa-company-name').value.trim();
+      var dateVal = document.getElementById('loa-date').value;
+      var email = document.getElementById('loa-email').value.trim();
+      var telephone = document.getElementById('loa-telephone').value.trim();
+      var sigName = document.getElementById('loa-signatory-name').value.trim();
+      var sigTitle = document.getElementById('loa-signatory-title').value.trim();
+      var companyAddress = document.getElementById('loa-company-address').value.trim();
+
+      // Format date for display
+      var dateParts = dateVal.split('-');
+      var dateObj = new Date(parseInt(dateParts[0]), parseInt(dateParts[1]) - 1, parseInt(dateParts[2]));
+      var displayDate = dateObj.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+
+      var btn = document.getElementById('loa-generate-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:14px;height:14px"></div> Generating...';
+
+      try {
+        var D = window.docx;
+
+        // Build prefix list paragraphs
+        var prefixParagraphs = [];
+        for (var i = 0; i < loaPrefixRows.length; i++) {
+          var pf = loaPrefixRows[i].prefix.trim();
+          var an = loaPrefixRows[i].asn.trim();
+          prefixParagraphs.push(
+            new D.Paragraph({
+              children: [new D.TextRun({ text: pf + '    AS' + an, font: 'Calibri', size: 22 })],
+              spacing: { after: 80 },
+              indent: { left: 720 }
+            })
+          );
+        }
+
+        // Build address lines
+        var addressLines = companyAddress.split('\\n');
+        var addressParagraphs = [];
+        for (var i = 0; i < addressLines.length; i++) {
+          addressParagraphs.push(
+            new D.Paragraph({
+              children: [new D.TextRun({ text: addressLines[i].trim(), font: 'Calibri', size: 22 })],
+              spacing: { after: 40 }
+            })
+          );
+        }
+
+        var dashLine = '- - - - - - - - - - - - - - - - - - -';
+
+        var doc = new D.Document({
+          sections: [{
+            properties: {
+              page: {
+                margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+              }
+            },
+            children: [
+              // Blank space for letterhead
+              new D.Paragraph({ spacing: { after: 600 } }),
+              new D.Paragraph({ spacing: { after: 600 } }),
+              // Title
+              new D.Paragraph({
+                children: [new D.TextRun({ text: 'LETTER OF AGENCY ("LOA")', bold: true, font: 'Calibri', size: 28 })],
+                alignment: D.AlignmentType.CENTER,
+                spacing: { after: 400 }
+              }),
+              // Date
+              new D.Paragraph({
+                children: [new D.TextRun({ text: displayDate, font: 'Calibri', size: 22 })],
+                spacing: { after: 400 }
+              }),
+              // Salutation
+              new D.Paragraph({
+                children: [new D.TextRun({ text: 'To whom it may concern:', font: 'Calibri', size: 22 })],
+                spacing: { after: 300 }
+              }),
+              // Authorization paragraph
+              new D.Paragraph({
+                children: [
+                  new D.TextRun({ text: companyName, bold: true, font: 'Calibri', size: 22 }),
+                  new D.TextRun({ text: ' (the "Company") authorizes Cloudflare, Inc. with AS13335 to advertise the following IP address blocks / originating ASNs:', font: 'Calibri', size: 22 })
+                ],
+                spacing: { after: 300 }
+              }),
+              // Dash separator
+              new D.Paragraph({
+                children: [new D.TextRun({ text: dashLine, font: 'Calibri', size: 22 })],
+                spacing: { after: 120 }
+              }),
+              // Prefix rows
+              ...prefixParagraphs,
+              // Dash separator
+              new D.Paragraph({
+                children: [new D.TextRun({ text: dashLine, font: 'Calibri', size: 22 })],
+                spacing: { before: 120, after: 300 }
+              }),
+              // Declaration
+              new D.Paragraph({
+                children: [new D.TextRun({ text: 'As a representative of the Company that is the owner of the aforementioned IP address blocks / originating ASNs, I hereby declare that I am authorized to sign this LOA on the Company\'s behalf.', font: 'Calibri', size: 22 })],
+                spacing: { after: 300 }
+              }),
+              // Contact
+              new D.Paragraph({
+                children: [
+                  new D.TextRun({ text: 'Should you have any questions please email me at ', font: 'Calibri', size: 22 }),
+                  new D.TextRun({ text: email, bold: true, font: 'Calibri', size: 22 }),
+                  new D.TextRun({ text: ', or call: ', font: 'Calibri', size: 22 }),
+                  new D.TextRun({ text: telephone, bold: true, font: 'Calibri', size: 22 })
+                ],
+                spacing: { after: 400 }
+              }),
+              // Regards
+              new D.Paragraph({
+                children: [new D.TextRun({ text: 'Regards,', font: 'Calibri', size: 22 })],
+                spacing: { after: 200 }
+              }),
+              // Blank lines for signature
+              new D.Paragraph({ spacing: { after: 200 } }),
+              new D.Paragraph({
+                children: [new D.TextRun({ text: '________________________________________', color: 'AAAAAA', font: 'Calibri', size: 22 })],
+                spacing: { after: 100 }
+              }),
+              new D.Paragraph({
+                children: [new D.TextRun({ text: '[SIGNATURE]', color: 'AAAAAA', italics: true, font: 'Calibri', size: 20 })],
+                spacing: { after: 300 }
+              }),
+              // Signatory details
+              new D.Paragraph({
+                children: [new D.TextRun({ text: sigName, font: 'Calibri', size: 22 })],
+                spacing: { after: 40 }
+              }),
+              new D.Paragraph({
+                children: [new D.TextRun({ text: sigTitle, font: 'Calibri', size: 22 })],
+                spacing: { after: 40 }
+              }),
+              new D.Paragraph({
+                children: [new D.TextRun({ text: companyName, font: 'Calibri', size: 22 })],
+                spacing: { after: 40 }
+              }),
+              ...addressParagraphs,
+              // Company stamp placeholder
+              new D.Paragraph({
+                children: [new D.TextRun({ text: '[COMPANY STAMP]', color: 'AAAAAA', italics: true, font: 'Calibri', size: 20 })],
+                spacing: { before: 300 }
+              })
+            ]
+          }]
+        });
+
+        var blob = await D.Packer.toBlob(doc);
+
+        // Trigger download
+        var safeName = companyName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_');
+        var fileName = 'LOA_' + safeName + '_' + dateVal + '.docx';
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url;
+        a.download = fileName;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        // Close generator modal
+        closeLoaGeneratorModal();
+
+        // Switch LOA mode to upload and show success message
+        var uploadRadio = document.querySelector('input[name="add-prefix-loa-mode"][value="upload"]');
+        if (uploadRadio) {
+          uploadRadio.checked = true;
+          onLoaModeChange();
+        }
+        var genStatus = document.getElementById('add-prefix-loa-generate-status');
+        if (genStatus) genStatus.innerHTML = '<span class="badge-valid">Downloaded</span>';
+        var uploadStatus = document.getElementById('add-prefix-loa-status');
+        if (uploadStatus) uploadStatus.innerHTML = '<span class="text-[10px]" style="color:#22c55e">LOA downloaded as ' + escHtml(fileName) + '. Edit in Word to add letterhead &amp; signature, save as PDF, then upload here.</span>';
+
+      } catch (e) {
+        var errEl = document.getElementById('loa-generator-error');
+        errEl.textContent = 'Failed to generate document: ' + String(e);
+        errEl.classList.remove('hidden');
+        console.error('[LOA Generator]', e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/></svg> Generate &amp; Download';
       }
     }
 
@@ -4416,10 +4789,13 @@ export function renderDashboard(userEmail: string): string {
         }
       }
 
-      // Check LOA upload if upload mode selected
+      // Check LOA upload if upload or generate mode selected
       var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       if (loaMode === 'upload' && !addPrefixLoaDocumentId) {
         return 'Please upload a LOA document first, or select auto-generation';
+      }
+      if (loaMode === 'generate' && !addPrefixLoaDocumentId) {
+        return 'Please generate the LOA, then upload the signed PDF. Use the LOA Generator to create the document, sign it, save as PDF, and upload it.';
       }
 
       return null; // valid
