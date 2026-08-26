@@ -660,6 +660,7 @@ export function renderDashboard(userEmail: string): string {
           <select id="activity-log-source" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogSource(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by source">
             <option value="all">All sources</option>
             <option value="local">Local tool</option>
+            <option value="webhook">Webhook</option>
             <option value="audit">Audit log</option>
           </select>
           <select id="activity-log-action" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogAction(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by action">
@@ -6515,6 +6516,9 @@ export function renderDashboard(userEmail: string): string {
     function sourceBadge(source) {
       if (source === 'audit') {
         return '<span class="al-badge al-badge-yellow">Audit</span>';
+      }
+      if (source === 'webhook') {
+        return '<span class="al-badge al-badge-green">Webhook</span>';
       }
       return '<span class="al-badge al-badge-blue">Local</span>';
     }

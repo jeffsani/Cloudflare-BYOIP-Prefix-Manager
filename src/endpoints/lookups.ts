@@ -232,14 +232,18 @@ export class GetActivity extends OpenAPIRoute {
       .bind(email, `-${days} days`)
       .all();
 
-    const localEntries = (rows.results || []).map((r: Record<string, unknown>) => ({
-      source: 'local' as const,
-      id: r.id as number,
-      user_email: r.user_email as string,
-      action: r.action as string,
-      details: r.details as string,
-      created_at: r.created_at as string,
-    }));
+    const localEntries = (rows.results || []).map((r: Record<string, unknown>) => {
+      const action = r.action as string;
+      const source = action.startsWith('webhook_') ? 'webhook' as const : 'local' as const;
+      return {
+        source,
+        id: r.id as number,
+        user_email: r.user_email as string,
+        action,
+        details: r.details as string,
+        created_at: r.created_at as string,
+      };
+    });
 
     // Cloudflare audit log (account-scoped). Hybrid: prefer Logpush-ingested rows
     // stored in D1 (fast); fall back to the live Audit Logs API when none exist
