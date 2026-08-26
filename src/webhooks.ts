@@ -31,44 +31,68 @@ export interface ParsedWebhook {
 }
 
 // Map human-readable status strings from Cloudflare to normalised keys.
+// Includes both the documented UI labels and the machine values seen in actual
+// webhook payloads (e.g. "failed" in data.advertise_status[].status).
 const STATUS_MAP: Record<string, AdvertisementStatus> = {
   'advertised': 'advertised',
   'already advertised': 'already_advertised',
   'delayed': 'delayed',
   'locked': 'locked',
   'could not advertise': 'could_not_advertise',
+  'failed': 'could_not_advertise',
   'error': 'error',
 };
 
 /**
  * Try to extract per-prefix advertisement statuses from the text/data of an
- * fbm_auto_advertisement payload.  Looks for patterns like:
- *   "192.168.0.0/24: Advertised"  or  "192.168.0.0/24 - Already Advertised"
- * in the text field, and also probes common data structures.
+ * fbm_auto_advertisement payload.  Handles two known formats:
+ *
+ *   Text field (pipe-delimited):
+ *     "- Prefix: 203.0.113.0/24 | Status: advertised"
+ *   Text field (colon/dash-delimited):
+ *     "203.0.113.0/24: Advertised"  or  "203.0.113.0/24 - Already Advertised"
+ *
+ *   Structured data:
+ *     data.advertise_status = [{ prefix: "...", status: "..." }, ...]
+ *     data.prefixes          = [{ prefix: "...", status: "..." }, ...]
+ *     data.prefix_statuses   = { "CIDR": "status", ... }
  */
 function parseAutoAdvertStatuses(payload: Record<string, any>): Record<string, AdvertisementStatus> {
   const statuses: Record<string, AdvertisementStatus> = {};
   const text = String(payload.text || '');
   const data = payload.data ?? {};
 
-  // --- Scan the text field for "CIDR: Status" or "CIDR - Status" patterns ---
   const cidrPattern = '(?:\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}|(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\\/\\d{1,3}';
   const statusLabels = Object.keys(STATUS_MAP).join('|');
-  const lineRegex = new RegExp(
-    `(${cidrPattern})\\s*[:\\-–—]\\s*(${statusLabels})`,
+
+  // --- Format 1: "Prefix: CIDR | Status: value" (pipe-delimited) ---
+  const pipeRegex = new RegExp(
+    `Prefix:\\s*(${cidrPattern})\\s*\\|\\s*Status:\\s*(${statusLabels})`,
     'gi',
   );
   let m: RegExpExecArray | null;
-  while ((m = lineRegex.exec(text)) !== null) {
-    const cidr = m[1];
+  while ((m = pipeRegex.exec(text)) !== null) {
     const label = m[2].toLowerCase();
-    if (STATUS_MAP[label]) statuses[cidr] = STATUS_MAP[label];
+    if (STATUS_MAP[label]) statuses[m[1]] = STATUS_MAP[label];
+  }
+
+  // --- Format 2: "CIDR: Status" or "CIDR - Status" (colon/dash-delimited) ---
+  const colonRegex = new RegExp(
+    `(${cidrPattern})\\s*[:\\-–—]\\s*(${statusLabels})`,
+    'gi',
+  );
+  while ((m = colonRegex.exec(text)) !== null) {
+    if (!statuses[m[1]]) {
+      const label = m[2].toLowerCase();
+      if (STATUS_MAP[label]) statuses[m[1]] = STATUS_MAP[label];
+    }
   }
 
   // --- Probe structured data for per-prefix status arrays ---
-  // e.g. data.prefixes = [{ prefix: "...", status: "..." }, ...]
-  // or   data.prefix_statuses = { "...": "..." }
-  const prefixList = Array.isArray(data.prefixes) ? data.prefixes
+  // Real payloads use data.advertise_status; also probe data.prefixes and
+  // data.prefix_statuses for forward-compatibility.
+  const prefixList = Array.isArray(data.advertise_status) ? data.advertise_status
+    : Array.isArray(data.prefixes) ? data.prefixes
     : Array.isArray(data.prefix_statuses) ? data.prefix_statuses
     : null;
   if (prefixList) {
