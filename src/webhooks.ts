@@ -12,11 +12,86 @@ type MachineEnv = {
 const IPV4_CIDR = /\b(?:\d{1,3}\.){3}\d{1,3}\/\d{1,2}\b/g;
 const IPV6_CIDR = /\b(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\/\d{1,3}\b/g;
 
+/** Per-prefix advertisement status from auto-advertisement notifications. */
+export type AdvertisementStatus =
+  | 'advertised'         // successfully advertised
+  | 'already_advertised' // was already advertised before the attempt
+  | 'delayed'            // will retry later
+  | 'locked'             // prefix is locked, cannot advertise
+  | 'could_not_advertise' // failed to advertise
+  | 'error';             // general error
+
 export interface ParsedWebhook {
   cidrs: string[];
   action: 'advertise' | 'withdraw' | 'unknown';
   alert_type: string;
   account_id: string;
+  /** Per-CIDR advertisement status for fbm_auto_advertisement alerts. */
+  prefix_statuses: Record<string, AdvertisementStatus>;
+}
+
+// Map human-readable status strings from Cloudflare to normalised keys.
+const STATUS_MAP: Record<string, AdvertisementStatus> = {
+  'advertised': 'advertised',
+  'already advertised': 'already_advertised',
+  'delayed': 'delayed',
+  'locked': 'locked',
+  'could not advertise': 'could_not_advertise',
+  'error': 'error',
+};
+
+/**
+ * Try to extract per-prefix advertisement statuses from the text/data of an
+ * fbm_auto_advertisement payload.  Looks for patterns like:
+ *   "192.168.0.0/24: Advertised"  or  "192.168.0.0/24 - Already Advertised"
+ * in the text field, and also probes common data structures.
+ */
+function parseAutoAdvertStatuses(payload: Record<string, any>): Record<string, AdvertisementStatus> {
+  const statuses: Record<string, AdvertisementStatus> = {};
+  const text = String(payload.text || '');
+  const data = payload.data ?? {};
+
+  // --- Scan the text field for "CIDR: Status" or "CIDR - Status" patterns ---
+  const cidrPattern = '(?:\\d{1,3}\\.){3}\\d{1,3}\\/\\d{1,2}|(?:[0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}\\/\\d{1,3}';
+  const statusLabels = Object.keys(STATUS_MAP).join('|');
+  const lineRegex = new RegExp(
+    `(${cidrPattern})\\s*[:\\-–—]\\s*(${statusLabels})`,
+    'gi',
+  );
+  let m: RegExpExecArray | null;
+  while ((m = lineRegex.exec(text)) !== null) {
+    const cidr = m[1];
+    const label = m[2].toLowerCase();
+    if (STATUS_MAP[label]) statuses[cidr] = STATUS_MAP[label];
+  }
+
+  // --- Probe structured data for per-prefix status arrays ---
+  // e.g. data.prefixes = [{ prefix: "...", status: "..." }, ...]
+  // or   data.prefix_statuses = { "...": "..." }
+  const prefixList = Array.isArray(data.prefixes) ? data.prefixes
+    : Array.isArray(data.prefix_statuses) ? data.prefix_statuses
+    : null;
+  if (prefixList) {
+    for (const entry of prefixList) {
+      if (!entry || typeof entry !== 'object') continue;
+      const cidr = String(entry.prefix || entry.cidr || '');
+      const rawStatus = String(entry.status || entry.advertisement_status || '').toLowerCase();
+      if (cidr && STATUS_MAP[rawStatus]) statuses[cidr] = STATUS_MAP[rawStatus];
+    }
+  }
+  if (data.prefix_statuses && !Array.isArray(data.prefix_statuses) && typeof data.prefix_statuses === 'object') {
+    for (const [cidr, rawStatus] of Object.entries(data.prefix_statuses)) {
+      const label = String(rawStatus).toLowerCase();
+      if (STATUS_MAP[label]) statuses[cidr] = STATUS_MAP[label];
+    }
+  }
+
+  return statuses;
+}
+
+/** True when the status means the prefix is actually being announced. */
+function isAdvertisedStatus(status: AdvertisementStatus): boolean {
+  return status === 'advertised' || status === 'already_advertised';
 }
 
 /**
@@ -24,6 +99,10 @@ export interface ParsedWebhook {
  * CIDRs and an advertise/withdraw intent from alert_type + text + data. The
  * `data` schema is alert-type-specific and not fully documented, so we scan the
  * stringified payload heuristically.
+ *
+ * For `fbm_auto_advertisement` alerts, per-prefix statuses are extracted so
+ * that failed advertisements (Delayed / Locked / Could not Advertise / Error)
+ * are not misclassified as successful.
  */
 export function parseCfWebhook(payload: Record<string, any>): ParsedWebhook {
   const alertType = String(payload.alert_type || payload.name || '');
@@ -38,16 +117,37 @@ export function parseCfWebhook(payload: Record<string, any>): ParsedWebhook {
     ...(haystack.match(IPV6_CIDR) || []),
   ])];
 
+  // --- Per-prefix statuses for auto-advertisement alerts ---
+  let prefixStatuses: Record<string, AdvertisementStatus> = {};
+  if (alertType === 'fbm_auto_advertisement') {
+    prefixStatuses = parseAutoAdvertStatuses(payload);
+  }
+
+  // --- Determine the overall action ---
   const lower = haystack.toLowerCase();
   let action: ParsedWebhook['action'] = 'unknown';
-  if (/withdraw/.test(lower)) action = 'withdraw';
-  else if (/advertis/.test(lower)) action = 'advertise';
+
+  if (alertType === 'fbm_auto_advertisement' && Object.keys(prefixStatuses).length) {
+    // Derive action from the per-prefix statuses: if ANY prefix was successfully
+    // advertised, the overall action is 'advertise'. Otherwise 'unknown' —
+    // we don't want to seed announced=1 for failed/delayed attempts.
+    const hasSuccess = Object.values(prefixStatuses).some(isAdvertisedStatus);
+    action = hasSuccess ? 'advertise' : 'unknown';
+  } else if (/withdraw/.test(lower)) {
+    action = 'withdraw';
+  } else if (/(?:^|[^a-z])(?:could\s+not\s+advertis|unable\s+to\s+advertis)/i.test(haystack)) {
+    // Negative phrasing — NOT a successful advertisement.
+    action = 'unknown';
+  } else if (/advertis/.test(lower)) {
+    action = 'advertise';
+  }
 
   return {
     cidrs,
     action,
     alert_type: alertType,
     account_id: String(payload.account_id || ''),
+    prefix_statuses: prefixStatuses,
   };
 }
 
@@ -102,6 +202,16 @@ export async function handleCloudflareWebhook(c: Context<MachineEnv>) {
 }
 
 /**
+ * Determine whether a specific prefix should be treated as announced based on
+ * the per-prefix status (if available) or the overall parsed action.
+ */
+function cidrIsAnnounced(cidr: string, parsed: ParsedWebhook): boolean {
+  const status = parsed.prefix_statuses[cidr];
+  if (status) return isAdvertisedStatus(status);
+  return parsed.action === 'advertise';
+}
+
+/**
  * Record webhook-sourced provenance on the consolidated state row. Radar remains
  * authoritative for `announced`: existing rows keep their radar-observed value
  * and only get provenance updated; new rows are seeded from the webhook action
@@ -110,7 +220,9 @@ export async function handleCloudflareWebhook(c: Context<MachineEnv>) {
 async function applyWebhookState(
   env: Env, accountId: string, cidr: string, parsed: ParsedWebhook,
 ): Promise<void> {
-  const eventLabel = `${parsed.alert_type || 'webhook'}:${parsed.action}`;
+  const status = parsed.prefix_statuses[cidr];
+  const statusSuffix = status ? `:${status}` : '';
+  const eventLabel = `${parsed.alert_type || 'webhook'}:${parsed.action}${statusSuffix}`;
   const existing = await env.DB.prepare(
     'SELECT id FROM prefix_radar_state WHERE account_id = ? AND cidr = ?',
   ).bind(accountId, cidr).first<{ id: number }>();
@@ -125,7 +237,7 @@ async function applyWebhookState(
     return;
   }
 
-  const seededAnnounced = parsed.action === 'advertise' ? 1 : 0;
+  const seededAnnounced = cidrIsAnnounced(cidr, parsed) ? 1 : 0;
   await env.DB.prepare(
     `INSERT INTO prefix_radar_state
        (account_id, cidr, announced, visible_routes, source, last_change_at,
@@ -235,19 +347,43 @@ export async function handleLogpushWebhook(c: Context<MachineEnv>) {
   return c.json({ ok: true, received: lines.length, stored });
 }
 
+/** Human-readable label for an advertisement status. */
+const STATUS_LABELS: Record<AdvertisementStatus, string> = {
+  advertised: 'Advertised',
+  already_advertised: 'Already Advertised',
+  delayed: 'Delayed',
+  locked: 'Locked',
+  could_not_advertise: 'Could not Advertise',
+  error: 'Error',
+};
+
 /** Fan the webhook event out through the account's notification channels. */
 async function notifyWebhook(
   env: Env, ownerEmail: string, accountId: string, cidr: string, parsed: ParsedWebhook,
 ): Promise<void> {
-  const eventType = parsed.action === 'advertise' ? 'webhook_advertise'
-    : parsed.action === 'withdraw' ? 'webhook_withdraw'
-    : 'webhook_event';
-  const verb = parsed.action === 'advertise' ? 'advertised'
-    : parsed.action === 'withdraw' ? 'withdrawn'
-    : 'reported';
+  const prefixStatus = parsed.prefix_statuses[cidr];
+
+  // Use per-prefix status to pick the right event type and verb.
+  let eventType: string;
+  let verb: string;
+
+  if (prefixStatus) {
+    const announced = isAdvertisedStatus(prefixStatus);
+    eventType = announced ? 'webhook_advertise' : 'webhook_event';
+    verb = STATUS_LABELS[prefixStatus] || prefixStatus;
+  } else {
+    eventType = parsed.action === 'advertise' ? 'webhook_advertise'
+      : parsed.action === 'withdraw' ? 'webhook_withdraw'
+      : 'webhook_event';
+    verb = parsed.action === 'advertise' ? 'advertised'
+      : parsed.action === 'withdraw' ? 'withdrawn'
+      : 'reported';
+  }
+
+  const statusNote = prefixStatus ? ` [${STATUS_LABELS[prefixStatus] || prefixStatus}]` : '';
   const detail = parsed.alert_type
-    ? `Prefix ${cidr} ${verb} via Cloudflare notification (${parsed.alert_type})`
-    : `Prefix ${cidr} ${verb} via Cloudflare notification`;
+    ? `Prefix ${cidr} ${verb} via Cloudflare notification (${parsed.alert_type})${statusNote}`
+    : `Prefix ${cidr} ${verb} via Cloudflare notification${statusNote}`;
 
   await enqueueNotification(env, {
     user_email: ownerEmail,
