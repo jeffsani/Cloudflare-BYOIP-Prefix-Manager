@@ -4604,7 +4604,7 @@ export function renderDashboard(userEmail: string): string {
           );
         }
 
-        var dashLine = '- - - - - - - - - - - - - - - - - - -';
+        var dashLine = '- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -';
 
         var doc = new D.Document({
           sections: [{
