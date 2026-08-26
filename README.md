@@ -380,6 +380,28 @@ Inbound payloads are parsed heuristically (CIDRs + advertise/withdraw intent ext
 > the Access login page before they reach the Worker. See
 > [Excluding machine paths from Access](#excluding-machine-paths-from-access).
 
+### Logging & Troubleshooting
+
+All webhook processing errors are logged via `console.error` to the **Workers runtime logs**.
+View them with `wrangler tail` or in the Cloudflare dashboard under
+**Workers & Pages → (your worker) → Logs → Real-time Logs**.
+
+| Log message | Cause |
+|-------------|-------|
+| `webhook_events insert failed: <err>` | D1 insert of the raw webhook payload failed |
+| `webhook processing failed for <cidr>: <err>` | `applyWebhookState` or `notifyWebhook` threw for a specific CIDR |
+
+**Silent cases (no log emitted):**
+
+- **Non-JSON body** — If the request body is not valid JSON (e.g. Cloudflare's "test" ping
+  or a misconfigured sender), the handler returns `200 { ok: true, note: "no JSON body" }`
+  without logging. Check the HTTP response to diagnose.
+- **No CIDRs extracted** — If the parser finds no CIDRs in the payload, a `200` is returned
+  with `cidrs: 0`. The raw payload is still persisted to `webhook_events` for auditing.
+
+> The `parseCfWebhook` parser is tolerant by design — it never throws. If it cannot extract
+> meaningful data, it returns empty CIDRs and `action: "unknown"`.
+
 ## Audit Log Streaming (Logpush)
 
 The Worker can ingest an account's **Audit Logs v2** via a Cloudflare **Logpush** job that
@@ -399,6 +421,20 @@ Audit Logs API. This requires an **Enterprise** plan and an API token with **Log
 > creates a job it validates the destination by POSTing a test payload; if Access is in the
 > way you'll see `error validating destination: ... status:302`. This is **not** a missing
 > API permission — it's the Access edge redirect.
+
+### Logging
+
+Logpush processing errors are logged via `console.error` to the Workers runtime logs
+(viewable with `wrangler tail`).
+
+| Log message | Cause |
+|-------------|-------|
+| `logpush gunzip failed, falling back to raw text: <err>` | Gzip decompression of the Logpush payload failed; the raw bytes are decoded as plain text instead |
+| `audit_log_events insert failed: <err>` | D1 insert of a parsed audit log event failed |
+
+**Silent case:** Individual NDJSON lines that fail `JSON.parse` are silently skipped — no
+log is emitted. The response reports `received` (total lines) vs `stored` (successfully
+inserted), so a mismatch indicates skipped lines.
 
 ## API Token Permissions
 

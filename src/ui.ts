@@ -688,7 +688,8 @@ export function renderDashboard(userEmail: string): string {
           <span id="notif-queue-chevron" class="chevron text-cf-gray text-xs">&#9654;</span>
           <svg class="w-4 h-4 text-cf-gray" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
           <h3 class="text-xs font-semibold" style="color:var(--text-strong)">Notifications Queue</h3>
-          <span id="notif-queue-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
+          <span id="notif-queue-count-ok" class="text-[10px] text-green-400 px-1.5 py-0.5 rounded-full border border-green-400/30 hidden">0 sent</span>
+          <span id="notif-queue-count-fail" class="text-[10px] text-red-400 px-1.5 py-0.5 rounded-full border border-red-400/30 hidden">0 failed</span>
         </div>
         <div class="flex items-center gap-2">
           <span id="notif-queue-hint" class="text-[10px] text-cf-gray">Click to expand</span>
@@ -6657,11 +6658,15 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function renderNotifQueue(entries) {
-      var countEl = document.getElementById('notif-queue-count');
-      if (countEl) {
-        countEl.textContent = entries.length;
-        countEl.classList.toggle('hidden', entries.length === 0);
-      }
+      var sent = 0, failed = 0;
+      entries.forEach(function(e) {
+        if (e.status === 'sent') sent++;
+        else if (e.status === 'failed' || e.status === 'dead_letter') failed++;
+      });
+      var okEl = document.getElementById('notif-queue-count-ok');
+      var failEl = document.getElementById('notif-queue-count-fail');
+      if (okEl) { okEl.textContent = sent + ' sent'; okEl.classList.toggle('hidden', sent === 0); }
+      if (failEl) { failEl.textContent = failed + ' failed'; failEl.classList.toggle('hidden', failed === 0); }
       if (entries.length === 0) {
         document.getElementById('notif-queue-content').innerHTML =
           '<div class="px-4 py-8 text-center text-cf-gray text-xs">No notifications yet</div>';
