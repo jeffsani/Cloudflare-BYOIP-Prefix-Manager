@@ -55,6 +55,7 @@ export function renderDashboard(userEmail: string): string {
     @keyframes spin { to { transform: rotate(360deg); } }
     [data-theme="light"] .text-white:not(.btn-force-white) { color: var(--text-strong) !important; }
     [data-theme="light"] .bg-cf-orange.text-white { color: #fff !important; }
+    [data-theme="light"] .bg-red-600.text-white { color: #fff !important; }
     [data-theme="light"] .bg-cf-dark { background-color: var(--input-bg) !important; }
     [data-theme="light"] .bg-cf-surface { background-color: var(--surface) !important; }
     [data-theme="light"] .border-cf-border { border-color: var(--border) !important; }
