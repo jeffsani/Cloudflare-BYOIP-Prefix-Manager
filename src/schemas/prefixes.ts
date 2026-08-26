@@ -195,3 +195,24 @@ export const UpdateDescriptionRequestSchema = z.object({
 export const ValidatePrefixRequestSchema = z.object({
   account_id: z.string().optional(),
 });
+
+export const BatchPrefixItemSchema = z.object({
+  cidr: z.string().min(1, 'cidr is required'),
+  asn: z.number({ message: 'asn is required' }),
+});
+
+export const BatchCreatePrefixRequestSchema = z.object({
+  prefixes: z.array(BatchPrefixItemSchema).min(1, 'at least one prefix is required'),
+  delegate_loa_creation: z.boolean().default(true),
+  description: z.string().optional(),
+  loa_document_id: z.string().optional(),
+  account_id: z.string().optional(),
+});
+
+export const BatchCreateResultItemSchema = z.object({
+  cidr: z.string(),
+  asn: z.number(),
+  ok: z.boolean(),
+  prefix: CfPrefixSchema.optional(),
+  error: z.string().optional(),
+});

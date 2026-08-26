@@ -977,41 +977,20 @@ export function renderDashboard(userEmail: string): string {
         <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Add Prefix</h3>
         <p class="text-xs text-cf-gray mt-0.5">Onboard a new BYOIP prefix to your Cloudflare account</p>
       </div>
-      <div class="p-4">
-        <!-- Prefix CIDR -->
+      <div class="p-4" style="max-height:75vh;overflow-y:auto">
+        <!-- Prefixes & ASNs -->
         <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">Prefix (CIDR)${infoTip('Enter an IPv4 or IPv6 prefix in CIDR notation. Minimum size: /24 for IPv4, /32 for IPv6. Must be a publicly routable prefix registered at an RIR.')}</label>
-          <div class="flex items-center gap-2 mb-1.5">
-            <div class="flex rounded-lg border border-cf-border overflow-hidden" style="background:var(--input-bg)">
-              <button id="add-prefix-ipv4-btn" onclick="setAddPrefixFamily('v4')" class="px-2.5 py-1 text-[11px] font-medium transition" style="background:var(--accent);color:#fff">IPv4</button>
-              <button id="add-prefix-ipv6-btn" onclick="setAddPrefixFamily('v6')" class="px-2.5 py-1 text-[11px] font-medium transition" style="color:var(--muted)">IPv6</button>
-            </div>
+          <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Use 13335 for Cloudflare ASN. Minimum size: /24 for IPv4, /48 for IPv6.')}</label>
+          <div class="flex items-center gap-2 mb-1.5 text-[10px] text-cf-gray">
+            <span class="flex-1" style="padding-left:2px">CIDR</span>
+            <span class="w-28" style="padding-left:2px">ASN</span>
+            <span class="w-5"></span>
           </div>
-          <div class="flex gap-2">
-            <input id="add-prefix-ip" type="text" placeholder="e.g. 192.0.2.0" oninput="onAddPrefixIpChange()" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
-            <span class="text-cf-gray self-center">/</span>
-            <select id="add-prefix-mask" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
-            </select>
-          </div>
-        </div>
-
-        <!-- ASN -->
-        <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">ASN (Autonomous System Number)${infoTip('Select the Cloudflare ASN (13335) or enter your own. If using your own ASN, valid IRR and ROA records are required for the prefix.')}</label>
-          <div class="flex flex-col gap-2">
-            <label class="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="radio" name="add-prefix-asn-mode" value="cloudflare" checked onchange="onAsnModeChange()" style="accent-color:#F6821F">
-              <span style="color:var(--text-primary)">Use Cloudflare's ASN (13335)</span>
-            </label>
-            <label class="flex items-center gap-2 text-xs cursor-pointer">
-              <input type="radio" name="add-prefix-asn-mode" value="custom" onchange="onAsnModeChange()" style="accent-color:#F6821F">
-              <span style="color:var(--text-primary)">Use my own ASN</span>
-            </label>
-            <div id="add-prefix-custom-asn-wrap" class="hidden ml-5">
-              <input id="add-prefix-custom-asn" type="number" placeholder="e.g. 64496" min="1" max="4294967295" class="w-40 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
-              <p id="add-prefix-byo-asn-note" class="text-[10px] mt-1" style="color:var(--muted)"></p>
-            </div>
-          </div>
+          <div id="add-prefix-rows" class="space-y-2"></div>
+          <button type="button" onclick="addAddPrefixRow()" class="mt-2 px-2 py-1 text-[11px] text-cf-orange border border-cf-orange rounded hover:bg-cf-orange hover:text-white transition flex items-center gap-1">
+            <svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+            Add prefix
+          </button>
         </div>
 
         <!-- LOA -->
@@ -1054,28 +1033,22 @@ export function renderDashboard(userEmail: string): string {
           <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
 
-        <!-- Validation Results -->
-        <div id="add-prefix-validation-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
+        <!-- Batch Results -->
+        <div id="add-prefix-batch-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-xs font-semibold" style="color:var(--text-strong)">Validation Results</span>
-            <span id="add-prefix-validation-badge"></span>
+            <span class="text-xs font-semibold" style="color:var(--text-strong)">Results</span>
+            <span id="add-prefix-batch-badge"></span>
           </div>
-          <div id="add-prefix-validation-details" class="text-[11px] space-y-1.5"></div>
+          <div id="add-prefix-batch-details" class="text-[11px] space-y-1"></div>
         </div>
 
         <!-- Client-Side Errors -->
         <div id="add-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
 
         <!-- Buttons -->
-        <div class="flex justify-between gap-2">
-          <button id="add-prefix-validate-btn" onclick="validatePrefixRemote()" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition flex items-center gap-1">
-            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-            Validate IRR / ROA
-          </button>
-          <div class="flex gap-2">
-            <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
-            <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
-          </div>
+        <div class="flex justify-end gap-2">
+          <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+          <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
         </div>
       </div>
     </div>
@@ -4232,7 +4205,7 @@ export function renderDashboard(userEmail: string): string {
     // ─── Add Prefix Modal ──────────────────────────────────────────
     var addPrefixLoaDocumentId = null;
     var addPrefixValidationResult = null;
-    var addPrefixIpFamily = null; // 'v4', 'v6', or null
+    var addPrefixRows = [{ cidr: '', asn: '13335' }];
 
     // Non-routable IPv4 ranges (network BigInt, prefix length)
     var NON_ROUTABLE_V4 = [
@@ -4268,23 +4241,14 @@ export function renderDashboard(userEmail: string): string {
       // Reset state
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
-      addPrefixIpFamily = null;
+      addPrefixRows = [{ cidr: '', asn: '13335' }];
 
-      document.getElementById('add-prefix-ip').value = '';
-      document.getElementById('add-prefix-custom-asn').value = '';
       document.getElementById('add-prefix-description').value = '';
       document.getElementById('add-prefix-error').classList.add('hidden');
-      document.getElementById('add-prefix-validation-results').classList.add('hidden');
+      document.getElementById('add-prefix-batch-results').classList.add('hidden');
       document.getElementById('add-prefix-submit-btn').disabled = false;
       document.getElementById('add-prefix-submit-btn').textContent = 'Add Prefix';
-      document.getElementById('add-prefix-validate-btn').disabled = false;
-      document.getElementById('add-prefix-validate-btn').innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
       document.getElementById('add-prefix-loa-status').innerHTML = '';
-
-      // Reset radio buttons
-      var asnRadios = document.querySelectorAll('input[name="add-prefix-asn-mode"]');
-      asnRadios.forEach(function(r, i) { r.checked = i === 0; });
-      document.getElementById('add-prefix-custom-asn-wrap').classList.add('hidden');
 
       var loaRadios = document.querySelectorAll('input[name="add-prefix-loa-mode"]');
       loaRadios.forEach(function(r, i) { r.checked = i === 0; });
@@ -4296,9 +4260,7 @@ export function renderDashboard(userEmail: string): string {
       var fileInput = document.getElementById('add-prefix-loa-file');
       if (fileInput) fileInput.value = '';
 
-      // Default to IPv4
-      setAddPrefixFamily('v4');
-
+      renderAddPrefixRows();
       document.getElementById('add-prefix-modal').classList.remove('hidden');
     }
 
@@ -4306,99 +4268,54 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('add-prefix-modal').classList.add('hidden');
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
-      addPrefixIpFamily = null;
     }
 
-    function setAddPrefixFamily(family) {
-      if (family === addPrefixIpFamily) return;
-      addPrefixIpFamily = family;
-
-      var v4Btn = document.getElementById('add-prefix-ipv4-btn');
-      var v6Btn = document.getElementById('add-prefix-ipv6-btn');
-      var ipInput = document.getElementById('add-prefix-ip');
-      var maskSel = document.getElementById('add-prefix-mask');
-
-      if (family === 'v4') {
-        v4Btn.style.background = 'var(--accent)';
-        v4Btn.style.color = '#fff';
-        v6Btn.style.background = 'transparent';
-        v6Btn.style.color = 'var(--muted)';
-        ipInput.placeholder = 'e.g. 192.0.2.0';
-        var html = '';
-        for (var m = 8; m <= 24; m++) {
-          html += '<option value="' + m + '"' + (m === 24 ? ' selected' : '') + '>/' + m + '</option>';
+    function renderAddPrefixRows() {
+      var container = document.getElementById('add-prefix-rows');
+      var html = '';
+      for (var i = 0; i < addPrefixRows.length; i++) {
+        html += '<div class="flex items-center gap-2">';
+        html += '<input type="text" placeholder="e.g. 192.0.2.0/24" value="' + escAttr(addPrefixRows[i].cidr) + '" oninput="updateAddPrefixRow(' + i + ',\\'cidr\\',this.value)" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        html += '<input type="text" placeholder="13335" value="' + escAttr(addPrefixRows[i].asn) + '" oninput="updateAddPrefixRow(' + i + ',\\'asn\\',this.value)" class="w-28 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">';
+        if (addPrefixRows.length > 1) {
+          html += '<button type="button" onclick="removeAddPrefixRow(' + i + ')" class="p-1 text-cf-gray hover:text-red-400 transition" title="Remove"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
+        } else {
+          html += '<div class="w-5"></div>';
         }
-        maskSel.innerHTML = html;
-      } else {
-        v6Btn.style.background = 'var(--accent)';
-        v6Btn.style.color = '#fff';
-        v4Btn.style.background = 'transparent';
-        v4Btn.style.color = 'var(--muted)';
-        ipInput.placeholder = 'e.g. 2001:db8::';
-        var html = '';
-        for (var m = 32; m <= 48; m++) {
-          html += '<option value="' + m + '"' + (m === 48 ? ' selected' : '') + '>/' + m + '</option>';
-        }
-        maskSel.innerHTML = html;
+        html += '</div>';
       }
-
-      // Clear previous validation when family changes
-      document.getElementById('add-prefix-validation-results').classList.add('hidden');
-      document.getElementById('add-prefix-error').classList.add('hidden');
-      addPrefixValidationResult = null;
+      container.innerHTML = html;
+      // Update submit button label
+      var btn = document.getElementById('add-prefix-submit-btn');
+      if (btn && !btn.disabled) {
+        btn.textContent = addPrefixRows.length > 1 ? 'Add ' + addPrefixRows.length + ' Prefixes' : 'Add Prefix';
+      }
     }
 
-    function onAddPrefixIpChange() {
-      var ip = document.getElementById('add-prefix-ip').value.trim();
-      // Auto-switch family based on input content
-      if (ip.indexOf(':') !== -1 && addPrefixIpFamily !== 'v6') {
-        setAddPrefixFamily('v6');
-      } else if (ip.length > 0 && ip.indexOf(':') === -1 && /^\d/.test(ip) && addPrefixIpFamily !== 'v4') {
-        setAddPrefixFamily('v4');
-      }
-
-      // Clear previous validation when prefix changes
-      document.getElementById('add-prefix-validation-results').classList.add('hidden');
-      document.getElementById('add-prefix-error').classList.add('hidden');
-      addPrefixValidationResult = null;
+    function addAddPrefixRow() {
+      addPrefixRows.push({ cidr: '', asn: '13335' });
+      renderAddPrefixRows();
+      // Focus the new CIDR input
+      var rows = document.getElementById('add-prefix-rows');
+      var inputs = rows.querySelectorAll('input[type="text"]');
+      if (inputs.length >= 2) inputs[inputs.length - 2].focus();
     }
 
-    function onAsnModeChange() {
-      var mode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
-      var customWrap = document.getElementById('add-prefix-custom-asn-wrap');
-      if (mode === 'custom') {
-        customWrap.classList.remove('hidden');
-        document.getElementById('add-prefix-custom-asn').focus();
-        // Check for RIR credentials and show appropriate note
-        updateByoAsnNote();
-      } else {
-        customWrap.classList.add('hidden');
-      }
-      // Clear validation when ASN changes
-      document.getElementById('add-prefix-validation-results').classList.add('hidden');
-      addPrefixValidationResult = null;
+    function removeAddPrefixRow(index) {
+      if (addPrefixRows.length <= 1) return;
+      addPrefixRows.splice(index, 1);
+      renderAddPrefixRows();
     }
 
-    function updateByoAsnNote() {
-      var noteEl = document.getElementById('add-prefix-byo-asn-note');
-      if (!noteEl) return;
-      // Check RIR credentials for the active account
-      fetch('/api/rir/credentials?account_id=' + encodeURIComponent(activeAccountId))
-        .then(function(r) { return r.json(); })
-        .then(function(data) {
-          if (data.credentials && data.credentials.length > 0) {
-            var rirs = data.credentials.map(function(c) { return c.rir.toUpperCase(); }).join(' / ');
-            noteEl.style.color = '#22c55e';
-            noteEl.textContent = 'RIR API keys saved (' + rirs + '). IRR route object and aut-num will be auto-created after prefix onboarding.';
-          } else {
-            noteEl.style.color = 'var(--muted)';
-            noteEl.textContent = 'Add RIR API keys in Account Settings to auto-create IRR route and aut-num records after prefix onboarding.';
-          }
-        })
-        .catch(function() {
-          noteEl.style.color = 'var(--muted)';
-          noteEl.textContent = 'BYO-ASN requires valid IRR route object, ROA, and ownership validation.';
-        });
+    function updateAddPrefixRow(index, field, value) {
+      if (addPrefixRows[index]) {
+        addPrefixRows[index][field] = value;
+      }
+      // Update submit button count when rows change
+      var btn = document.getElementById('add-prefix-submit-btn');
+      if (btn && !btn.disabled) {
+        btn.textContent = addPrefixRows.length > 1 ? 'Add ' + addPrefixRows.length + ' Prefixes' : 'Add Prefix';
+      }
     }
 
     function onLoaModeChange() {
@@ -4745,212 +4662,56 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
-    function getAddPrefixAsn() {
-      var mode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
-      if (mode === 'cloudflare') return 13335;
-      var val = parseInt(document.getElementById('add-prefix-custom-asn').value, 10);
-      return isNaN(val) ? null : val;
-    }
-
     function validateNewPrefix() {
-      var ip = document.getElementById('add-prefix-ip').value.trim();
-      var mask = document.getElementById('add-prefix-mask').value;
-      if (!ip) return 'IP address is required';
-      if (!mask) return 'Prefix length is required';
+      // Validate each prefix row
+      for (var i = 0; i < addPrefixRows.length; i++) {
+        var row = addPrefixRows[i];
+        var cidr = row.cidr.trim();
+        var asnStr = row.asn.trim();
 
-      var cidr = ip + '/' + mask;
-      var parsed = parseCIDR(cidr);
-      if (!parsed) return 'Invalid IP address format';
+        if (!cidr) return 'Row ' + (i + 1) + ': CIDR is required';
 
-      var maskLen = parseInt(mask, 10);
+        // Parse and validate CIDR
+        var parsed = parseCIDR(cidr);
+        if (!parsed) return 'Row ' + (i + 1) + ': Invalid CIDR format (' + cidr + '). Use e.g. 192.0.2.0/24 or 2001:db8::/32';
 
-      // Minimum size for BGP on the public internet
-      if (!parsed.v6 && maskLen > 24) return 'IPv4 prefix must be /24 or shorter (larger) for BGP on the public internet';
-      if (parsed.v6 && maskLen < 32) return 'IPv6 prefix must be /32 or longer. Cloudflare currently supports a minimum (largest) prefix size of /32 for IPv6.';
-      if (parsed.v6 && maskLen > 48) return 'IPv6 prefix must be /48 or shorter. Cloudflare does not support prefixes more specific than /48 for IPv6.';
+        var parts = cidr.split('/');
+        var maskLen = parseInt(parts[1], 10);
+        if (isNaN(maskLen)) return 'Row ' + (i + 1) + ': Missing prefix length (e.g. /24)';
 
-      // Check non-routable / documentation ranges
-      var nonRoutable = parsed.v6 ? NON_ROUTABLE_V6 : NON_ROUTABLE_V4;
-      for (var i = 0; i < nonRoutable.length; i++) {
-        var reserved = parseCIDR(nonRoutable[i].cidr);
-        if (reserved && cidrOverlaps(parsed, reserved)) {
-          return 'Prefix ' + cidr + ' is in a non-routable or documentation range (' + nonRoutable[i].cidr + ')';
+        if (!parsed.v6 && maskLen > 24) return 'Row ' + (i + 1) + ': IPv4 prefix must be /24 or shorter';
+        if (parsed.v6 && maskLen < 32) return 'Row ' + (i + 1) + ': IPv6 prefix must be /32 or longer';
+        if (parsed.v6 && maskLen > 48) return 'Row ' + (i + 1) + ': IPv6 prefix must be /48 or shorter';
+
+        // Check non-routable ranges
+        var nonRoutable = parsed.v6 ? NON_ROUTABLE_V6 : NON_ROUTABLE_V4;
+        for (var j = 0; j < nonRoutable.length; j++) {
+          var reserved = parseCIDR(nonRoutable[j].cidr);
+          if (reserved && cidrOverlaps(parsed, reserved)) {
+            return 'Row ' + (i + 1) + ': ' + cidr + ' is in a non-routable range (' + nonRoutable[j].cidr + ')';
+          }
         }
-      }
 
-      // Validate ASN
-      var asn = getAddPrefixAsn();
-      if (asn === null) return 'ASN is required';
-      if (asn < 1 || asn > 4294967295) return 'ASN must be between 1 and 4294967295';
-
-      // Check reserved/private ASN ranges
-      var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
-      if (asnMode === 'custom') {
+        // Validate ASN
+        if (!asnStr) return 'Row ' + (i + 1) + ': ASN is required';
+        var asn = parseInt(asnStr, 10);
+        if (isNaN(asn)) return 'Row ' + (i + 1) + ': Invalid ASN';
+        if (asn < 1 || asn > 4294967295) return 'Row ' + (i + 1) + ': ASN must be between 1 and 4294967295';
         if ((asn >= 64512 && asn <= 65534) || (asn >= 4200000000 && asn <= 4294967294)) {
-          return 'ASN ' + asn + ' is in a private/reserved range. Use a public ASN.';
+          return 'Row ' + (i + 1) + ': ASN ' + asn + ' is in a private/reserved range';
         }
       }
 
-      // Check LOA upload if upload or generate mode selected
+      // Check LOA
       var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       if (loaMode === 'upload' && !addPrefixLoaDocumentId) {
         return 'Please upload a LOA document first, or select auto-generation';
       }
       if (loaMode === 'generate' && !addPrefixLoaDocumentId) {
-        return 'Please generate the LOA, then upload the signed PDF. Use the LOA Generator to create the document, sign it, save as PDF, and upload it.';
+        return 'Please generate the LOA, then upload the signed PDF.';
       }
 
       return null; // valid
-    }
-
-    async function validatePrefixRemote() {
-      // First run client-side validation
-      var clientError = validateNewPrefix();
-      if (clientError) {
-        var errEl = document.getElementById('add-prefix-error');
-        errEl.textContent = clientError;
-        errEl.classList.remove('hidden');
-        return;
-      }
-      document.getElementById('add-prefix-error').classList.add('hidden');
-
-      var ip = document.getElementById('add-prefix-ip').value.trim();
-      var mask = document.getElementById('add-prefix-mask').value;
-      var cidr = ip + '/' + mask;
-      var asn = getAddPrefixAsn();
-
-      var btn = document.getElementById('add-prefix-validate-btn');
-      btn.disabled = true;
-      btn.innerHTML = '<div class="spinner" style="width:14px;height:14px"></div> Validating...';
-
-      try {
-        var resp = await fetch('/api/prefixes/validate-new', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cidr: cidr, asn: asn, account_id: activeAccountId })
-        });
-        var data = await resp.json();
-
-        if (data.error) {
-          var errEl = document.getElementById('add-prefix-error');
-          errEl.textContent = data.error;
-          errEl.classList.remove('hidden');
-          return;
-        }
-
-        addPrefixValidationResult = data.result;
-        renderValidationResults(data.result, asn);
-      } catch (e) {
-        var errEl = document.getElementById('add-prefix-error');
-        errEl.textContent = 'Validation request failed: ' + e;
-        errEl.classList.remove('hidden');
-      } finally {
-        btn.disabled = false;
-        btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
-      }
-    }
-
-    function renderValidationResults(result, asn) {
-      var container = document.getElementById('add-prefix-validation-results');
-      var badgeEl = document.getElementById('add-prefix-validation-badge');
-      var detailsEl = document.getElementById('add-prefix-validation-details');
-
-      var summary = result.summary;
-      if (summary.ready && summary.warnings.length === 0) {
-        badgeEl.innerHTML = '<span class="badge-valid">Ready</span>';
-      } else if (summary.ready && summary.warnings.length > 0) {
-        badgeEl.innerHTML = '<span class="badge-pending">Ready with warnings</span>';
-      } else {
-        badgeEl.innerHTML = '<span class="badge-invalid">Issues found</span>';
-      }
-
-      var html = '';
-
-      // ROA section
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
-      html += '<div class="flex items-center gap-2 mb-1">';
-      html += '<span class="font-semibold" style="color:var(--text-strong)">RPKI / ROA</span>';
-      if (result.roa.found && result.roa.matching_asn) {
-        html += '<span class="badge-valid">Valid</span>';
-      } else if (result.roa.found && !result.roa.matching_asn) {
-        html += '<span class="badge-invalid">ASN mismatch</span>';
-      } else {
-        html += '<span class="badge-unknown">Not found</span>';
-      }
-      html += '</div>';
-      if (result.roa.origins.length > 0) {
-        for (var i = 0; i < result.roa.origins.length; i++) {
-          var o = result.roa.origins[i];
-          var rpkiCls = o.rpki_status.toLowerCase() === 'valid' ? 'badge-valid' : o.rpki_status.toLowerCase() === 'invalid' ? 'badge-invalid' : 'badge-unknown';
-          html += '<div style="color:var(--text-primary)">Origin: AS' + o.asn + ' &mdash; <span class="' + rpkiCls + '">' + escHtml(o.rpki_status) + '</span>' + (o.prefix ? ' (' + escHtml(o.prefix) + ')' : '') + '</div>';
-        }
-      } else {
-        html += '<div style="color:var(--muted)">No ROA entries found</div>';
-      }
-      html += '</div>';
-
-      // IRR section (RIPEstat)
-      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
-      html += '<div class="flex items-center gap-2 mb-1">';
-      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Records</span>';
-      if (result.irr.found && result.irr.matching_asn && result.irr.exact_match) {
-        html += '<span class="badge-valid">Exact match</span>';
-      } else if (result.irr.found && result.irr.matching_asn && !result.irr.exact_match) {
-        html += '<span class="badge-pending">Parent coverage only</span>';
-      } else if (result.irr.found && !result.irr.matching_asn) {
-        html += '<span class="badge-invalid">ASN mismatch</span>';
-      } else {
-        html += '<span class="badge-unknown">Not found</span>';
-      }
-      html += '</div>';
-      if (result.irr.records.length > 0) {
-        for (var i = 0; i < result.irr.records.length; i++) {
-          var r = result.irr.records[i];
-          html += '<div style="color:var(--text-primary)">' + escHtml(r.prefix) + ' &mdash; origin: ' + escHtml(r.origin) + (r.source ? ' (' + escHtml(r.source) + ')' : '') + '</div>';
-        }
-        if (result.irr.found && !result.irr.exact_match) {
-          html += '<div class="mt-1 text-[10px]" style="color:#eab308">An exact route object for this prefix will be created automatically during onboarding.</div>';
-        }
-      } else {
-        html += '<div style="color:var(--muted)">No IRR route/route6 objects found</div>';
-      }
-      html += '</div>';
-
-      // Summary messages
-      var hasRirCreds = result.rir_credentials && result.rir_credentials.length > 0;
-      var isCustomAsn = asn !== 13335;
-      if (summary.errors.length > 0) {
-        html += '<div style="padding:6px 0">';
-        for (var i = 0; i < summary.errors.length; i++) {
-          html += '<div style="color:#ef4444;margin-bottom:4px">&#10007; ' + escHtml(summary.errors[i]) + '</div>';
-        }
-        html += '</div>';
-      }
-
-      // BYO-ASN credential-aware messaging
-      if (isCustomAsn && summary.ready) {
-        html += '<div style="padding:6px 0">';
-        if (hasRirCreds) {
-          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
-        } else {
-          html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR API keys in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
-        }
-        html += '</div>';
-      } else if (summary.warnings.length > 0) {
-        html += '<div style="padding:6px 0">';
-        for (var i = 0; i < summary.warnings.length; i++) {
-          html += '<div style="color:#eab308;margin-bottom:4px">&#9888; ' + escHtml(summary.warnings[i]) + '</div>';
-        }
-        html += '</div>';
-      }
-
-      // RPKI Portal link with pre-populated ASN and prefix
-      var rpkiCidr = document.getElementById('add-prefix-ip').value.trim() + '/' + document.getElementById('add-prefix-mask').value;
-      var rpkiPortalUrl = 'https://rpki.cloudflare.com/?view=validator&validateRoute=' + encodeURIComponent(asn + '_' + rpkiCidr);
-      html += '<div style="padding-top:6px"><a href="' + rpkiPortalUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>';
-
-      detailsEl.innerHTML = html;
-      container.classList.remove('hidden');
     }
 
     // Check if a CIDR falls within any existing onboarded prefix
@@ -5040,126 +4801,155 @@ export function renderDashboard(userEmail: string): string {
         return;
       }
       document.getElementById('add-prefix-error').classList.add('hidden');
+      document.getElementById('add-prefix-batch-results').classList.add('hidden');
 
-      var ip = document.getElementById('add-prefix-ip').value.trim();
-      var mask = document.getElementById('add-prefix-mask').value;
-      var cidr = ip + '/' + mask;
-      var asn = getAddPrefixAsn();
       var description = document.getElementById('add-prefix-description').value.trim();
       var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       var delegateLoaCreation = loaMode === 'delegate';
 
-      // For custom ASN: auto-run validation if not done yet, skip prompts when RIR creds exist
-      var asnMode = document.querySelector('input[name="add-prefix-asn-mode"]:checked').value;
-      if (asnMode === 'custom') {
-        if (!addPrefixValidationResult) {
-          // Auto-run validation inline instead of prompting
-          var valErr = validateNewPrefix();
-          if (valErr) {
-            var errEl = document.getElementById('add-prefix-error');
-            errEl.textContent = valErr;
-            errEl.classList.remove('hidden');
-            return;
-          }
-          var valIp = document.getElementById('add-prefix-ip').value.trim();
-          var valMask = document.getElementById('add-prefix-mask').value;
-          var valCidr = valIp + '/' + valMask;
-          var valAsn = getAddPrefixAsn();
-          try {
-            var valResp = await fetch('/api/prefixes/validate-new', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cidr: valCidr, asn: valAsn }),
-            });
-            var valData = await valResp.json();
-            if (valData.result) {
-              addPrefixValidationResult = valData.result;
-            }
-          } catch (e) {
-            // Validation fetch failed - continue anyway, the ensure flow will handle it
-          }
-        }
-        if (addPrefixValidationResult && !addPrefixValidationResult.summary.ready) {
-          // Only warn if there are actual errors (not just warnings)
-          var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
-          if (hasErrors) {
-            showConfirm({ title: 'Validation issues', message: 'Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '. Continue anyway?', confirmLabel: 'Continue', danger: true, onConfirm: function() { finishAddPrefix(cidr, asn, description, delegateLoaCreation); } });
-            return;
-          }
+      // Build prefix list from rows
+      var prefixes = [];
+      for (var i = 0; i < addPrefixRows.length; i++) {
+        prefixes.push({ cidr: addPrefixRows[i].cidr.trim(), asn: parseInt(addPrefixRows[i].asn.trim(), 10) });
+      }
+
+      // Single prefix: check parent overlap
+      if (prefixes.length === 1) {
+        var parentPrefix = findParentPrefix(prefixes[0].cidr);
+        if (parentPrefix) {
+          var errEl = document.getElementById('add-prefix-error');
+          errEl.innerHTML = 'This prefix falls within an existing parent prefix <strong>' + escHtml(parentPrefix.cidr) + '</strong>. ' +
+            'Use the <strong>Add Child Prefix</strong> button on the parent prefix row to create it as a delegation. ' +
+            '<a href="#" onclick="event.preventDefault();closeAddPrefixModal();openChildPrefixModal(\\\'' + escAttr(parentPrefix.id) + '\\\',\\\'' + escAttr(parentPrefix.cidr) + '\\\')" style="color:#F6821F;font-weight:500">Create child prefix now</a>';
+          errEl.classList.remove('hidden');
+          return;
         }
       }
 
-      finishAddPrefix(cidr, asn, description, delegateLoaCreation);
-    }
-
-    async function finishAddPrefix(cidr, asn, description, delegateLoaCreation) {
-      // Check if this prefix falls within an existing parent prefix
-      var parentPrefix = findParentPrefix(cidr);
-      if (parentPrefix) {
-        var errEl = document.getElementById('add-prefix-error');
-        errEl.innerHTML = 'This prefix falls within an existing parent prefix <strong>' + escHtml(parentPrefix.cidr) + '</strong>. ' +
-          'Use the <strong>Add Child Prefix</strong> button on the parent prefix row to create it as a delegation. ' +
-          '<a href="#" onclick="event.preventDefault();closeAddPrefixModal();openChildPrefixModal(\\\'' + escAttr(parentPrefix.id) + '\\\',\\\'' + escAttr(parentPrefix.cidr) + '\\\')" style="color:#F6821F;font-weight:500">Create child prefix now</a>';
-        errEl.classList.remove('hidden');
-        return;
+      // Multi-prefix: check all for parent overlap
+      if (prefixes.length > 1) {
+        var overlaps = [];
+        for (var i = 0; i < prefixes.length; i++) {
+          var pp = findParentPrefix(prefixes[i].cidr);
+          if (pp) overlaps.push(prefixes[i].cidr + ' (child of ' + pp.cidr + ')');
+        }
+        if (overlaps.length > 0) {
+          var errEl = document.getElementById('add-prefix-error');
+          errEl.textContent = 'These prefixes overlap existing parent prefixes and should be added as child prefixes instead: ' + overlaps.join(', ');
+          errEl.classList.remove('hidden');
+          return;
+        }
       }
 
       var btn = document.getElementById('add-prefix-submit-btn');
       btn.disabled = true;
-      btn.textContent = 'Creating...';
 
-      try {
-        var postBody = {
-          cidr: cidr,
-          asn: asn,
-          delegate_loa_creation: delegateLoaCreation,
-          account_id: activeAccountId
-        };
-        if (description) postBody.description = description;
-        if (addPrefixLoaDocumentId) postBody.loa_document_id = addPrefixLoaDocumentId;
+      if (prefixes.length === 1) {
+        // Single prefix: use existing endpoint for backward compatibility
+        btn.textContent = 'Creating...';
+        try {
+          var postBody = {
+            cidr: prefixes[0].cidr,
+            asn: prefixes[0].asn,
+            delegate_loa_creation: delegateLoaCreation,
+            account_id: activeAccountId
+          };
+          if (description) postBody.description = description;
+          if (addPrefixLoaDocumentId) postBody.loa_document_id = addPrefixLoaDocumentId;
 
-        var resp = await fetch('/api/prefixes', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(postBody)
-        });
-        var data = await resp.json();
-        if (data.ok) {
-          // Save validation result before closeAddPrefixModal() nulls it
-          var savedValidationResult = addPrefixValidationResult;
-          closeAddPrefixModal();
-          loadPrefixes();
-          refreshActivityLog();
+          var resp = await fetch('/api/prefixes', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(postBody)
+          });
+          var data = await resp.json();
+          if (data.ok) {
+            closeAddPrefixModal();
+            loadPrefixes();
+            refreshActivityLog();
 
-          // Determine if we should auto-create RIR records
-          var token = data.prefix ? data.prefix.ownership_validation_token : null;
-          var prefixId = data.prefix ? data.prefix.id : null;
-          var hasRirCreds = savedValidationResult && savedValidationResult.rir_credentials && savedValidationResult.rir_credentials.length > 0;
-          var isByoAsn = asn !== 13335;
-
-          console.log('[add-prefix] token:', token, 'isByoAsn:', isByoAsn, 'hasRirCreds:', hasRirCreds, 'validationResult:', savedValidationResult);
-
-          if (isByoAsn && hasRirCreds) {
-            // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
-            var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
-            showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult);
-          } else if (isByoAsn && token) {
-            // Manual flow: show token and instructions
-            showPostCreationGuide(cidr, asn, token);
+            // Determine if we should auto-create RIR records (BYO-ASN flow)
+            var token = data.prefix ? data.prefix.ownership_validation_token : null;
+            var prefixId = data.prefix ? data.prefix.id : null;
+            var isByoAsn = prefixes[0].asn !== 13335;
+            if (isByoAsn && token) {
+              showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token);
+            }
+          } else {
+            var errEl = document.getElementById('add-prefix-error');
+            errEl.textContent = (data.error || 'Failed to create prefix') + (data.details ? ' (' + data.details + ')' : '');
+            errEl.classList.remove('hidden');
           }
-        } else {
+        } catch (e) {
           var errEl = document.getElementById('add-prefix-error');
-          errEl.textContent = (data.error || 'Failed to create prefix') + (data.details ? ' (' + data.details + ')' : '');
+          errEl.textContent = 'Request failed: ' + e;
           errEl.classList.remove('hidden');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Add Prefix';
         }
-      } catch (e) {
-        var errEl = document.getElementById('add-prefix-error');
-        errEl.textContent = 'Request failed: ' + e;
-        errEl.classList.remove('hidden');
-      } finally {
-        btn.disabled = false;
-        btn.textContent = 'Add Prefix';
+      } else {
+        // Batch: use batch endpoint
+        btn.textContent = 'Creating ' + prefixes.length + ' prefixes...';
+        try {
+          var batchBody = {
+            prefixes: prefixes,
+            delegate_loa_creation: delegateLoaCreation,
+            account_id: activeAccountId
+          };
+          if (description) batchBody.description = description;
+          if (addPrefixLoaDocumentId) batchBody.loa_document_id = addPrefixLoaDocumentId;
+
+          var resp = await fetch('/api/prefixes/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(batchBody)
+          });
+          var data = await resp.json();
+          if (data.ok) {
+            renderBatchResults(data.results, data.summary);
+            loadPrefixes();
+            refreshActivityLog();
+          } else {
+            var errEl = document.getElementById('add-prefix-error');
+            errEl.textContent = data.error || 'Batch creation failed';
+            errEl.classList.remove('hidden');
+          }
+        } catch (e) {
+          var errEl = document.getElementById('add-prefix-error');
+          errEl.textContent = 'Request failed: ' + e;
+          errEl.classList.remove('hidden');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = 'Add ' + prefixes.length + ' Prefixes';
+        }
       }
+    }
+
+    function renderBatchResults(results, summary) {
+      var container = document.getElementById('add-prefix-batch-results');
+      var badgeEl = document.getElementById('add-prefix-batch-badge');
+      var detailsEl = document.getElementById('add-prefix-batch-details');
+
+      if (summary.failed === 0) {
+        badgeEl.innerHTML = '<span class="badge-valid">' + summary.succeeded + '/' + summary.total + ' created</span>';
+      } else if (summary.succeeded === 0) {
+        badgeEl.innerHTML = '<span class="badge-invalid">All ' + summary.total + ' failed</span>';
+      } else {
+        badgeEl.innerHTML = '<span class="badge-pending">' + summary.succeeded + '/' + summary.total + ' created</span>';
+      }
+
+      var html = '';
+      for (var i = 0; i < results.length; i++) {
+        var r = results[i];
+        if (r.ok) {
+          html += '<div class="flex items-center gap-2" style="color:#22c55e"><span>&#10003;</span> <span class="font-mono text-[11px]">' + escHtml(r.cidr) + '</span> <span class="text-cf-gray">AS' + r.asn + '</span></div>';
+        } else {
+          html += '<div class="flex items-start gap-2" style="color:#ef4444"><span>&#10007;</span> <span class="font-mono text-[11px]">' + escHtml(r.cidr) + '</span> <span class="text-cf-gray">AS' + r.asn + '</span> <span class="text-[10px]">' + escHtml(r.error || 'Unknown error') + '</span></div>';
+        }
+      }
+      detailsEl.innerHTML = html;
+      container.classList.remove('hidden');
     }
 
     // ─── Post-Creation Guide ─────────────────────────────────────

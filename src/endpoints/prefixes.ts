@@ -25,6 +25,8 @@ import {
   ValidatePrefixRequestSchema,
   BulkToggleRequestSchema,
   BulkToggleResultItemSchema,
+  BatchCreatePrefixRequestSchema,
+  BatchCreateResultItemSchema,
 } from '../schemas/prefixes';
 import { ErrorResponseSchema, OkResponseSchema, AccountIdQuerySchema } from '../schemas/common';
 import { toggleBgpAdvertisement } from '../api';
@@ -142,6 +144,92 @@ export class CreatePrefix extends OpenAPIRoute {
       });
 
       return c.json({ ok: true, prefix: result.result });
+    } catch (e) {
+      return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
+    }
+  }
+}
+
+// POST /api/prefixes/batch
+export class BatchCreatePrefix extends OpenAPIRoute {
+  schema = {
+    tags: ['Prefixes'],
+    summary: 'Batch create BYOIP prefixes',
+    description: 'Onboard multiple BYOIP prefixes at once. Each prefix is created sequentially via the Cloudflare API. Shared LOA and description apply to all prefixes.',
+    request: {
+      body: contentJson(BatchCreatePrefixRequestSchema),
+    },
+    responses: {
+      '200': {
+        description: 'Batch creation results',
+        ...contentJson(z.object({
+          ok: z.literal(true),
+          results: z.array(BatchCreateResultItemSchema),
+          summary: z.object({
+            total: z.number(),
+            succeeded: z.number(),
+            failed: z.number(),
+          }),
+        })),
+      },
+      '400': {
+        description: 'Validation error or missing token',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+    const body = data.body;
+    const acct = await resolveAccount(c.env.DB, email, body.account_id);
+    if (!acct) return c.json({ error: 'No account configured' }, 400);
+
+    try {
+      const token = await getToken(c.env.DB, email, acct.account_id);
+      const results: Array<{ cidr: string; asn: number; ok: boolean; prefix?: unknown; error?: string }> = [];
+
+      for (const item of body.prefixes) {
+        try {
+          const result = await createPrefix(
+            acct.account_id,
+            item.cidr,
+            item.asn,
+            body.delegate_loa_creation ?? true,
+            token,
+            body.description,
+            body.loa_document_id,
+          );
+          if (result.success) {
+            results.push({ cidr: item.cidr, asn: item.asn, ok: true, prefix: result.result });
+          } else {
+            const errMsg = result.errors?.[0]?.message || 'API error';
+            const friendlyErrors: Record<string, string> = {
+              prefix_exists_for_cidr: `Prefix ${item.cidr} already exists`,
+              invalid_cidr: `Invalid CIDR: ${item.cidr}`,
+              prefix_too_small: `Prefix ${item.cidr} is too small`,
+              prefix_too_large: `Prefix ${item.cidr} is too large`,
+            };
+            results.push({ cidr: item.cidr, asn: item.asn, ok: false, error: friendlyErrors[errMsg] || errMsg });
+          }
+        } catch (e) {
+          results.push({ cidr: item.cidr, asn: item.asn, ok: false, error: e instanceof Error ? e.message : 'Request failed' });
+        }
+      }
+
+      const succeeded = results.filter((r) => r.ok).length;
+      const failed = results.filter((r) => !r.ok).length;
+
+      const batchDetails = `Batch created ${succeeded} of ${body.prefixes.length} prefixes in account ${acct.account_id}`;
+      await logActivity(c.env.DB, email, 'batch_create_prefix', batchDetails);
+      await enqueueNotification(c.env, {
+        user_email: email, account_id: acct.account_id, event_type: 'batch_create_prefix',
+        title: `${succeeded}/${body.prefixes.length} prefixes`,
+        details: batchDetails,
+      });
+
+      return c.json({ ok: true, results, summary: { total: body.prefixes.length, succeeded, failed } });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
     }
