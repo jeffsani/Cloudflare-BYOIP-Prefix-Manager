@@ -203,24 +203,6 @@ export function renderDashboard(userEmail: string): string {
     .arch-lane-title { font-size: 10px; font-weight: 700; color: var(--text-strong); margin-bottom: 4px; }
     .arch-lane-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
     .arch-lane-step { border: 1px solid var(--border); border-radius: 4px; background: var(--surface); padding: 1px 5px; color: var(--text-primary); white-space: nowrap; }
-    .flow { display: flex; flex-direction: column; gap: 0; }
-    .flow-step { display: flex; gap: 8px; align-items: flex-start; }
-    .flow-num { flex-shrink: 0; width: 20px; height: 20px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
-    .flow-body { flex: 1; min-width: 0; border: 1px solid var(--border); border-left: 3px solid var(--border); border-radius: 8px; padding: 6px 10px; background: var(--input-bg); }
-    .flow-cf { border-left-color: #F6821F; }
-    .flow-rir { border-left-color: #14b8a6; }
-    .flow-lookup { border-left-color: #6b7280; }
-    .flow-title { font-size: 11px; font-weight: 600; color: var(--text-strong); }
-    .flow-tag { display: inline-block; font-size: 8px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 5px; border-radius: 4px; margin-left: 6px; vertical-align: middle; }
-    .flow-tag-cf { background: rgba(246,130,31,0.15); color: #F6821F; }
-    .flow-tag-rir { background: rgba(20,184,166,0.15); color: #14b8a6; }
-    .flow-tag-lookup { background: rgba(107,114,128,0.15); color: #9ca3af; }
-    .flow-desc { font-size: 10px; color: var(--muted); margin-top: 2px; line-height: 1.4; }
-    .flow-api { display: block; font-family: monospace; font-size: 9.5px; color: var(--text-primary); background: var(--surface); border: 1px solid var(--border); border-radius: 4px; padding: 2px 6px; margin-top: 4px; white-space: pre-wrap; word-break: break-word; }
-    .flow-arrow { color: var(--muted); font-size: 11px; line-height: 1; margin: 2px 0 2px 9px; }
-    .flow-legend { display: flex; flex-wrap: wrap; gap: 12px; font-size: 10px; color: var(--muted); margin-bottom: 8px; }
-    .flow-legend-item { display: inline-flex; align-items: center; gap: 4px; }
-    .flow-legend-dot { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
   </style>
 </head>
 <body class="font-sans min-h-screen">
@@ -348,7 +330,7 @@ export function renderDashboard(userEmail: string): string {
           <div class="arch-lanes">
             <div class="arch-lane">
               <div class="arch-lane-title">Prefix onboarding</div>
-              <div class="arch-lane-flow"><span class="arch-lane-step">Validate (RPKI / IRR / ownership)</span> &rarr; <span class="arch-lane-step">RIR objects + LOA</span> &rarr; <span class="arch-lane-step">Create prefix</span></div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">Create prefix</span> &rarr; <span class="arch-lane-step">Publish validation token (RIR objects)</span> &rarr; <span class="arch-lane-step">Validate</span> &rarr; <span class="arch-lane-step">Bind service</span></div>
             </div>
             <div class="arch-lane">
               <div class="arch-lane-title">Prefix management</div>
@@ -364,89 +346,6 @@ export function renderDashboard(userEmail: string): string {
             </div>
           </div>
         </div>
-      </div>
-
-      <div class="mt-4">
-        <h3 class="text-xs font-semibold mb-2" style="color:var(--text-strong)">Creating a new prefix</h3>
-        <div class="flow-legend">
-          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#F6821F"></span>Cloudflare API</span>
-          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#14b8a6"></span>Registrar (ARIN / RIPE)</span>
-          <span class="flow-legend-item"><span class="flow-legend-dot" style="background:#6b7280"></span>Validation lookup</span>
-        </div>
-        <div class="flow">
-          <div class="flow-step">
-            <div class="flow-num">1</div>
-            <div class="flow-body flow-cf">
-              <div class="flow-title">Upload LOA <span class="text-cf-gray font-normal">(optional)</span><span class="flow-tag flow-tag-cf">Cloudflare</span></div>
-              <div class="flow-desc">Attach a Letter of Authorization PDF; returns a loa_document_id for the create step.</div>
-              <code class="flow-api">POST /api/loa-upload  &rarr;  CF POST /accounts/{id}/addressing/loa_documents</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">2</div>
-            <div class="flow-body flow-lookup">
-              <div class="flow-title">Pre-submission validation<span class="flow-tag flow-tag-lookup">Lookup</span></div>
-              <div class="flow-desc">Check ROA/RPKI and IRR route objects for an ASN match before creating the prefix.</div>
-              <code class="flow-api">POST /api/prefixes/validate-new
-  &rarr; RIPEstat GET /data/rpki-validation (ROA)
-  &rarr; RIPEstat GET /data/prefix-routing-consistency (IRR)</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">3</div>
-            <div class="flow-body flow-cf">
-              <div class="flow-title">Create prefix<span class="flow-tag flow-tag-cf">Cloudflare</span></div>
-              <div class="flow-desc">Creates the BYOIP prefix and returns the ownership_validation_token. Logs activity and enqueues a create_prefix notification. If the origin is AS13335 (Cloudflare) or no RIR API keys are saved, the flow stops here.</div>
-              <code class="flow-api">POST /api/prefixes  &rarr;  CF POST /accounts/{id}/addressing/prefixes
-  body: { cidr, asn, delegate_loa_creation, description?, loa_document_id? }</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">4</div>
-            <div class="flow-body flow-lookup">
-              <div class="flow-title">Detect RIR<span class="flow-tag flow-tag-lookup">Lookup</span></div>
-              <div class="flow-desc">Determine the responsible registry via RDAP (falls back to the first saved RIR API key).</div>
-              <code class="flow-api">GET /api/rir/detect?prefix=&hellip;  &rarr;  RDAP rdap.org &rarr; ARIN / RIPE bootstrap</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">5</div>
-            <div class="flow-body flow-rir">
-              <div class="flow-title">Ensure route object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
-              <div class="flow-desc">Add descr: cf-validation: &lt;token&gt; to the route / route6 object at the registrar.</div>
-              <code class="flow-api">POST /api/rir/ensure-route
-  GET &rarr; PUT (update) or POST (create) at the detected RIR
-  ARIN: reg.arin.net/rest/irr/route/{ip}/{mask}/AS{asn} (ApiKey, RPSL/XML)
-  RIPE: rest.db.ripe.net/ripe/route[6] (Basic, JSON)</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">6</div>
-            <div class="flow-body flow-rir">
-              <div class="flow-title">Ensure aut-num object (add validation token)<span class="flow-tag flow-tag-rir">Registrar</span></div>
-              <div class="flow-desc">Add the same cf-validation token to the aut-num object for the origin ASN.</div>
-              <code class="flow-api">POST /api/rir/ensure-autnum
-  GET &rarr; PUT (update) or POST (create) at the detected RIR
-  ARIN: reg.arin.net/rest/irr/aut-num/AS{asn} (ApiKey, RPSL/XML)
-  RIPE: rest.db.ripe.net/ripe/aut-num (Basic, JSON)</code>
-            </div>
-          </div>
-          <div class="flow-arrow">&darr;</div>
-          <div class="flow-step">
-            <div class="flow-num">7</div>
-            <div class="flow-body flow-cf">
-              <div class="flow-title">Request Cloudflare validation<span class="flow-tag flow-tag-cf">Cloudflare</span></div>
-              <div class="flow-desc">Cloudflare re-checks the IRR objects for the token. May take up to ~10 minutes; the prefix list then refreshes.</div>
-              <code class="flow-api">POST /api/prefixes/{prefixId}/validate  &rarr;  CF POST /accounts/{id}/addressing/prefixes/{prefixId}/validate</code>
-            </div>
-          </div>
-        </div>
-        <p class="arch-caption">Steps 4&ndash;6 run automatically only for BYO-ASN prefixes (ASN &ne; 13335, Cloudflare&rsquo;s own ASN) with saved RIR API keys; otherwise the UI shows a manual copy-paste guide with the same token and objects.</p>
       </div>
 
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
