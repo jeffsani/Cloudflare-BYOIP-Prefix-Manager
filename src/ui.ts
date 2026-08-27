@@ -932,6 +932,15 @@ export function renderDashboard(userEmail: string): string {
           <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
 
+        <!-- Validation Results -->
+        <div id="add-prefix-validation-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-xs font-semibold" style="color:var(--text-strong)">Validation Results</span>
+            <span id="add-prefix-validation-badge"></span>
+          </div>
+          <div id="add-prefix-validation-details" class="text-[11px] space-y-1.5"></div>
+        </div>
+
         <!-- Batch Results -->
         <div id="add-prefix-batch-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
           <div class="flex items-center gap-2 mb-2">
@@ -945,9 +954,15 @@ export function renderDashboard(userEmail: string): string {
         <div id="add-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
 
         <!-- Buttons -->
-        <div class="flex justify-end gap-2">
-          <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
-          <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
+        <div class="flex justify-between gap-2">
+          <button id="add-prefix-validate-btn" onclick="validatePrefixRemote()" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition flex items-center gap-1">
+            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+            Validate IRR / ROA
+          </button>
+          <div class="flex gap-2">
+            <button onclick="closeAddPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
+            <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
+          </div>
         </div>
       </div>
     </div>
@@ -4156,9 +4171,13 @@ export function renderDashboard(userEmail: string): string {
 
       document.getElementById('add-prefix-description').value = '';
       document.getElementById('add-prefix-error').classList.add('hidden');
+      document.getElementById('add-prefix-validation-results').classList.add('hidden');
       document.getElementById('add-prefix-batch-results').classList.add('hidden');
       document.getElementById('add-prefix-submit-btn').disabled = false;
       document.getElementById('add-prefix-submit-btn').textContent = 'Add Prefix';
+      var valBtn = document.getElementById('add-prefix-validate-btn');
+      valBtn.disabled = false;
+      valBtn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
       document.getElementById('add-prefix-loa-status').innerHTML = '';
 
       var loaRadios = document.querySelectorAll('input[name="add-prefix-loa-mode"]');
@@ -4632,6 +4651,243 @@ export function renderDashboard(userEmail: string): string {
       return null; // valid
     }
 
+    async function validatePrefixRemote() {
+      // First run client-side validation
+      var clientError = validateNewPrefix();
+      if (clientError) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = clientError;
+        errEl.classList.remove('hidden');
+        return;
+      }
+      document.getElementById('add-prefix-error').classList.add('hidden');
+
+      var btn = document.getElementById('add-prefix-validate-btn');
+      btn.disabled = true;
+      btn.innerHTML = '<div class="spinner" style="width:14px;height:14px"></div> Validating...';
+
+      try {
+        // Validate all rows in parallel
+        var promises = [];
+        for (var i = 0; i < addPrefixRows.length; i++) {
+          var row = addPrefixRows[i];
+          var cidr = row.cidr.trim();
+          var asn = parseInt(row.asn.trim(), 10);
+          promises.push(
+            fetch('/api/prefixes/validate-new', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cidr: cidr, asn: asn, account_id: activeAccountId })
+            }).then(function(r) { return r.json(); })
+          );
+        }
+
+        var results = await Promise.all(promises);
+
+        // Check for API errors
+        var hasApiError = false;
+        for (var i = 0; i < results.length; i++) {
+          if (results[i].error) {
+            var errEl = document.getElementById('add-prefix-error');
+            errEl.textContent = (addPrefixRows.length > 1 ? 'Row ' + (i + 1) + ': ' : '') + results[i].error;
+            errEl.classList.remove('hidden');
+            hasApiError = true;
+            break;
+          }
+        }
+        if (hasApiError) return;
+
+        // Store the first result for the auto-create flow
+        if (results[0] && results[0].result) {
+          addPrefixValidationResult = results[0].result;
+        }
+
+        if (addPrefixRows.length === 1 && results[0] && results[0].result) {
+          // Single prefix: show detailed results
+          renderValidationResults(results[0].result, parseInt(addPrefixRows[0].asn.trim(), 10));
+        } else {
+          // Multi-prefix: show per-row summary
+          renderMultiValidationResults(results);
+        }
+      } catch (e) {
+        var errEl = document.getElementById('add-prefix-error');
+        errEl.textContent = 'Validation request failed: ' + e;
+        errEl.classList.remove('hidden');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg> Validate IRR / ROA';
+      }
+    }
+
+    function renderValidationResults(result, asn) {
+      var container = document.getElementById('add-prefix-validation-results');
+      var badgeEl = document.getElementById('add-prefix-validation-badge');
+      var detailsEl = document.getElementById('add-prefix-validation-details');
+
+      var summary = result.summary;
+      if (summary.ready && summary.warnings.length === 0) {
+        badgeEl.innerHTML = '<span class="badge-valid">Ready</span>';
+      } else if (summary.ready && summary.warnings.length > 0) {
+        badgeEl.innerHTML = '<span class="badge-pending">Ready with warnings</span>';
+      } else {
+        badgeEl.innerHTML = '<span class="badge-invalid">Issues found</span>';
+      }
+
+      var html = '';
+
+      // ROA section
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div class="flex items-center gap-2 mb-1">';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">RPKI / ROA</span>';
+      if (result.roa.found && result.roa.matching_asn) {
+        html += '<span class="badge-valid">Valid</span>';
+      } else if (result.roa.found && !result.roa.matching_asn) {
+        html += '<span class="badge-invalid">ASN mismatch</span>';
+      } else {
+        html += '<span class="badge-unknown">Not found</span>';
+      }
+      html += '</div>';
+      if (result.roa.origins.length > 0) {
+        for (var i = 0; i < result.roa.origins.length; i++) {
+          var o = result.roa.origins[i];
+          var rpkiCls = o.rpki_status.toLowerCase() === 'valid' ? 'badge-valid' : o.rpki_status.toLowerCase() === 'invalid' ? 'badge-invalid' : 'badge-unknown';
+          html += '<div style="color:var(--text-primary)">Origin: AS' + o.asn + ' &mdash; <span class="' + rpkiCls + '">' + escHtml(o.rpki_status) + '</span>' + (o.prefix ? ' (' + escHtml(o.prefix) + ')' : '') + '</div>';
+        }
+      } else {
+        html += '<div style="color:var(--muted)">No ROA entries found</div>';
+      }
+      html += '</div>';
+
+      // IRR section (RIPEstat)
+      html += '<div style="padding:6px 0;border-bottom:1px solid var(--border)">';
+      html += '<div class="flex items-center gap-2 mb-1">';
+      html += '<span class="font-semibold" style="color:var(--text-strong)">IRR Records</span>';
+      if (result.irr.found && result.irr.matching_asn && result.irr.exact_match) {
+        html += '<span class="badge-valid">Exact match</span>';
+      } else if (result.irr.found && result.irr.matching_asn && !result.irr.exact_match) {
+        html += '<span class="badge-pending">Parent coverage only</span>';
+      } else if (result.irr.found && !result.irr.matching_asn) {
+        html += '<span class="badge-invalid">ASN mismatch</span>';
+      } else {
+        html += '<span class="badge-unknown">Not found</span>';
+      }
+      html += '</div>';
+      if (result.irr.records.length > 0) {
+        for (var i = 0; i < result.irr.records.length; i++) {
+          var r = result.irr.records[i];
+          html += '<div style="color:var(--text-primary)">' + escHtml(r.prefix) + ' &mdash; origin: ' + escHtml(r.origin) + (r.source ? ' (' + escHtml(r.source) + ')' : '') + '</div>';
+        }
+        if (result.irr.found && !result.irr.exact_match) {
+          html += '<div class="mt-1 text-[10px]" style="color:#eab308">An exact route object for this prefix will be created automatically during onboarding.</div>';
+        }
+      } else {
+        html += '<div style="color:var(--muted)">No IRR route/route6 objects found</div>';
+      }
+      html += '</div>';
+
+      // Summary messages
+      var hasRirCreds = result.rir_credentials && result.rir_credentials.length > 0;
+      var isCustomAsn = asn !== 13335;
+      if (summary.errors.length > 0) {
+        html += '<div style="padding:6px 0">';
+        for (var i = 0; i < summary.errors.length; i++) {
+          html += '<div style="color:#ef4444;margin-bottom:4px">&#10007; ' + escHtml(summary.errors[i]) + '</div>';
+        }
+        html += '</div>';
+      }
+
+      // BYO-ASN credential-aware messaging
+      if (isCustomAsn && summary.ready) {
+        html += '<div style="padding:6px 0">';
+        if (hasRirCreds) {
+          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
+        } else {
+          html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR API keys in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
+        }
+        html += '</div>';
+      } else if (summary.warnings.length > 0) {
+        html += '<div style="padding:6px 0">';
+        for (var i = 0; i < summary.warnings.length; i++) {
+          html += '<div style="color:#eab308;margin-bottom:4px">&#9888; ' + escHtml(summary.warnings[i]) + '</div>';
+        }
+        html += '</div>';
+      }
+
+      // RPKI Portal link
+      var rpkiCidr = addPrefixRows[0].cidr.trim();
+      var rpkiPortalUrl = 'https://rpki.cloudflare.com/?view=validator&validateRoute=' + encodeURIComponent(asn + '_' + rpkiCidr);
+      html += '<div style="padding-top:6px"><a href="' + rpkiPortalUrl + '" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="color:#F6821F;text-decoration:none;font-weight:500;font-size:11px">View on Cloudflare RPKI Portal &#8599;</a></div>';
+
+      detailsEl.innerHTML = html;
+      container.classList.remove('hidden');
+    }
+
+    function renderMultiValidationResults(results) {
+      var container = document.getElementById('add-prefix-validation-results');
+      var badgeEl = document.getElementById('add-prefix-validation-badge');
+      var detailsEl = document.getElementById('add-prefix-validation-details');
+
+      var allReady = true;
+      var hasWarnings = false;
+      for (var i = 0; i < results.length; i++) {
+        if (results[i].result) {
+          if (!results[i].result.summary.ready) allReady = false;
+          if (results[i].result.summary.warnings.length > 0) hasWarnings = true;
+        }
+      }
+
+      if (allReady && !hasWarnings) {
+        badgeEl.innerHTML = '<span class="badge-valid">All ' + results.length + ' Ready</span>';
+      } else if (allReady && hasWarnings) {
+        badgeEl.innerHTML = '<span class="badge-pending">Ready with warnings</span>';
+      } else {
+        badgeEl.innerHTML = '<span class="badge-invalid">Issues found</span>';
+      }
+
+      var html = '';
+      for (var i = 0; i < results.length; i++) {
+        var row = addPrefixRows[i];
+        var res = results[i].result;
+        html += '<div style="padding:6px 0;' + (i < results.length - 1 ? 'border-bottom:1px solid var(--border)' : '') + '">';
+        html += '<div class="flex items-center gap-2 mb-1">';
+        html += '<span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(row.cidr.trim()) + '</span>';
+        html += '<span class="text-cf-gray">AS' + escHtml(row.asn.trim()) + '</span>';
+
+        if (res) {
+          if (res.summary.ready && res.summary.warnings.length === 0) {
+            html += '<span class="badge-valid">Ready</span>';
+          } else if (res.summary.ready) {
+            html += '<span class="badge-pending">Warnings</span>';
+          } else {
+            html += '<span class="badge-invalid">Issues</span>';
+          }
+        }
+        html += '</div>';
+
+        if (res) {
+          // Compact ROA + IRR summary
+          var roaLabel = res.roa.found ? (res.roa.matching_asn ? '<span class="badge-valid">ROA Valid</span>' : '<span class="badge-invalid">ROA Mismatch</span>') : '<span class="badge-unknown">No ROA</span>';
+          var irrLabel = res.irr.found ? (res.irr.matching_asn ? (res.irr.exact_match ? '<span class="badge-valid">IRR Exact</span>' : '<span class="badge-pending">IRR Parent</span>') : '<span class="badge-invalid">IRR Mismatch</span>') : '<span class="badge-unknown">No IRR</span>';
+          html += '<div class="flex items-center gap-2">' + roaLabel + ' ' + irrLabel + '</div>';
+
+          // Show errors/warnings
+          if (res.summary.errors.length > 0) {
+            for (var j = 0; j < res.summary.errors.length; j++) {
+              html += '<div class="text-[10px]" style="color:#ef4444">&#10007; ' + escHtml(res.summary.errors[j]) + '</div>';
+            }
+          }
+          if (res.summary.warnings.length > 0) {
+            for (var j = 0; j < res.summary.warnings.length; j++) {
+              html += '<div class="text-[10px]" style="color:#eab308">&#9888; ' + escHtml(res.summary.warnings[j]) + '</div>';
+            }
+          }
+        }
+        html += '</div>';
+      }
+      detailsEl.innerHTML = html;
+      container.classList.remove('hidden');
+    }
+
     // Check if a CIDR falls within any existing onboarded prefix
     function findParentPrefix(cidr) {
       var parts = cidr.split('/');
@@ -4759,6 +5015,36 @@ export function renderDashboard(userEmail: string): string {
         }
       }
 
+      // For single-prefix BYO-ASN: auto-run validation if not done yet
+      if (prefixes.length === 1 && prefixes[0].asn !== 13335) {
+        if (!addPrefixValidationResult) {
+          try {
+            var valResp = await fetch('/api/prefixes/validate-new', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ cidr: prefixes[0].cidr, asn: prefixes[0].asn, account_id: activeAccountId })
+            });
+            var valData = await valResp.json();
+            if (valData.result) {
+              addPrefixValidationResult = valData.result;
+            }
+          } catch (e) {
+            // Validation fetch failed - continue anyway, the ensure flow will handle it
+          }
+        }
+        if (addPrefixValidationResult && !addPrefixValidationResult.summary.ready) {
+          var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
+          if (hasErrors) {
+            showConfirm({ title: 'Validation issues', message: 'Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '. Continue anyway?', confirmLabel: 'Continue', danger: true, onConfirm: function() { finishAddPrefix(prefixes, description, delegateLoaCreation); } });
+            return;
+          }
+        }
+      }
+
+      finishAddPrefix(prefixes, description, delegateLoaCreation);
+    }
+
+    async function finishAddPrefix(prefixes, description, delegateLoaCreation) {
       var btn = document.getElementById('add-prefix-submit-btn');
       btn.disabled = true;
 
@@ -4782,6 +5068,8 @@ export function renderDashboard(userEmail: string): string {
           });
           var data = await resp.json();
           if (data.ok) {
+            // Save validation result before closeAddPrefixModal() nulls it
+            var savedValidationResult = addPrefixValidationResult;
             closeAddPrefixModal();
             loadPrefixes();
             refreshActivityLog();
@@ -4789,8 +5077,15 @@ export function renderDashboard(userEmail: string): string {
             // Determine if we should auto-create RIR records (BYO-ASN flow)
             var token = data.prefix ? data.prefix.ownership_validation_token : null;
             var prefixId = data.prefix ? data.prefix.id : null;
+            var hasRirCreds = savedValidationResult && savedValidationResult.rir_credentials && savedValidationResult.rir_credentials.length > 0;
             var isByoAsn = prefixes[0].asn !== 13335;
-            if (isByoAsn && token) {
+
+            if (isByoAsn && hasRirCreds) {
+              // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
+              var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
+              showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult);
+            } else if (isByoAsn && token) {
+              // Manual flow: show token and instructions
               showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token);
             }
           } else {
