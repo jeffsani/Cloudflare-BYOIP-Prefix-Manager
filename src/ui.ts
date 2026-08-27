@@ -387,7 +387,7 @@ export function renderDashboard(userEmail: string): string {
             <input id="set-account-id" type="text" placeholder="Cloudflare Account ID" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
           </div>
           <div>
-            <label class="block text-xs font-medium text-cf-gray mb-1">API Token</label>
+            <label class="block text-xs font-medium text-cf-gray mb-1">API Token <a href="#" onclick="window.open(getTokenGeneratorUrl(),'_blank');return false" class="text-cf-orange hover:underline font-normal ml-1">Generate token &#8599;</a></label>
             <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
           </div>
           <div>
@@ -1172,6 +1172,20 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    function getTokenGeneratorUrl() {
+      var perms = [
+        {key:'ip_prefix',type:'edit'},
+        {key:'ip_prefix_bgp_on_demand',type:'edit'},
+        {key:'account_settings',type:'read'},
+        {key:'logs',type:'edit'},
+        {key:'radar',type:'read'}
+      ];
+      return 'https://dash.cloudflare.com/profile/api-tokens'
+        + '?permissionGroupKeys=' + encodeURIComponent(JSON.stringify(perms))
+        + '&name=' + encodeURIComponent('Prefix Manager')
+        + '&accountId=*&zoneId=all';
+    }
+
     function showAddAccount() {
       var form = document.getElementById('account-form');
       if (form) form.classList.remove('hidden');
@@ -1255,7 +1269,7 @@ export function renderDashboard(userEmail: string): string {
             '<div id="acct-expand-' + escAttr(aid) + '" class="hidden border-t border-cf-border p-4">' +
               // API Token
               '<div class="pb-3">' +
-                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Cloudflare API Token</label>' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Cloudflare API Token <a href="#" onclick="window.open(getTokenGeneratorUrl(),\'_blank\');return false" class="text-cf-orange hover:underline font-normal text-[11px] ml-1">Generate token &#8599;</a></label>' +
                 // Display row
                 '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2.5 rounded-lg border border-cf-border text-xs">' +
                   '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
