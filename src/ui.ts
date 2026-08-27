@@ -1445,7 +1445,7 @@ export function renderDashboard(userEmail: string): string {
         '<span class="text-xs font-semibold text-cf-gray">Inbound Cloudflare webhooks</span>' +
         '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ New Webhook</button>' +
       '</div>';
-      html += '<div class="text-xs text-cf-gray mb-2">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span></div>';
+      html += '<div class="flex items-center gap-1 text-xs text-cf-gray mb-2">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span>' + copyIcon(webhookUrl) + '</div>';
       html += '<div class="space-y-1 mb-2">';
       if (webhooks.length === 0) {
         html += '<div class="text-xs text-cf-gray">No webhooks yet.</div>';
@@ -4895,7 +4895,7 @@ export function renderDashboard(userEmail: string): string {
       var html = '';
       html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
       html += '<div class="mb-3"><strong>Validation Token:</strong></div>';
-      html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-3" style="background:var(--card-bg)">' + escHtml(token) + '</div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border font-mono text-[10px] mb-3" style="background:var(--card-bg)"><span class="flex-1 break-all">' + escHtml(token) + '</span>' + copyIcon(token) + '</div>';
       html += '<div class="mb-3 text-[10px]" style="color:var(--muted)">Automating BYO-ASN onboarding steps...</div>';
 
       // Step indicators
@@ -5045,14 +5045,16 @@ export function renderDashboard(userEmail: string): string {
         fbHtml += '<div class="text-red-500 font-semibold mb-1 text-[11px]">Some steps failed. Complete them manually:</div>';
         fbHtml += '<div class="text-[10px] space-y-1" style="color:var(--text-primary)">';
         fbHtml += '<div class="font-semibold">Validation Token:</div>';
-        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
+        fbHtml += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg);word-break:break-all"><span class="flex-1 break-all">' + escHtml(token) + '</span>' + copyIcon(token) + '</div>';
         fbHtml += '<div class="mt-2">Add to your <strong>' + routeType + '</strong> object:</div>';
-        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
-        fbHtml += routeType + ': ' + escHtml(cidr) + '<br>origin: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token);
+        fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+        fbHtml += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>origin: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
+        fbHtml += copyBlockBtn();
         fbHtml += '</div>';
         fbHtml += '<div class="mt-2">Add to your <strong>aut-num</strong> object:</div>';
-        fbHtml += '<div class="p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
-        fbHtml += 'aut-num: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token);
+        fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+        fbHtml += '<code>aut-num: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
+        fbHtml += copyBlockBtn();
         fbHtml += '</div>';
         fbHtml += '<div class="mt-2">Then click <strong>re-validate</strong> on the prefix in the table.</div>';
         fbHtml += '</div></div>';
@@ -5072,7 +5074,7 @@ export function renderDashboard(userEmail: string): string {
       var html = '';
       html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
       html += '<div class="mb-2"><span class="text-[10px] font-semibold" style="color:var(--text-strong)">Validation Token:</span></div>';
-      html += '<div class="mb-3 p-2 rounded-lg border border-cf-border font-mono text-[11px]" style="background:var(--input-bg);word-break:break-all">' + escHtml(token) + '</div>';
+      html += '<div class="flex items-center gap-2 mb-3 p-2 rounded-lg border border-cf-border font-mono text-[11px]" style="background:var(--input-bg);word-break:break-all"><span class="flex-1 break-all">' + escHtml(token) + '</span>' + copyIcon(token) + '</div>';
       html += '<div id="pcg-rir-detect" class="mb-3 text-[10px] text-cf-gray"><span class="animate-pulse">Detecting RIR...</span></div>';
       html += '<div class="font-semibold mb-2" style="color:var(--text-strong)">Next Steps: Complete Ownership Validation</div>';
 
@@ -5081,10 +5083,11 @@ export function renderDashboard(userEmail: string): string {
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
         html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Add validation token to ' + routeType + ' object</div>';
-        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
-        html += routeType + ': ' + escHtml(cidr) + '<br>';
+        html += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
+        html += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
-        html += 'descr: cf-validation: ' + escHtml(token);
+        html += 'descr: cf-validation: ' + escHtml(token) + '</code>';
+        html += copyBlockBtn();
         html += '</div>';
         html += '<div id="pcg-route-actions"></div>';
         html += '<div id="pcg-route-status" class="mt-1"></div>';
@@ -5093,9 +5096,10 @@ export function renderDashboard(userEmail: string): string {
         // Step 2: aut-num object
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
         html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Add validation token to aut-num object</div>';
-        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
-        html += 'aut-num: AS' + asn + '<br>';
-        html += 'descr: cf-validation: ' + escHtml(token);
+        html += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
+        html += '<code>aut-num: AS' + asn + '<br>';
+        html += 'descr: cf-validation: ' + escHtml(token) + '</code>';
+        html += copyBlockBtn();
         html += '</div>';
         html += '<div id="pcg-autnum-actions"></div>';
         html += '<div id="pcg-autnum-status" class="mt-1"></div>';
@@ -5124,10 +5128,11 @@ export function renderDashboard(userEmail: string): string {
         html += '<div class="space-y-3">';
         html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
         html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Add validation token to ' + routeType + ' object</div>';
-        html += '<div class="p-2 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
-        html += routeType + ': ' + escHtml(cidr) + '<br>';
+        html += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
+        html += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>';
         html += 'origin: AS' + asn + '<br>';
-        html += 'descr: cf-validation: ' + escHtml(token);
+        html += 'descr: cf-validation: ' + escHtml(token) + '</code>';
+        html += copyBlockBtn();
         html += '</div>';
         html += '<div id="pcg-route-actions"></div>';
         html += '<div id="pcg-route-status" class="mt-1"></div>';
@@ -6822,6 +6827,39 @@ export function renderDashboard(userEmail: string): string {
 
     function escAttr(s) {
       return escHtml(s).replace(/'/g, '&#39;');
+    }
+
+    // ─── Copy to clipboard helpers ──────────────────────────────
+    var _copySvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>';
+
+    function copyIcon(text) {
+      return '<button onclick="copyToClipboard(this,\\'' + escAttr(text) + '\\')" class="inline-flex items-center justify-center p-0.5 rounded hover:bg-white/10 text-cf-gray hover:text-cf-orange transition" title="Copy to clipboard" aria-label="Copy to clipboard">' + _copySvg + '</button>';
+    }
+
+    function copyBlockBtn() {
+      return '<button onclick="copyBlockToClipboard(this)" class="absolute top-1 right-1 inline-flex items-center justify-center p-1 rounded hover:bg-white/10 text-cf-gray hover:text-cf-orange transition" title="Copy to clipboard" aria-label="Copy to clipboard">' + _copySvg + '</button>';
+    }
+
+    function copyToClipboard(btn, text) {
+      if (!navigator.clipboard) return;
+      navigator.clipboard.writeText(text).then(function() {
+        var orig = btn.title;
+        btn.title = 'Copied!';
+        btn.classList.add('text-green-400');
+        btn.classList.remove('text-cf-gray');
+        setTimeout(function() {
+          btn.title = orig;
+          btn.classList.remove('text-green-400');
+          btn.classList.add('text-cf-gray');
+        }, 1500);
+      });
+    }
+
+    function copyBlockToClipboard(btn) {
+      var block = btn.parentNode;
+      var code = block.querySelector('code') || block;
+      var text = code.textContent || '';
+      copyToClipboard(btn, text);
     }
 
     // ─── Inline messages & confirm modal ──────────────────────────
