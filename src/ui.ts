@@ -1531,7 +1531,7 @@ export function renderDashboard(userEmail: string): string {
         '<div class="text-xs font-semibold mb-1" style="color:var(--text-strong)">' + escHtml(label) + ' &mdash; copy it now, it will not be shown again</div>' +
         '<div class="flex items-center gap-2">' +
           '<code class="flex-1 font-mono text-sm break-all" style="color:var(--text-strong)">' + escHtml(value) + '</code>' +
-          '<button onclick="navigator.clipboard && navigator.clipboard.writeText(\\'' + escAttr(value) + '\\')" class="px-3 py-1 text-xs border border-cf-border rounded-lg hover:border-cf-orange hover:text-cf-orange shrink-0">Copy</button>' +
+          '<button onclick="copyToClipboard(this,\\'' + escAttr(value) + '\\')" class="px-3 py-1 text-xs border border-cf-border rounded-lg hover:border-cf-orange hover:text-cf-orange shrink-0">Copy</button>' +
           '<span class="inline-msg-close" onclick="this.parentNode.parentNode.parentNode.innerHTML=\\'\\'" role="button" aria-label="Dismiss">&times;</span>' +
         '</div>' +
       '</div>';
