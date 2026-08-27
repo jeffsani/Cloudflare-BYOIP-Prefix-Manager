@@ -89,8 +89,34 @@ app.get('/', (c) => {
 
 // ─── OpenAPI / Chanfana ─────────────────────────────────────────────
 
+// Scalar API Reference — serves interactive docs with code snippets for 21+ languages
+app.get('/api/docs', (c) => {
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <title>Prefix Manager — API Reference</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="https://www.cloudflare.com/favicon.ico" type="image/x-icon">
+</head>
+<body>
+  <div id="app"></div>
+  <script src="https://cdn.jsdelivr.net/npm/@scalar/api-reference@1.62.5"></script>
+  <script>
+    Scalar.createApiReference('#app', {
+      url: '/api/openapi.json',
+      theme: 'kepler',
+      defaultHttpClient: { targetKey: 'shell', clientKey: 'curl' },
+    })
+  </script>
+</body>
+</html>`;
+  return c.html(html);
+});
+
 const openapi = fromHono(app, {
-  docs_url: '/api/docs',
+  docs_url: null,
+  redoc_url: null,
   openapi_url: '/api/openapi.json',
   schema: {
     info: {
