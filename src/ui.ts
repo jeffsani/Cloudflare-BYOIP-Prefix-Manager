@@ -1319,9 +1319,6 @@ export function renderDashboard(userEmail: string): string {
         return;
       }
       el.innerHTML = '<div class="space-y-2">' + savedAccounts.map(function(a) {
-        var tokenBadge = a.api_token
-          ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-green-900 text-green-300">Token saved</span>'
-          : '<span class="text-[10px] px-1.5 py-0.5 rounded bg-red-900 text-red-300">No token</span>';
         var defBadge = a.is_default ? '<span class="text-[10px] px-1.5 py-0.5 rounded bg-orange-900 text-orange-300">Default</span>' : '';
         var aid = a.account_id;
 
@@ -1332,7 +1329,6 @@ export function renderDashboard(userEmail: string): string {
                 '<svg id="acct-chev-' + escAttr(aid) + '" class="w-4 h-4 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' +
                 '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(a.account_label || 'Untitled') + '</span>' +
                 '<span class="text-xs text-cf-gray font-mono">' + aid + '</span>' +
-                tokenBadge +
                 defBadge +
               '</div>' +
               '<div class="flex gap-2" onclick="event.stopPropagation()">' +
@@ -1548,12 +1544,12 @@ export function renderDashboard(userEmail: string): string {
       html += '<div class="pt-3 border-t border-cf-border">';
       html += '<div class="flex items-center justify-between mb-2">' +
         '<span class="text-xs font-semibold text-cf-gray">Inbound Cloudflare webhooks</span>' +
-        '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Create Secret</button>' +
+        '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ New Webhook</button>' +
       '</div>';
       html += '<div class="text-xs text-cf-gray mb-2">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span></div>';
       html += '<div class="space-y-1 mb-2">';
       if (webhooks.length === 0) {
-        html += '<div class="text-xs text-cf-gray">No webhook secrets yet.</div>';
+        html += '<div class="text-xs text-cf-gray">No webhooks yet.</div>';
       } else {
         webhooks.forEach(function(w) {
           var seen = w.last_seen_at ? ('last seen ' + escHtml(w.last_seen_at)) : 'never received';
@@ -1599,7 +1595,7 @@ export function renderDashboard(userEmail: string): string {
       html += '</div>';
       html += '<div class="text-[10px] text-cf-gray"><strong>Notification:</strong> receives network-flow messages (auto-advertisement, prefix state changes). <strong>Logpush:</strong> streams Audit Logs v2 so the Activity panel loads instantly (Enterprise, requires Logs Write).</div>';
       html += '<div class="flex gap-2 items-center">' +
-        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Secret</button>' +
+        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Webhook</button>' +
         '<button onclick="hideWebhookForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
       '</div>';
       html += '</div>';
