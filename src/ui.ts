@@ -1521,8 +1521,29 @@ export function renderDashboard(userEmail: string): string {
         });
       }
       html += '</div>';
-      // Enable Audit Log Streaming button (only when no logpush webhook exists)
-      if (!hasLogpush) {
+      // Show Cloudflare-side logpush job status when jobs exist but no local logpush webhook
+      if (!hasLogpush && jobs.length > 0) {
+        html += '<div class="space-y-1 mb-2">';
+        jobs.forEach(function(j) {
+          var state = j.enabled ? 'enabled' : 'disabled';
+          var err = j.last_error || j.error_message;
+          var jobDetail = '<span class="text-cf-gray">Job #' + escHtml(String(j.id)) + ' (' + escHtml(state) + ')</span>';
+          if (err) jobDetail += ' <span class="text-red-400">' + escHtml(String(err)) + '</span>';
+          html += '<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-cf-border text-xs">' +
+            '<div class="min-w-0">' +
+              '<span class="al-badge al-badge-yellow" style="font-size:0.6rem;padding:1px 6px">Logpush</span> ' +
+              '<span style="color:var(--text-strong)" class="font-medium">Audit Logs (external)</span> ' +
+              jobDetail +
+            '</div>' +
+            '<button onclick="disableAccountLogpush(\\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400 shrink-0">Disable</button>' +
+          '</div>';
+        });
+        html += '</div>';
+      } else if (!hasLogpush && logpush && logpush.error) {
+        html += '<div class="text-xs text-red-400 mb-2">' + escHtml(logpush.error) + '</div>';
+      }
+      // Enable Audit Log Streaming button (only when no logpush webhook and no active jobs)
+      if (!hasLogpush && jobs.length === 0) {
         html += '<div class="mt-2">' +
           '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">Enable Audit Log Streaming</button>' +
           '<div class="text-[10px] text-cf-gray mt-1">Streams Audit Logs v2 so the Activity panel loads instantly (Enterprise, requires Logs Write).</div>' +
@@ -1586,21 +1607,25 @@ export function renderDashboard(userEmail: string): string {
 
     async function enableAccountLogpush(accountId) {
       showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
-      var resp = await fetch('/api/integrations/logpush', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId })
-      });
-      var d = await resp.json();
-      if (resp.ok && d.ok && d.auto) {
-        await loadAccountIntegrations(accountId);
-        showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
-        if (d.secret) showIntegrationSecret(accountId, 'Logpush webhook secret', d.secret);
-      } else if (resp.ok && d.ok) {
-        await loadAccountIntegrations(accountId);
-        showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
-        if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
-      } else {
-        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
+      try {
+        var resp = await fetch('/api/integrations/logpush', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ account_id: accountId })
+        });
+        var d = await resp.json();
+        if (resp.ok && d.ok && d.auto) {
+          await loadAccountIntegrations(accountId);
+          showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
+          if (d.secret) showIntegrationSecret(accountId, 'Logpush webhook secret', d.secret);
+        } else if (resp.ok && d.ok) {
+          await loadAccountIntegrations(accountId);
+          showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
+          if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
+        } else {
+          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
+        }
+      } catch (e) {
+        showInlineMsg('intg-msg-' + accountId, 'Failed to enable audit log streaming: ' + (e.message || 'request failed'), 'error');
       }
     }
 
@@ -1615,16 +1640,20 @@ export function renderDashboard(userEmail: string): string {
     async function disableAccountLogpush(accountId) {
       showConfirm({ title: 'Disable audit log streaming', message: 'Disable audit log streaming? The Logpush job and its webhook secret will be deleted.', confirmLabel: 'Disable', danger: true, onConfirm: async function() {
         showInlineMsg('intg-msg-' + accountId, 'Disabling audit log streaming…', 'success');
-        var resp = await fetch('/api/integrations/logpush', {
-          method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId })
-        });
-        var d = await resp.json();
-        if (resp.ok && d.ok) {
-          await loadAccountIntegrations(accountId);
-          showInlineMsg('intg-msg-' + accountId, 'Audit log streaming disabled.', 'success');
-        } else {
-          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to disable audit log streaming', 'error');
+        try {
+          var resp = await fetch('/api/integrations/logpush', {
+            method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: accountId })
+          });
+          var d = await resp.json();
+          if (resp.ok && d.ok) {
+            await loadAccountIntegrations(accountId);
+            showInlineMsg('intg-msg-' + accountId, 'Audit log streaming disabled.', 'success');
+          } else {
+            showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to disable audit log streaming', 'error');
+          }
+        } catch (e) {
+          showInlineMsg('intg-msg-' + accountId, 'Failed to disable audit log streaming: ' + (e.message || 'request failed'), 'error');
         }
       } });
     }

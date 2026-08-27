@@ -149,6 +149,9 @@ export async function getAuditLogpushStatus(
  * create the `audit_logs_v2` Logpush job pointing at /webhooks/logpush. On
  * failure (e.g. non-Enterprise plan or missing `Logs Write` permission) return
  * the ready-to-paste destination URL + secret for manual dashboard setup.
+ *
+ * The webhook DB row is only persisted after the Cloudflare API call so that a
+ * failed/timed-out attempt does not leave a stale row that blocks retries.
  */
 export async function enableAuditLogpush(
   env: Env, email: string, body: Record<string, any>, origin: string,
@@ -168,26 +171,45 @@ export async function enableAuditLogpush(
 
   const webhookUrl = `${origin}/webhooks/logpush`;
 
-  // Mint (and persist the hash of) a dedicated secret for this destination.
+  // Mint the secret up-front but do NOT persist the webhook row yet.
   const secret = generateToken(32);
   const secretHash = await sha256Hex(secret);
-  await env.DB.prepare(
+  const destination = `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(secret)}`;
+
+  const insertWebhook = () => env.DB.prepare(
     `INSERT INTO webhook_endpoints (account_id, owner_email, name, type, secret_hash, enabled)
      VALUES (?, ?, ?, 'logpush', ?, 1)`,
   ).bind(accountId, email, 'Audit Logs (Logpush)', secretHash).run();
 
-  const destination = `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(secret)}`;
-
   try {
     const token = await getToken(env.DB, email, accountId);
+
+    // Check for an existing Cloudflare-side audit_logs_v2 job before creating
+    // a duplicate (e.g. user configured one via the dashboard).
+    const statusRes = await listLogpushJobs(accountId, token);
+    if (statusRes.success) {
+      const existingJobs = (statusRes.result || []).filter((j) => j.dataset === AUDIT_LOGPUSH_DATASET);
+      if (existingJobs.length > 0) {
+        // Adopt the existing job — persist a local logpush webhook so the UI
+        // recognises the setup, then return success with the existing job ID.
+        await insertWebhook();
+        return { ok: true, auto: true, job_id: existingJobs[0].id, destination, secret };
+      }
+    }
+
     const res = await createAuditLogpushJob(accountId, token, webhookUrl, secret);
     if (res.success) {
+      // Job created — now persist the webhook row.
+      await insertWebhook();
       return { ok: true, auto: true, job_id: res.result?.id, destination, secret };
     }
-    // Auto-create failed — hand back manual-setup details plus the CF error.
+    // Auto-create failed — still persist webhook so user can set up manually.
+    await insertWebhook();
     const rawError = res.errors?.[0]?.message || 'Logpush job creation failed';
     return { ok: true, auto: false, destination, secret, error: explainLogpushError(rawError) };
   } catch (e) {
+    // Persist webhook for manual setup even on unexpected errors.
+    await insertWebhook();
     const rawError = e instanceof Error ? e.message : 'Logpush job creation failed';
     return { ok: true, auto: false, destination, secret, error: explainLogpushError(rawError) };
   }
