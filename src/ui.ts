@@ -980,7 +980,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4" style="max-height:75vh;overflow-y:auto">
         <!-- Prefixes & ASNs -->
         <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Minimum size: /24 for IPv4, /48 for IPv6.<br><br>Using Cloudflare&rsquo;s ASN (<strong>13335</strong>) is available to all accounts. Specifying your own ASN (<strong>BYO-ASN</strong>) is a gated feature &mdash; contact your Cloudflare account team to have it enabled.')}</label>
+          <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Use 13335 for Cloudflare ASN. Minimum size: /24 for IPv4, /48 for IPv6.')}</label>
           <div class="flex items-center gap-2 mb-1.5 text-[10px] text-cf-gray">
             <span class="flex-1" style="padding-left:2px">CIDR</span>
             <span class="w-28" style="padding-left:2px">ASN</span>
