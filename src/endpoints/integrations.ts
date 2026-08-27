@@ -61,14 +61,25 @@ export async function createApiKey(
   if (!(await ownsAccount(env, email, accountId))) return { ok: false, error: 'Unknown account' };
 
   const name = (body.name || '').trim() || 'API key';
+
+  // Validate scopes: allow ["read"] or ["read","write"], default to ["read"].
+  const ALLOWED_SCOPES = ['read', 'write'];
+  let scopes: string[] = ['read'];
+  if (Array.isArray(body.scopes)) {
+    const filtered = (body.scopes as string[]).filter((s) => ALLOWED_SCOPES.includes(s));
+    if (filtered.length) scopes = filtered;
+    if (scopes.includes('write') && !scopes.includes('read')) scopes.unshift('read');
+  }
+  const scopesJson = JSON.stringify(scopes);
+
   const token = API_KEY_PREFIX + generateToken(32);
   const keyHash = await sha256Hex(token);
   const keyPrefix = token.slice(0, 12);
 
   const res = await env.DB.prepare(
     `INSERT INTO api_keys (account_id, owner_email, name, key_hash, key_prefix, scopes, enabled)
-     VALUES (?, ?, ?, ?, ?, '["read"]', 1)`,
-  ).bind(accountId, email, name, keyHash, keyPrefix).run();
+     VALUES (?, ?, ?, ?, ?, ?, 1)`,
+  ).bind(accountId, email, name, keyHash, keyPrefix, scopesJson).run();
 
   // Plaintext key is returned exactly once and never stored.
   return { ok: true, id: res.meta.last_row_id as number, key: token };

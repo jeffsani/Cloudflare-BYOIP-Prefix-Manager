@@ -879,7 +879,7 @@ export function renderDashboard(userEmail: string): string {
       <div class="p-4" style="max-height:75vh;overflow-y:auto">
         <!-- Prefixes & ASNs -->
         <div class="mb-3">
-          <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Use 13335 for Cloudflare ASN. Minimum size: /24 for IPv4, /48 for IPv6.')}</label>
+          <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Use 13335 for Cloudflare ASN. Minimum size: /24 for IPv4, /48 for IPv6. Using a custom ASN (BYOASN) is a gated feature — contact your Cloudflare account team to enable it.')}</label>
           <div class="flex items-center gap-2 mb-1.5 text-[10px] text-cf-gray">
             <span class="flex-1" style="padding-left:2px">CIDR</span>
             <span class="w-28" style="padding-left:2px">ASN</span>
@@ -1296,7 +1296,7 @@ export function renderDashboard(userEmail: string): string {
               '</div>' +
               // API Access & Integrations
               '<div class="border-t border-cf-border pt-3">' +
-                '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">API Access &amp; Integrations <span class="font-normal text-cf-gray">(read-only Query API keys &amp; inbound Cloudflare webhooks)</span></label>' +
+                '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">API Access &amp; Integrations <span class="font-normal text-cf-gray">(Query API keys &amp; inbound Cloudflare webhooks)</span></label>' +
                 '<div id="acct-integrations-' + escAttr(aid) + '" class="text-xs text-cf-gray">Loading...</div>' +
               '</div>' +
             '</div>' +
@@ -1430,8 +1430,13 @@ export function renderDashboard(userEmail: string): string {
       } else {
         keys.forEach(function(k) {
           var used = k.last_used_at ? ('last used ' + escHtml(k.last_used_at)) : 'never used';
+          var isAdmin = k.scopes && k.scopes.indexOf('write') >= 0;
+          var scopeBadge = isAdmin
+            ? '<span class="al-badge al-badge-yellow" style="font-size:0.6rem;padding:1px 6px">Admin</span> '
+            : '<span class="al-badge al-badge-blue" style="font-size:0.6rem;padding:1px 6px">Read-only</span> ';
           html += '<div class="flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-cf-border text-xs">' +
             '<div class="min-w-0">' +
+              scopeBadge +
               '<span style="color:var(--text-strong)" class="font-medium">' + escHtml(k.name) + '</span> ' +
               '<span class="font-mono text-cf-gray">' + escHtml(k.key_prefix) + '&hellip;</span> ' +
               '<span class="text-cf-gray">(' + used + ')</span>' +
@@ -1443,8 +1448,15 @@ export function renderDashboard(userEmail: string): string {
       html += '</div>';
       // Hidden create key form
       html += '<div id="intg-key-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
+      html += '<div class="grid grid-cols-2 gap-2">';
       html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Key Name</label>' +
         '<input id="intg-key-name-' + aid + '" type="text" placeholder="Key name (e.g. monitoring)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
+      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Scope</label>' +
+        '<select id="intg-key-scope-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+        '<option value="read">Read-only</option>' +
+        '<option value="admin">Admin (read + write)</option>' +
+        '</select></div>';
+      html += '</div>';
       html += '<div class="flex gap-2 items-center">' +
         '<button onclick="createAccountApiKey(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Key</button>' +
         '<button onclick="hideApiKeyForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
@@ -1458,7 +1470,6 @@ export function renderDashboard(userEmail: string): string {
       html += '<div class="pt-3 border-t border-cf-border">';
       html += '<div class="flex items-center justify-between mb-2">' +
         '<span class="text-xs font-semibold text-cf-gray">Inbound Cloudflare webhooks</span>' +
-        '<button onclick="showWebhookForm(\\'' + aid + '\\')" class="px-2 py-0.5 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ New Webhook</button>' +
       '</div>';
       html += '<div class="flex items-center gap-1 text-xs text-cf-gray mb-2">Destination URL: <span class="font-mono" style="color:var(--text-strong)">' + escHtml(webhookUrl) + '</span>' + copyIcon(webhookUrl) + '</div>';
       html += '<div class="space-y-1 mb-2">';
@@ -1496,23 +1507,13 @@ export function renderDashboard(userEmail: string): string {
         });
       }
       html += '</div>';
-      // Hidden create webhook form
-      html += '<div id="intg-wh-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
-      html += '<div class="grid grid-cols-2 gap-2">';
-      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Webhook Name</label>' +
-        '<input id="intg-wh-name-' + aid + '" type="text" placeholder="e.g. network-flow" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></div>';
-      html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Type</label>' +
-        '<select id="intg-wh-type-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
-        '<option value="notification">Notification</option>' +
-        (hasLogpush ? '' : '<option value="logpush">Logpush (Audit Logs)</option>') +
-        '</select></div>';
-      html += '</div>';
-      html += '<div class="text-[10px] text-cf-gray"><strong>Notification:</strong> receives network-flow messages (auto-advertisement, prefix state changes). <strong>Logpush:</strong> streams Audit Logs v2 so the Activity panel loads instantly (Enterprise, requires Logs Write).</div>';
-      html += '<div class="flex gap-2 items-center">' +
-        '<button onclick="createAccountWebhook(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Create Webhook</button>' +
-        '<button onclick="hideWebhookForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
-      '</div>';
-      html += '</div>';
+      // Enable Audit Log Streaming button (only when no logpush webhook exists)
+      if (!hasLogpush) {
+        html += '<div class="mt-2">' +
+          '<button onclick="enableAccountLogpush(\\'' + aid + '\\')" class="px-3 py-1 text-xs font-semibold rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">Enable Audit Log Streaming</button>' +
+          '<div class="text-[10px] text-cf-gray mt-1">Streams Audit Logs v2 so the Activity panel loads instantly (Enterprise, requires Logs Write).</div>' +
+        '</div>';
+      }
       html += '</div>';
 
       el.innerHTML = html;
@@ -1525,16 +1526,6 @@ export function renderDashboard(userEmail: string): string {
 
     function hideApiKeyForm(accountId) {
       var f = document.getElementById('intg-key-form-' + accountId);
-      if (f) f.classList.add('hidden');
-    }
-
-    function showWebhookForm(accountId) {
-      var f = document.getElementById('intg-wh-form-' + accountId);
-      if (f) f.classList.remove('hidden');
-    }
-
-    function hideWebhookForm(accountId) {
-      var f = document.getElementById('intg-wh-form-' + accountId);
       if (f) f.classList.add('hidden');
     }
 
@@ -1554,10 +1545,12 @@ export function renderDashboard(userEmail: string): string {
 
     async function createAccountApiKey(accountId) {
       var input = document.getElementById('intg-key-name-' + accountId);
+      var scopeSel = document.getElementById('intg-key-scope-' + accountId);
       var name = input ? input.value.trim() : '';
+      var scopes = scopeSel && scopeSel.value === 'admin' ? ['read', 'write'] : ['read'];
       var resp = await fetch('/api/integrations/api-keys', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, name: name })
+        body: JSON.stringify({ account_id: accountId, name: name, scopes: scopes })
       });
       var d = await resp.json();
       if (resp.ok && d.ok) {
@@ -1577,48 +1570,23 @@ export function renderDashboard(userEmail: string): string {
       } });
     }
 
-    async function createAccountWebhook(accountId) {
-      var input = document.getElementById('intg-wh-name-' + accountId);
-      var typeSel = document.getElementById('intg-wh-type-' + accountId);
-      var name = input ? input.value.trim() : '';
-      var whType = typeSel ? typeSel.value : 'notification';
-
-      if (whType === 'logpush') {
-        // Logpush path: enable audit log streaming
-        if (!name) name = 'Audit Logs (Logpush)';
-        showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
-        var resp = await fetch('/api/integrations/logpush', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId })
-        });
-        var d = await resp.json();
-        if (resp.ok && d.ok && d.auto) {
-          if (input) input.value = '';
-          await loadAccountIntegrations(accountId);
-          showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
-          if (d.secret) showIntegrationSecret(accountId, 'Logpush webhook secret', d.secret);
-        } else if (resp.ok && d.ok) {
-          if (input) input.value = '';
-          await loadAccountIntegrations(accountId);
-          showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
-          if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
-        } else {
-          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
-        }
+    async function enableAccountLogpush(accountId) {
+      showInlineMsg('intg-msg-' + accountId, 'Enabling audit log streaming…', 'success');
+      var resp = await fetch('/api/integrations/logpush', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId })
+      });
+      var d = await resp.json();
+      if (resp.ok && d.ok && d.auto) {
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'Logpush job created (#' + escHtml(String(d.job_id)) + '). Audit logs will begin streaming shortly.', 'success');
+        if (d.secret) showIntegrationSecret(accountId, 'Logpush webhook secret', d.secret);
+      } else if (resp.ok && d.ok) {
+        await loadAccountIntegrations(accountId);
+        showInlineMsg('intg-msg-' + accountId, 'Automatic setup failed: ' + escHtml(d.error || 'unknown error') + '. Create a Logpush job for the Audit Logs v2 dataset in the Cloudflare dashboard using the HTTP destination below.', 'error');
+        if (d.destination) showIntegrationSecret(accountId, 'Logpush HTTP destination URL (dataset: audit_logs_v2)', d.destination);
       } else {
-        // Normal notification webhook
-        var resp = await fetch('/api/integrations/webhooks', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: accountId, name: name })
-        });
-        var d = await resp.json();
-        if (resp.ok && d.ok) {
-          if (input) input.value = '';
-          await loadAccountIntegrations(accountId);
-          showIntegrationSecret(accountId, 'Webhook secret (paste into cf-webhook-auth / Cloudflare secret field)', d.secret);
-        } else {
-          showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to create webhook secret', 'error');
-        }
+        showInlineMsg('intg-msg-' + accountId, d.error || 'Failed to enable audit log streaming', 'error');
       }
     }
 

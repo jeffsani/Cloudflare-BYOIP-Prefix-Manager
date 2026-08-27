@@ -22,9 +22,9 @@ type MachineEnv = {
 };
 
 /**
- * Authenticate machine clients to the read-only Query API via a per-account API
- * key sent as `Authorization: Bearer <key>`. Sets account_id / owner_email /
- * scopes on the context. Bypasses CF Access (see auth.ts).
+ * Authenticate machine clients to the Query API via a per-account API key sent
+ * as `Authorization: Bearer <key>`. Sets account_id / owner_email / scopes on
+ * the context. Bypasses CF Access (see auth.ts).
  */
 export async function apiKeyAuthMiddleware(c: Context<MachineEnv>, next: Next) {
   const header = c.req.header('Authorization') || '';
@@ -49,6 +49,17 @@ export async function apiKeyAuthMiddleware(c: Context<MachineEnv>, next: Next) {
   );
 
   return next();
+}
+
+/** Guard that checks the authenticated key includes the required scope. */
+export function requireScope(scope: string) {
+  return async (c: Context<MachineEnv>, next: Next) => {
+    const scopes = c.get('scopes') || [];
+    if (!scopes.includes(scope)) {
+      return c.json({ error: 'Insufficient scope' }, 403);
+    }
+    return next();
+  };
 }
 
 /**

@@ -275,7 +275,7 @@ type MachineEnv = {
   Variables: { account_id: string; owner_email: string; scopes: string[] };
 };
 
-// Read-only prefix-state Query API — per-account API-key (Bearer) auth.
+// Prefix-state Query API — per-account API-key (Bearer) auth.
 const publicApi = new Hono<MachineEnv>();
 publicApi.use('*', apiKeyAuthMiddleware);
 publicApi.get('/health', publicHealth);

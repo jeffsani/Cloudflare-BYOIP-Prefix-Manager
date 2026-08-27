@@ -129,8 +129,8 @@ CREATE TABLE IF NOT EXISTS prefix_monitor_cache (
 );
 
 -- ─── Machine-facing integrations ────────────────────────────────────
--- API keys for the read-only Query API. One key is scoped to a single Cloudflare
--- account; only the SHA-256 hash of the key is stored (plaintext shown once).
+-- API keys for the Query API (read-only or admin scope). One key is scoped to a
+-- single Cloudflare account; only the SHA-256 hash of the key is stored (plaintext shown once).
 CREATE TABLE IF NOT EXISTS api_keys (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   account_id   TEXT NOT NULL,             -- CF account this key is scoped to
