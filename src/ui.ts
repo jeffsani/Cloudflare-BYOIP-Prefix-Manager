@@ -1780,17 +1780,35 @@ export function renderDashboard(userEmail: string): string {
           var typeBadge = '<span class="text-[10px] px-1.5 py-0.5 rounded bg-blue-900 text-blue-300 uppercase font-semibold">' + escHtml(ch.type) + '</span>';
           html += '<div class="flex items-center gap-3 px-3 py-2 rounded-lg border border-cf-border">' +
             typeBadge +
-            '<span id="ch-name-display-' + ch.id + '" class="inline-flex items-center gap-1">' +
-              '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(ch.name) + '</span>' +
-              '<button onclick="event.stopPropagation();startEditChannelName(' + ch.id + ',\\'' + escAttr(ch.name) + '\\',\\'' + aid + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit name"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
-            '</span>' +
-            '<span id="ch-name-edit-' + ch.id + '" class="hidden">' +
-              '<input type="text" value="' + escAttr(ch.name) + '" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none w-32" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveChannelName(' + ch.id + ',this.value,\\'' + aid + '\\')}else if(event.key===\\'Escape\\'){cancelEditChannelName(' + ch.id + ')}" onblur="saveChannelName(' + ch.id + ',this.value,\\'' + aid + '\\')">' +
-            '</span>' +
+            '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(ch.name) + '</span>' +
             '<span class="text-xs text-cf-gray font-mono">' + escHtml(target) + '</span>' +
             (ch.enabled ? '' : '<span class="badge-invalid">disabled</span>') +
-            '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="ml-auto text-cf-orange hover:underline text-xs">Test</button>' +
+            '<button onclick="startEditChannel(' + ch.id + ')" class="ml-auto text-cf-orange hover:underline text-xs">Edit</button>' +
+            '<button onclick="testNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="text-cf-orange hover:underline text-xs">Test</button>' +
             '<button onclick="deleteNotifChannel(' + ch.id + ',\\'' + aid + '\\')" class="text-xs text-cf-gray hover:text-red-400">Delete</button>' +
+          '</div>';
+          // Inline edit form (hidden by default)
+          var editFields = '';
+          editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Name</label>' +
+            '<input id="ch-edit-name-' + ch.id + '" type="text" value="' + escAttr(ch.name) + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Label"></div>';
+          if (ch.type === 'email') {
+            editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Email address</label>' +
+              '<input id="ch-edit-f1-' + ch.id + '" type="text" value="' + escAttr(cfg.email || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="alerts@example.com"></div>';
+          } else if (ch.type === 'webhook') {
+            editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Webhook URL</label>' +
+              '<input id="ch-edit-f1-' + ch.id + '" type="text" value="' + escAttr(cfg.url || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="https://…"></div>';
+            editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Token (optional)</label>' +
+              '<input id="ch-edit-f2-' + ch.id + '" type="password" value="' + escAttr(cfg.token || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token"></div>';
+          } else {
+            editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Integration key</label>' +
+              '<input id="ch-edit-f1-' + ch.id + '" type="password" value="' + escAttr(cfg.integration_key || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="PagerDuty integration key"></div>';
+          }
+          html += '<div id="ch-edit-' + ch.id + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">' +
+            '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">' + editFields + '</div>' +
+            '<div class="flex gap-2 items-center">' +
+              '<button onclick="saveChannelConfig(' + ch.id + ',\\'' + escAttr(ch.type) + '\\',\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save</button>' +
+              '<button onclick="cancelEditChannel(' + ch.id + ')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
+            '</div>' +
           '</div>';
         });
       }
@@ -1897,44 +1915,42 @@ export function renderDashboard(userEmail: string): string {
       else showInlineMsg('notif-msg-' + accountId, 'Test failed: ' + (d.error || 'unknown'), 'error');
     }
 
-    function startEditChannelName(channelId, currentName, accountId) {
-      var display = document.getElementById('ch-name-display-' + channelId);
-      var edit = document.getElementById('ch-name-edit-' + channelId);
-      if (display) display.classList.add('hidden');
-      if (edit) {
-        edit.classList.remove('hidden');
-        var input = edit.querySelector('input');
-        if (input) { input.value = currentName || ''; input.focus(); input.select(); }
-      }
+    function startEditChannel(channelId) {
+      var form = document.getElementById('ch-edit-' + channelId);
+      if (form) form.classList.remove('hidden');
     }
 
-    function cancelEditChannelName(channelId) {
-      var display = document.getElementById('ch-name-display-' + channelId);
-      var edit = document.getElementById('ch-name-edit-' + channelId);
-      if (display) display.classList.remove('hidden');
-      if (edit) edit.classList.add('hidden');
+    function cancelEditChannel(channelId) {
+      var form = document.getElementById('ch-edit-' + channelId);
+      if (form) form.classList.add('hidden');
     }
 
-    async function saveChannelName(channelId, newName, accountId) {
-      newName = newName.trim();
-      if (!newName) { cancelEditChannelName(channelId); return; }
+    async function saveChannelConfig(channelId, channelType, accountId) {
+      var name = (document.getElementById('ch-edit-name-' + channelId).value || '').trim();
+      var f1 = (document.getElementById('ch-edit-f1-' + channelId).value || '').trim();
+      var config = {};
+      if (channelType === 'email') { config.email = f1; }
+      else if (channelType === 'webhook') {
+        config.url = f1;
+        var f2El = document.getElementById('ch-edit-f2-' + channelId);
+        if (f2El && f2El.value.trim()) config.token = f2El.value.trim();
+      } else { config.integration_key = f1; }
+      if (!f1) { showInlineMsg('notif-msg-' + accountId, 'Enter the channel target.', 'error'); return; }
       try {
         var resp = await fetch('/api/notifications/channels/' + channelId, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: newName })
+          body: JSON.stringify({ name: name, config: config })
         });
         var d = await resp.json();
         if (d.ok) {
           await loadAccountNotifications(accountId);
-          showInlineMsg('notif-msg-' + accountId, 'Channel name updated.', 'success');
+          showInlineMsg('notif-msg-' + accountId, 'Channel updated.', 'success');
         } else {
-          showInlineMsg('notif-msg-' + accountId, d.error || 'Failed to update name', 'error');
-          cancelEditChannelName(channelId);
+          showInlineMsg('notif-msg-' + accountId, d.error || 'Failed to update channel', 'error');
         }
       } catch (e) {
-        showInlineMsg('notif-msg-' + accountId, 'Failed to update name: ' + e, 'error');
-        cancelEditChannelName(channelId);
+        showInlineMsg('notif-msg-' + accountId, 'Failed to update channel: ' + e, 'error');
       }
     }
 
