@@ -4305,8 +4305,15 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('loa-signatory-title').value = '';
       document.getElementById('loa-company-address').value = '';
       document.getElementById('loa-generator-error').classList.add('hidden');
-      // Initialize with one empty prefix row
-      loaPrefixRows = [{ prefix: '', asn: '' }];
+      // Copy prefixes from Add Prefix modal if any have been entered
+      var hasEntries = addPrefixRows.some(function(r) { return r.cidr.trim() !== ''; });
+      if (hasEntries) {
+        loaPrefixRows = addPrefixRows
+          .filter(function(r) { return r.cidr.trim() !== ''; })
+          .map(function(r) { return { prefix: r.cidr.trim(), asn: r.asn.trim() }; });
+      } else {
+        loaPrefixRows = [{ prefix: '', asn: '' }];
+      }
       renderLoaPrefixRows();
       document.getElementById('loa-generator-modal').classList.remove('hidden');
     }
