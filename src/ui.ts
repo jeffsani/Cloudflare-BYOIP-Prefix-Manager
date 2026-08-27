@@ -1269,7 +1269,7 @@ export function renderDashboard(userEmail: string): string {
             '<div id="acct-expand-' + escAttr(aid) + '" class="hidden border-t border-cf-border p-4">' +
               // API Token
               '<div class="pb-3">' +
-                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Cloudflare API Token <a href="#" onclick="window.open(getTokenGeneratorUrl(),\'_blank\');return false" class="text-cf-orange hover:underline font-normal text-[11px] ml-1">Generate token &#8599;</a></label>' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Cloudflare API Token <a href="#" onclick="window.open(getTokenGeneratorUrl(),\\'_blank\\');return false" class="text-cf-orange hover:underline font-normal text-[11px] ml-1">Generate token &#8599;</a></label>' +
                 // Display row
                 '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2.5 rounded-lg border border-cf-border text-xs">' +
                   '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
