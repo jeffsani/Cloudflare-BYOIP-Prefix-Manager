@@ -17,14 +17,24 @@ CREATE TABLE IF NOT EXISTS user_accounts (
 -- Migration for existing databases (safe to run repeatedly; ignore "duplicate column" error):
 -- ALTER TABLE user_accounts ADD COLUMN api_rate_limit_5min INTEGER NOT NULL DEFAULT 1200;
 
+-- Per-user display preferences
+CREATE TABLE IF NOT EXISTS user_preferences (
+  user_email         TEXT PRIMARY KEY,
+  aggregate_accounts INTEGER NOT NULL DEFAULT 0
+);
+
 -- Activity log for tracking actions (advertisement toggles, etc.)
 CREATE TABLE IF NOT EXISTS activity_log (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   user_email  TEXT NOT NULL,
+  account_id  TEXT,
   action      TEXT NOT NULL,
   details     TEXT NOT NULL DEFAULT '',
   created_at  TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE INDEX IF NOT EXISTS idx_activity_log_user_account_created
+  ON activity_log(user_email, account_id, created_at);
 
 -- RIR credentials for automated IRR record management (ARIN, RIPE)
 CREATE TABLE IF NOT EXISTS rir_credentials (

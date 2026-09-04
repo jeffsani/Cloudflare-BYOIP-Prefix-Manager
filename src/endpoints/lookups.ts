@@ -1,7 +1,7 @@
 import { OpenAPIRoute, contentJson } from 'chanfana';
 import { z } from 'zod';
 import type { Context } from 'hono';
-import type { Env } from '../types';
+import type { Env, UserAccount } from '../types';
 import { getToken, resolveAccount } from '../helpers';
 import {
   lookupBgpRoutes,
@@ -223,78 +223,74 @@ export class GetActivity extends OpenAPIRoute {
     const email = c.get('userEmail');
     const data = await this.getValidatedData<typeof this.schema>();
     const days = data.query.days;
+    const aggregate = data.query.account_id === 'all';
     const sinceIso = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
-    // Local tool activity (user-scoped).
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM activity_log WHERE user_email = ? AND created_at >= datetime('now', ?) ORDER BY created_at DESC LIMIT 50",
-    )
-      .bind(email, `-${days} days`)
-      .all();
-
-    const localEntries = (rows.results || []).map((r: Record<string, unknown>) => {
-      const action = r.action as string;
-      const source = action.startsWith('webhook_') ? 'webhook' as const
-        : action.startsWith('external_') ? 'radar' as const
-        : 'local' as const;
-      return {
-        source,
-        id: r.id as number,
-        user_email: r.user_email as string,
-        action,
-        details: r.details as string,
-        created_at: r.created_at as string,
-      };
-    });
-
-    // Cloudflare audit log (account-scoped). Hybrid: prefer Logpush-ingested rows
-    // stored in D1 (fast); fall back to the live Audit Logs API when none exist
-    // yet. Best-effort: never break local log, but surface errors to the UI.
-    let auditEntries: Array<Record<string, unknown>> = [];
-    let auditError: string | undefined;
-    try {
-      const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
-      if (acct?.account_id) {
-        // Best-effort read of Logpush-ingested rows. If the table hasn't been
-        // migrated yet ("no such table"), treat it as empty and fall through to
-        // the live API rather than surfacing a misleading error.
-        let storedRows: Array<Record<string, unknown>> = [];
-        try {
-          const stored = await c.env.DB.prepare(
-            'SELECT * FROM audit_log_events WHERE account_id = ? AND action_time >= ? ORDER BY action_time DESC LIMIT 100',
-          ).bind(acct.account_id, sinceIso).all<Record<string, unknown>>();
-          storedRows = stored.results || [];
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          if (!/no such table/i.test(msg)) throw e; // real error — propagate
-        }
-
-        if (storedRows.length) {
-          // Fast path — resolve CIDRs best-effort so display matches the live path.
-          let prefixMap: Record<string, string> = {};
-          try {
-            const token = await getToken(c.env.DB, email, acct.account_id);
-            prefixMap = await buildPrefixCidrMap(acct.account_id, token);
-          } catch {
-            // No token / API error — fall back to raw resource IDs.
-          }
-          auditEntries = storedRows.map((r) => mapAuditRow(r, prefixMap));
-        } else {
-          // Fallback path — no Logpush data yet; poll the live Audit Logs API.
-          const token = await getToken(c.env.DB, email, acct.account_id);
-          const now = new Date();
-          const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-          const [entries, prefixMap] = await Promise.all([
-            listAuditLogs(acct.account_id, token, since.toISOString(), now.toISOString()),
-            buildPrefixCidrMap(acct.account_id, token).catch(() => ({} as Record<string, string>)),
-          ]);
-          auditEntries = entries.map((e) => mapAuditEntry(e, prefixMap));
-        }
-      }
-    } catch (e) {
-      auditError = e instanceof Error ? e.message : String(e);
-      console.error('Audit log fetch failed:', auditError);
+    let accounts: UserAccount[];
+    if (aggregate) {
+      const rows = await c.env.DB.prepare(
+        'SELECT * FROM user_accounts WHERE user_email = ? ORDER BY is_default DESC, id ASC',
+      ).bind(email).all<UserAccount>();
+      accounts = rows.results || [];
+    } else {
+      const account = await resolveAccount(c.env.DB, email, data.query.account_id);
+      accounts = account ? [account] : [];
     }
+    const accountLabels = new Map(accounts.map((account) => [account.account_id, account.account_label]));
+
+    // Local tool activity (user-scoped and structurally account-scoped).
+    const accountPredicate = aggregate
+      ? accounts.length
+        ? `AND (account_id IS NULL OR account_id IN (${accounts.map(() => '?').join(', ')}))`
+        : 'AND account_id IS NULL'
+      : 'AND account_id = ?';
+    const accountBindings = aggregate
+      ? accounts.map((account) => account.account_id)
+      : [accounts[0]?.account_id ?? null];
+    const localRows = await c.env.DB.prepare(
+      `SELECT * FROM activity_log
+       WHERE user_email = ? AND created_at >= datetime('now', ?) ${accountPredicate}
+       ORDER BY created_at DESC LIMIT 200`,
+    )
+      .bind(email, `-${days} days`, ...accountBindings)
+      .all<Record<string, unknown>>();
+
+    const localEntries = (localRows.results || [])
+      .map((r) => {
+        const action = r.action as string;
+        const accountId = r.account_id == null ? null : String(r.account_id);
+        const source = action.startsWith('webhook_') ? 'webhook' as const
+          : action.startsWith('external_') ? 'radar' as const
+          : 'local' as const;
+        return {
+          source,
+          id: r.id as number,
+          user_email: r.user_email as string,
+          account_id: accountId,
+          account_label: accountId ? accountLabels.get(accountId) : undefined,
+          action,
+          details: r.details as string,
+          created_at: r.created_at as string,
+        };
+      });
+
+    // Cloudflare audit log (account-scoped). Each account independently prefers
+    // stored Logpush rows and falls back to the live API. Account failures do not
+    // prevent successful account results or local activity from being returned.
+    const auditResults = await Promise.all(accounts.map(async (account) => {
+      try {
+        const entries = await loadAccountAudit(c.env.DB, email, account, days, sinceIso);
+        return { entries, error: undefined };
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        const label = account.account_label || account.account_id;
+        console.error(`Audit log fetch failed for ${account.account_id}:`, message);
+        return { entries: [] as Array<Record<string, unknown>>, error: `${label}: ${message}` };
+      }
+    }));
+    const auditEntries = auditResults.flatMap((result) => result.entries);
+    const errors = auditResults.flatMap((result) => result.error ? [result.error] : []);
+    const auditError = errors.length ? errors.join('; ') : undefined;
 
     // Local created_at is UTC without a 'Z' suffix; normalize before comparing.
     const ts = (v: unknown) => {
@@ -309,8 +305,56 @@ export class GetActivity extends OpenAPIRoute {
   }
 }
 
+async function loadAccountAudit(
+  db: D1Database,
+  email: string,
+  account: UserAccount,
+  days: number,
+  sinceIso: string,
+): Promise<Array<Record<string, unknown>>> {
+  // Best-effort read of Logpush-ingested rows. If the table hasn't been
+  // migrated yet ("no such table"), treat it as empty and fall through to
+  // the live API rather than surfacing a misleading error.
+  let storedRows: Array<Record<string, unknown>> = [];
+  try {
+    const stored = await db.prepare(
+      'SELECT * FROM audit_log_events WHERE account_id = ? AND action_time >= ? ORDER BY action_time DESC LIMIT 100',
+    ).bind(account.account_id, sinceIso).all<Record<string, unknown>>();
+    storedRows = stored.results || [];
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (!/no such table/i.test(message)) throw e; // real error — propagate
+  }
+
+  if (storedRows.length) {
+    // Fast path — resolve CIDRs best-effort so display matches the live path.
+    let prefixMap: Record<string, string> = {};
+    try {
+      const token = await getToken(db, email, account.account_id);
+      prefixMap = await buildPrefixCidrMap(account.account_id, token);
+    } catch {
+      // No token / API error — fall back to raw resource IDs.
+    }
+    return storedRows.map((row) => mapAuditRow(row, prefixMap, account));
+  }
+
+  // Fallback path — no Logpush data yet; poll the live Audit Logs API.
+  const token = await getToken(db, email, account.account_id);
+  const now = new Date();
+  const since = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+  const [entries, prefixMap] = await Promise.all([
+    listAuditLogs(account.account_id, token, since.toISOString(), now.toISOString()),
+    buildPrefixCidrMap(account.account_id, token).catch(() => ({} as Record<string, string>)),
+  ]);
+  return entries.map((entry) => mapAuditEntry(entry, prefixMap, account));
+}
+
 /** Map a Logpush-ingested `audit_log_events` D1 row to the merged activity shape. */
-function mapAuditRow(r: Record<string, unknown>, prefixMap: Record<string, string>): Record<string, unknown> {
+function mapAuditRow(
+  r: Record<string, unknown>,
+  prefixMap: Record<string, string>,
+  account: UserAccount,
+): Record<string, unknown> {
   const prefixId = String(r.resource_id || '');
   const cidr = prefixId ? prefixMap[prefixId] : undefined;
   const description = String(r.action_description || r.resource_type || r.action_type || 'Audit event');
@@ -320,6 +364,8 @@ function mapAuditRow(r: Record<string, unknown>, prefixMap: Record<string, strin
   return {
     source: 'audit' as const,
     id: String(r.audit_log_id || ''),
+    account_id: account.account_id,
+    account_label: account.account_label,
     action: String(r.action_type || 'audit'),
     action_description: r.action_description,
     result: r.action_result,
@@ -334,7 +380,11 @@ function mapAuditRow(r: Record<string, unknown>, prefixMap: Record<string, strin
   };
 }
 
-function mapAuditEntry(e: AuditLogEntry, prefixMap: Record<string, string>): Record<string, unknown> {
+function mapAuditEntry(
+  e: AuditLogEntry,
+  prefixMap: Record<string, string>,
+  account: UserAccount,
+): Record<string, unknown> {
   const prefixId = e.resource?.id;
   const cidr = prefixId ? prefixMap[prefixId] : undefined;
   const description = e.action?.description || e.resource?.type || e.action?.type || 'Audit event';
@@ -344,6 +394,8 @@ function mapAuditEntry(e: AuditLogEntry, prefixMap: Record<string, string>): Rec
   return {
     source: 'audit' as const,
     id: e.id,
+    account_id: account.account_id,
+    account_label: account.account_label,
     action: e.action?.type || 'audit',
     action_description: e.action?.description,
     result: e.action?.result,

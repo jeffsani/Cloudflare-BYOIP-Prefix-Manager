@@ -179,17 +179,18 @@ async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: st
     const recent = await env.DB.prepare(
       `SELECT 1 FROM activity_log
        WHERE user_email = ?
+         AND account_id = ?
          AND created_at >= datetime('now', ?)
          AND (
            (action IN ('advertise','withdraw') AND details LIKE ?)
            OR action IN ('bulk_advertise','bulk_withdraw')
          )
        LIMIT 1`
-    ).bind(acct.user_email, `-${SUPPRESS_WINDOW_MIN} minutes`, `%${cidr}%`).first();
+    ).bind(acct.user_email, acct.account_id, `-${SUPPRESS_WINDOW_MIN} minutes`, `%${cidr}%`).first();
     if (recent) return; // Tool-driven change already surfaced inline.
   }
 
-  await logActivity(env.DB, acct.user_email, eventType, details);
+  await logActivity(env.DB, acct.user_email, acct.account_id, eventType, details);
   await enqueueNotification(env, {
     user_email: acct.user_email,
     account_id: acct.account_id,

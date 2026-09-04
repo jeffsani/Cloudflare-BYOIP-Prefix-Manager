@@ -128,7 +128,7 @@ export class CreateDelegationEndpoint extends OpenAPIRoute {
       }
 
       const delegCreateDetails = `Delegated ${body.cidr} to account ${body.delegated_account_id} on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'create_delegation', delegCreateDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'create_delegation', delegCreateDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'create_delegation',
         title: body.cidr, details: delegCreateDetails,
@@ -192,7 +192,7 @@ export class DeleteDelegationEndpoint extends OpenAPIRoute {
         .run();
 
       const delegDeleteDetails = `Deleted delegation ${delegationId} on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'delete_delegation', delegDeleteDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'delete_delegation', delegDeleteDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'delete_delegation',
         title: delegationId, details: delegDeleteDetails,

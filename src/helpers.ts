@@ -14,11 +14,17 @@ export async function getToken(db: D1Database, email: string, accountId: string)
 }
 
 // Helper: log activity
-export async function logActivity(db: D1Database, email: string, action: string, details: string) {
+export async function logActivity(
+  db: D1Database,
+  email: string,
+  accountId: string,
+  action: string,
+  details: string,
+) {
   try {
     await db
-      .prepare('INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)')
-      .bind(email, action, details)
+      .prepare('INSERT INTO activity_log (user_email, account_id, action, details) VALUES (?, ?, ?, ?)')
+      .bind(email, accountId, action, details)
       .run();
     // Prune entries older than 180 days
     await db

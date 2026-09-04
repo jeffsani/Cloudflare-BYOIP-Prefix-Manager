@@ -21,6 +21,11 @@ export interface UserAccount {
   updated_at: string;
 }
 
+export interface UserPreferences {
+  user_email: string;
+  aggregate_accounts: number;
+}
+
 // --- Machine integration types (Query API + inbound webhooks) ---
 
 export interface ApiKey {
@@ -302,6 +307,8 @@ export interface LgResult {
 export interface ActivityLogEntry {
   id: number;
   user_email: string;
+  account_id: string | null;
+  account_label?: string;
   action: string;
   details: string;
   created_at: string;

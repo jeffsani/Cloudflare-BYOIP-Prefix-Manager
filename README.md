@@ -42,6 +42,8 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 ### Multi-Account & Multi-Token
 - **Per-User Accounts** — Each user (identified via Cloudflare Access JWT with Google IdP) can configure multiple Cloudflare accounts, each with its own label and account ID
+- **Aggregate Account View** — Enable aggregation in Settings to open prefixes and stats, activity, and notification history across all configured accounts. Each panel has an independent account filter, while its existing search and status filters continue to apply across the combined data.
+- **Account-Aware Actions** — Rows retain their source account, Add Prefix prompts for a target account in the combined view, and bulk advertisement changes are safely partitioned by account.
 - **Multi-Token Load Balancing** — Add multiple API tokens per account to distribute API requests via round-robin and avoid the Cloudflare API rate limit (1200 requests per endpoint per 5-minute window per token). Write operations (advertisement toggle) always use the first token for consistency.
 - **Token Testing** — Test any token's permissions before saving, with inline badge feedback for IP Prefixes Read and Addressing Services Read
 
@@ -249,11 +251,14 @@ npm run db:init:remote
 npm run deploy
 ```
 
-For specific migrations (e.g. Query API tables), apply the dedicated migration file:
+For specific migrations, apply the dedicated migration files required by the release:
 
 ```bash
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql
+npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-account-aggregation.sql
 ```
+
+The account-aggregation migration adds the per-user dashboard preference and structured account ownership for new activity-log entries. Historical activity remains available in the all-accounts view but cannot be reliably assigned to an individual account.
 
 ## BYO-ASN Prefix Onboarding
 
@@ -606,8 +611,9 @@ prefix-mgr/
 ├── package.json
 ├── tsconfig.json
 ├── wrangler.toml.example
-├── schema.sql                  — Full schema (user_accounts + account_tokens + activity_log)
+├── schema.sql                  — Full database schema
 ├── migrate-query-api.sql       — Migration for existing deployments (Query API tables)
+├── migrate-account-aggregation.sql — Migration for aggregate preferences and account-scoped activity
 └── src/
     ├── index.ts                — Hono app, chanfana OpenAPI setup, route registration
     ├── helpers.ts              — Shared helpers (getToken, logActivity, resolveAccount)
@@ -642,11 +648,14 @@ prefix-mgr/
 ### `user_accounts`
 Stores Cloudflare account configurations per user. One row per user + account_id combination.
 
+### `user_preferences`
+Stores per-user dashboard behavior, including whether multi-account data panels default to the aggregate view.
+
 ### `account_tokens`
 Stores API tokens per account. Multiple tokens per account enable round-robin load balancing. Legacy tokens from `user_accounts.api_token` are auto-migrated on first access.
 
 ### `activity_log`
-Tracks advertisement toggle actions (advertise/withdraw) with user email, action, details, and timestamp.
+Tracks dashboard, webhook, and Radar actions with user and account ownership, action details, and timestamp. Legacy rows created before the account-aggregation migration have no account ID and are shown only in the all-accounts activity view.
 
 ### `notification_channels` / `notification_subscriptions`
 Per user + account delivery channels (email/webhook/PagerDuty) and per-event channel subscriptions.
@@ -660,9 +669,9 @@ Consolidated per-CIDR state and a cache of the CIDR set to poll per account. `pr
 ### `api_keys` / `webhook_endpoints` / `webhook_events`
 Per-account API keys for the Query API (SHA‑256 hashed), inbound webhook secrets (SHA‑256 hashed, matched against the `cf-webhook-auth` header), and an audit log of raw inbound webhook payloads.
 
-> Existing deployments: apply the additive migration with
-> `npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql`
-> (the `ALTER TABLE` statements safely error with "duplicate column" if already applied).
+> Existing deployments should apply the migrations required by their upgrade, including
+> `migrate-query-api.sql` and `migrate-account-aggregation.sql`. Reapplying a migration that
+> contains `ALTER TABLE` can report an expected "duplicate column" error.
 
 ## API Documentation
 

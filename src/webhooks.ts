@@ -410,7 +410,7 @@ async function notifyWebhook(
     ? `Prefix ${cidr} ${verb} via Cloudflare notification (${parsed.alert_type})${statusNote}`
     : `Prefix ${cidr} ${verb} via Cloudflare notification${statusNote}`;
 
-  await logActivity(env.DB, ownerEmail, eventType, detail);
+  await logActivity(env.DB, ownerEmail, accountId, eventType, detail);
   await enqueueNotification(env, {
     user_email: ownerEmail,
     account_id: accountId,

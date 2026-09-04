@@ -10,6 +10,15 @@ export const AccountSchema = z.object({
   updated_at: z.string(),
 });
 
+export const AccountPreferencesSchema = z.object({
+  aggregate_accounts: z.boolean(),
+});
+
+export const SettingsResponseSchema = z.object({
+  accounts: z.array(AccountSchema),
+  aggregate_accounts: z.boolean(),
+});
+
 export const CreateAccountRequestSchema = z.object({
   account_label: z.string().optional().default(''),
   account_id: z.string().min(1, 'account_id is required'),

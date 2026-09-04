@@ -137,7 +137,7 @@ export class CreatePrefix extends OpenAPIRoute {
       }
 
       const createPrefixDetails = `Created prefix ${body.cidr} (ASN ${body.asn}) in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'create_prefix', createPrefixDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'create_prefix', createPrefixDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'create_prefix',
         title: body.cidr, details: createPrefixDetails,
@@ -222,7 +222,7 @@ export class BatchCreatePrefix extends OpenAPIRoute {
       const failed = results.filter((r) => !r.ok).length;
 
       const batchDetails = `Batch created ${succeeded} of ${body.prefixes.length} prefixes in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'batch_create_prefix', batchDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'batch_create_prefix', batchDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'batch_create_prefix',
         title: `${succeeded}/${body.prefixes.length} prefixes`,
@@ -277,7 +277,7 @@ export class DeletePrefix extends OpenAPIRoute {
       }
 
       const deletePrefixDetails = `Deleted prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'delete_prefix', deletePrefixDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'delete_prefix', deletePrefixDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'delete_prefix',
         title: prefixId, details: deletePrefixDetails,
@@ -579,7 +579,7 @@ export class UpdatePrefixDescription extends OpenAPIRoute {
 
       const updateDescCidr = result.result?.cidr || prefixId;
       const updateDescDetails = `Updated description for prefix ${updateDescCidr} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'update_description', updateDescDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'update_description', updateDescDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'update_description',
         title: updateDescCidr, details: updateDescDetails,
@@ -636,7 +636,7 @@ export class ValidateExistingPrefix extends OpenAPIRoute {
 
       const validateCidr = result.result?.cidr || prefixId;
       const validateDetails = `Re-validated prefix ${validateCidr} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'validate', validateDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'validate', validateDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'validate',
         title: validateCidr, details: validateDetails,
@@ -763,7 +763,7 @@ export class BulkToggle extends OpenAPIRoute {
       const totalToggled = results.reduce((sum, r) => sum + r.toggled, 0);
       const totalSkipped = results.reduce((sum, r) => sum + r.skipped, 0);
       const bulkDetails = `Bulk ${body.advertised ? 'advertise' : 'withdraw'}: ${totalToggled} toggled, ${totalSkipped} skipped across ${body.prefix_ids.length} prefixes in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, action, bulkDetails);
+      await logActivity(c.env.DB, email, acct.account_id, action, bulkDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: action,
         title: `${totalToggled} prefix(es)`, details: bulkDetails,

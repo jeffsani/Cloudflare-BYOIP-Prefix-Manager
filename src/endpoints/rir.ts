@@ -336,9 +336,9 @@ export class EnsureRoute extends OpenAPIRoute {
 
     if (result.ok) {
       await c.env.DB.prepare(
-        `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
+        `INSERT INTO activity_log (user_email, account_id, action, details) VALUES (?, ?, ?, ?)`,
       )
-        .bind(email, 'rir_ensure_route', `Validated ${body.prefix.includes(':') ? 'route6' : 'route'} token at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn} onboarding`)
+        .bind(email, body.account_id, 'rir_ensure_route', `Validated ${body.prefix.includes(':') ? 'route6' : 'route'} token at ${rir.toUpperCase()} for ${body.prefix} AS${body.origin_asn} onboarding`)
         .run();
     }
 
@@ -401,9 +401,9 @@ export class EnsureAutnum extends OpenAPIRoute {
 
     if (result.ok) {
       await c.env.DB.prepare(
-        `INSERT INTO activity_log (user_email, action, details) VALUES (?, ?, ?)`,
+        `INSERT INTO activity_log (user_email, account_id, action, details) VALUES (?, ?, ?, ?)`,
       )
-        .bind(email, 'rir_ensure_autnum', `Validated aut-num token at ${rir.toUpperCase()} for ${body.prefix ? `${body.prefix} ` : ''}AS${body.asn} onboarding`)
+        .bind(email, body.account_id, 'rir_ensure_autnum', `Validated aut-num token at ${rir.toUpperCase()} for ${body.prefix ? `${body.prefix} ` : ''}AS${body.asn} onboarding`)
         .run();
     }
 

@@ -371,6 +371,17 @@ export function renderDashboard(userEmail: string): string {
         <button onclick="showAddAccount()" class="px-3 py-1 text-xs font-semibold rounded-lg border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange">+ Add Account</button>
       </div>
 
+      <div id="aggregate-accounts-setting" class="hidden rounded-lg border border-cf-border p-3 flex items-center justify-between gap-4">
+        <div>
+          <div class="text-xs font-semibold" style="color:var(--text-strong)">Aggregate accounts</div>
+          <div class="text-[10px] text-cf-gray mt-0.5">Default Prefixes, Activity, and Notifications to All accounts.</div>
+        </div>
+        <label class="flex items-center gap-2 text-xs text-cf-gray cursor-pointer">
+          <input id="aggregate-accounts-toggle" type="checkbox" onchange="saveAggregatePreference(this.checked)" style="accent-color:#F6821F">
+          Enabled
+        </label>
+      </div>
+
       <!-- Saved accounts list -->
       <div id="accounts-list" class="space-y-2"></div>
 
@@ -522,6 +533,7 @@ export function renderDashboard(userEmail: string): string {
               <th class="px-2 py-2.5 text-cf-gray font-medium w-8"><input type="checkbox" id="select-all-checkbox" onchange="toggleSelectAll(this)" style="cursor:pointer;accent-color:#F6821F"></th>
               <th class="px-3 py-2.5 text-cf-gray font-medium w-8"></th>
               <th class="px-2 py-2.5 text-cf-gray font-medium w-8"></th>
+              <th id="prefix-account-heading" class="hidden px-3 py-2.5 text-cf-gray font-medium">Account</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">Prefix (CIDR)</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">ASN</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">Status</th>
@@ -554,6 +566,7 @@ export function renderDashboard(userEmail: string): string {
           <span id="activity-log-count" class="text-[10px] text-cf-gray px-1.5 py-0.5 rounded-full border border-cf-border hidden">0</span>
         </div>
         <div class="flex items-center gap-2">
+          <select id="activity-log-account" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogAccount(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by account"></select>
           <select id="activity-log-window" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogDays(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Time window">
             <option value="30">Last 30 days</option>
             <option value="90">Last 90 days</option>
@@ -596,6 +609,7 @@ export function renderDashboard(userEmail: string): string {
           <span id="notif-queue-count-fail" class="text-[10px] text-red-400 px-1.5 py-0.5 rounded-full border border-red-400/30 hidden">0 failed</span>
         </div>
         <div class="flex items-center gap-2">
+          <select id="notif-queue-account" onclick="event.stopPropagation()" onchange="event.stopPropagation();setNotifQueueAccount(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by account"></select>
           <span id="notif-queue-hint" class="text-[10px] text-cf-gray">Click to expand</span>
           <button id="notif-queue-refresh" onclick="event.stopPropagation();loadNotifQueue()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -877,6 +891,10 @@ export function renderDashboard(userEmail: string): string {
         <p class="text-xs text-cf-gray mt-0.5">Onboard a new BYOIP prefix to your Cloudflare account</p>
       </div>
       <div class="p-4" style="max-height:75vh;overflow-y:auto">
+        <div id="add-prefix-account-wrap" class="hidden mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Prefix target account</label>
+          <select id="add-prefix-account" onchange="onAddPrefixAccountChange(this.value)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+        </div>
         <!-- Prefixes & ASNs -->
         <div class="mb-3">
           <label class="block text-xs text-cf-gray mb-1">Prefixes &amp; ASNs${infoTip('Enter one or more IPv4/IPv6 prefixes in CIDR notation with their originating ASN. Use 13335 for Cloudflare ASN. Minimum size: /24 for IPv4, /48 for IPv6. Using a custom ASN (BYOASN) is a gated feature — contact your Cloudflare account team to enable it.')}</label>
@@ -1050,7 +1068,13 @@ export function renderDashboard(userEmail: string): string {
   <script>
     // ─── State ────────────────────────────────────────────────────
     var savedAccounts = [];
+    var aggregateAccounts = false;
     var activeAccountId = '';
+    var activityAccountId = '';
+    var notifAccountId = '';
+    var addPrefixAccountId = '';
+    var notifQueueEntries = [];
+    var prefixLoadErrors = [];
     var allPrefixes = [];
     var filteredPrefixes = [];
     var expandedRows = {};
@@ -1079,6 +1103,9 @@ export function renderDashboard(userEmail: string): string {
     var activityLogAuditError = '';
     var notifQueueLoaded = false;
     var notifQueueExpanded = false;
+    var prefixLoadGeneration = 0;
+    var activityLoadGeneration = 0;
+    var notifLoadGeneration = 0;
 
     // ─── Tooltip Positioning (fixed, escapes overflow:hidden) ────
     function positionTooltip(triggerEl, tipEl) {
@@ -1209,34 +1236,155 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Accounts ─────────────────────────────────────────────────
+    function clearAccountDependentState() {
+      prefixLoadGeneration++;
+      activityLoadGeneration++;
+      notifLoadGeneration++;
+      activeAccountId = '';
+      activityAccountId = '';
+      notifAccountId = '';
+      addPrefixAccountId = '';
+      allPrefixes = [];
+      filteredPrefixes = [];
+      prefixStats = null;
+      prefixLoadErrors = [];
+      expandedRows = {};
+      childData = {};
+      selectedPrefixes.clear();
+      var selectAllCb = document.getElementById('select-all-checkbox');
+      if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
+      activityLogLoaded = false;
+      activityLogEntries = [];
+      activityLogAuditError = '';
+      notifQueueLoaded = false;
+      notifQueueEntries = [];
+      clearInlineMsg('prefix-msg');
+      clearInlineMsg('notif-queue-msg');
+      updateBulkBar();
+      updateStats();
+      updateTagFilter();
+      var tbody = document.getElementById('prefix-table-body');
+      if (tbody) tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray">Configure an account in Settings to load prefixes.</td></tr>';
+      var heading = document.getElementById('prefix-account-heading');
+      if (heading) heading.classList.add('hidden');
+      var activityCount = document.getElementById('activity-log-count');
+      if (activityCount) { activityCount.textContent = '0'; activityCount.classList.add('hidden'); }
+      var activityContent = document.getElementById('activity-log-content');
+      if (activityContent) activityContent.innerHTML = '<div class="px-4 py-8 text-center text-cf-gray text-xs">Configure an account to view activity.</div>';
+      var notifContent = document.getElementById('notif-queue-content');
+      if (notifContent) notifContent.innerHTML = '<div class="px-4 py-8 text-center text-cf-gray text-xs">Configure an account to view notifications.</div>';
+      var notifOk = document.getElementById('notif-queue-count-ok');
+      var notifFail = document.getElementById('notif-queue-count-fail');
+      if (notifOk) notifOk.classList.add('hidden');
+      if (notifFail) notifFail.classList.add('hidden');
+    }
+
     async function loadAccounts() {
       try {
         var resp = await fetch('/api/settings');
         var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load accounts');
         savedAccounts = data.accounts || [];
-        renderAccountSelector();
-        renderAccountsList();
+        aggregateAccounts = data.aggregate_accounts === true;
+        if (savedAccounts.length === 0) clearAccountDependentState();
         if (savedAccounts.length > 0) {
           var def = savedAccounts.find(function(a) { return a.is_default; }) || savedAccounts[0];
-          activeAccountId = def.account_id;
-          document.getElementById('filter-account').value = activeAccountId;
-          loadPrefixes();
+          var canUseAll = aggregateAccounts && savedAccounts.length > 1;
+          var initial = canUseAll ? 'all' : def.account_id;
+          var isValidSelection = function(value) {
+            if (value === 'all') return canUseAll;
+            return !!value && savedAccounts.some(function(a) { return a.account_id === value; });
+          };
+          if (!isValidSelection(activeAccountId)) activeAccountId = initial;
+          if (!isValidSelection(activityAccountId)) activityAccountId = initial;
+          if (!isValidSelection(notifAccountId)) notifAccountId = initial;
+          if (!addPrefixAccountId || !savedAccounts.some(function(a) { return a.account_id === addPrefixAccountId; })) addPrefixAccountId = def.account_id;
         }
+        renderAccountSelectors();
+        renderAccountsList();
+        renderAggregateSetting();
+        if (savedAccounts.length > 0) loadPrefixes();
       } catch (e) {
         console.error('Failed to load accounts:', e);
+        showInlineMsg('prefix-msg', 'Failed to load accounts: ' + (e && e.message ? e.message : e), 'error');
       }
     }
 
-    function renderAccountSelector() {
-      var sel = document.getElementById('filter-account');
+    function accountOptions(includeAll) {
+      var html = includeAll && aggregateAccounts && savedAccounts.length > 1 ? '<option value="all">All accounts</option>' : '';
+      return html + savedAccounts.map(function(a) {
+        return '<option value="' + escAttr(a.account_id) + '">' + escHtml(a.account_label || a.account_id) + '</option>';
+      }).join('');
+    }
+
+    function renderAccountSelectors() {
+      var prefixSel = document.getElementById('filter-account');
+      var activitySel = document.getElementById('activity-log-account');
+      var notifSel = document.getElementById('notif-queue-account');
+      var addSel = document.getElementById('add-prefix-account');
       if (savedAccounts.length === 0) {
-        sel.innerHTML = '<option value="">No accounts configured</option>';
+        prefixSel.innerHTML = '<option value="">No accounts configured</option>';
+        if (activitySel) activitySel.innerHTML = prefixSel.innerHTML;
+        if (notifSel) notifSel.innerHTML = prefixSel.innerHTML;
+        if (addSel) addSel.innerHTML = prefixSel.innerHTML;
         return;
       }
-      sel.innerHTML = savedAccounts.map(function(a) {
-        var label = a.account_label || a.account_id;
-        return '<option value="' + a.account_id + '">' + escHtml(label) + '</option>';
-      }).join('');
+      prefixSel.innerHTML = accountOptions(true);
+      if (activitySel) activitySel.innerHTML = accountOptions(true);
+      if (notifSel) notifSel.innerHTML = accountOptions(true);
+      if (addSel) addSel.innerHTML = accountOptions(false);
+      prefixSel.value = activeAccountId || savedAccounts[0].account_id;
+      if (activitySel) activitySel.value = activityAccountId || savedAccounts[0].account_id;
+      if (notifSel) notifSel.value = notifAccountId || savedAccounts[0].account_id;
+      if (addSel) addSel.value = addPrefixAccountId || savedAccounts[0].account_id;
+    }
+
+    function renderAggregateSetting() {
+      var wrap = document.getElementById('aggregate-accounts-setting');
+      var toggle = document.getElementById('aggregate-accounts-toggle');
+      if (wrap) wrap.classList.toggle('hidden', savedAccounts.length < 2);
+      if (toggle) toggle.checked = aggregateAccounts;
+    }
+
+    async function saveAggregatePreference(enabled) {
+      var toggle = document.getElementById('aggregate-accounts-toggle');
+      if (toggle) toggle.disabled = true;
+      try {
+        var resp = await fetch('/api/settings/preferences', {
+          method: 'PUT', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ aggregate_accounts: enabled })
+        });
+        var data = {};
+        try { data = await resp.json(); } catch (_e) {}
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to save aggregate account preference');
+        aggregateAccounts = enabled;
+        if (savedAccounts.length) {
+          var def = savedAccounts.find(function(a) { return a.is_default; }) || savedAccounts[0];
+          activeAccountId = activityAccountId = notifAccountId = enabled && savedAccounts.length > 1 ? 'all' : def.account_id;
+        }
+        renderAccountSelectors();
+        await loadPrefixes();
+        if (activityLogExpanded) await loadActivityLog();
+        if (notifQueueExpanded) await loadNotifQueue();
+        showInlineMsg('prefix-msg', 'Aggregate account view ' + (enabled ? 'enabled.' : 'disabled.'), 'success');
+      } catch (e) {
+        renderAggregateSetting();
+        showInlineMsg('prefix-msg', 'Failed to save aggregate account preference: ' + (e && e.message ? e.message : e), 'error');
+      } finally {
+        if (toggle) toggle.disabled = false;
+      }
+    }
+
+    function accountLabel(accountId) {
+      var account = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      return account ? (account.account_label || account.account_id) : accountId;
+    }
+
+    function prefixKey(accountId, prefixId) { return accountId + '::' + prefixId; }
+    function prefixByKey(key) { return allPrefixes.find(function(p) { return prefixKey(p._account_id, p.id) === key; }); }
+    function accountBadge(accountId, label) {
+      var text = label || accountLabel(accountId) || 'Unknown account';
+      return '<span class="al-badge al-badge-blue" title="' + escAttr(accountId || '') + '">' + escHtml(text) + '</span>';
     }
 
     function renderAccountsList() {
@@ -2226,53 +2374,116 @@ export function renderDashboard(userEmail: string): string {
     function onAccountChange() {
       activeAccountId = document.getElementById('filter-account').value;
       loadPrefixes();
-      // Audit-log entries are account-scoped; reload if the panel is open.
-      if (activityLogExpanded) loadActivityLog();
+    }
+
+    function setActivityLogAccount(value) {
+      activityAccountId = value;
+      loadActivityLog();
+    }
+
+    function setNotifQueueAccount(value) {
+      notifAccountId = value;
+      notifQueueLoaded = false;
+      loadNotifQueue();
+    }
+
+    function onAddPrefixAccountChange(value) {
+      addPrefixAccountId = value;
+      addPrefixLoaDocumentId = null;
+      addPrefixValidationResult = null;
+      var file = document.getElementById('add-prefix-loa-file');
+      if (file) file.value = '';
+      var status = document.getElementById('add-prefix-loa-status');
+      if (status) status.innerHTML = '';
     }
 
     // ─── Prefixes ─────────────────────────────────────────────────
+    function combinePrefixStats(statsList) {
+      if (!statsList.length) return null;
+      var result = { parent: {}, bgp: {}, irr: {}, rpki: {} };
+      ['parent', 'bgp', 'irr', 'rpki'].forEach(function(section) {
+        statsList.forEach(function(stats) {
+          Object.keys((stats && stats[section]) || {}).forEach(function(key) {
+            if (typeof stats[section][key] === 'number') result[section][key] = (result[section][key] || 0) + stats[section][key];
+          });
+        });
+      });
+      return result;
+    }
+
     async function loadPrefixes() {
       if (!activeAccountId) return;
+      var loadGeneration = ++prefixLoadGeneration;
       currentPage = 1;
       var tbody = document.getElementById('prefix-table-body');
-      tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
+      tbody.innerHTML = '<tr><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-4 py-12 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading prefixes...</span></td></tr>';
       expandedRows = {};
       childData = {};
       selectedPrefixes.clear();
       updateBulkBar();
       var selectAllCb = document.getElementById('select-all-checkbox');
       if (selectAllCb) { selectAllCb.checked = false; selectAllCb.indeterminate = false; }
-      try {
-        var prefixResp = fetch('/api/prefixes?account_id=' + activeAccountId);
-        var statsResp = fetch('/api/prefixes/stats?account_id=' + activeAccountId);
-        var results = await Promise.all([prefixResp, statsResp]);
-        var data = await results[0].json();
-        if (data.error) {
-          tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">' + escHtml(data.error) + '</td></tr>';
-          return;
-        }
-        allPrefixes = data.prefixes || [];
-        try {
-          var statsData = await results[1].json();
-          prefixStats = statsData.stats || null;
-          if (prefixStats && prefixStats.per_prefix) {
-            allPrefixes.forEach(function(p) {
-              var pp = prefixStats.per_prefix[p.id];
-              if (pp) {
-                p._has_advertised_child = pp.has_advertised_child;
-                p._has_withdrawn_child = pp.has_withdrawn_child;
-              }
-            });
+      var accountIds = activeAccountId === 'all' ? savedAccounts.map(function(a) { return a.account_id; }) : [activeAccountId];
+      var loadErrors = [];
+      var accountResults = await Promise.all(accountIds.map(async function(accountId) {
+        var label = accountLabel(accountId);
+        var responses = await Promise.all([
+          fetch('/api/prefixes?account_id=' + encodeURIComponent(accountId)).catch(function(e) { return { _fetchError: e }; }),
+          fetch('/api/prefixes/stats?account_id=' + encodeURIComponent(accountId)).catch(function(e) { return { _fetchError: e }; })
+        ]);
+        var prefixes = [];
+        var stats = null;
+        var prefixResp = responses[0];
+        if (prefixResp._fetchError) {
+          loadErrors.push({ account_id: accountId, label: label, error: 'Prefixes: ' + String(prefixResp._fetchError.message || prefixResp._fetchError) });
+        } else {
+          try {
+            var data = await prefixResp.json();
+            if (!prefixResp.ok || data.error) throw new Error(data.error || 'Failed to load prefixes');
+            prefixes = data.prefixes || [];
+          } catch (e) {
+            loadErrors.push({ account_id: accountId, label: label, error: 'Prefixes: ' + String(e && e.message || e) });
           }
-        } catch (_e) {
-          prefixStats = null;
         }
-        updateStats();
-        updateTagFilter();
-        applyFilters();
-      } catch (e) {
-        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-red-400">Failed to load: ' + escHtml(String(e)) + '</td></tr>';
+        var statsResp = responses[1];
+        if (statsResp._fetchError) {
+          loadErrors.push({ account_id: accountId, label: label, error: 'Account stats: ' + String(statsResp._fetchError.message || statsResp._fetchError) });
+        } else {
+          try {
+            var statsData = await statsResp.json();
+            if (!statsResp.ok || statsData.error || !statsData.stats) throw new Error(statsData.error || 'Failed to load account stats');
+            stats = statsData.stats;
+          } catch (e) {
+            loadErrors.push({ account_id: accountId, label: label, error: 'Account stats: ' + String(e && e.message || e) });
+          }
+        }
+        prefixes.forEach(function(p) {
+          p._account_id = accountId;
+          p._account_label = label;
+          var pp = stats && stats.per_prefix && stats.per_prefix[p.id];
+          if (pp) {
+            p._has_advertised_child = pp.has_advertised_child;
+            p._has_withdrawn_child = pp.has_withdrawn_child;
+          }
+        });
+        return { prefixes: prefixes, stats: stats };
+      }));
+      if (loadGeneration !== prefixLoadGeneration) return;
+      prefixLoadErrors = loadErrors;
+      allPrefixes = accountResults.reduce(function(list, result) { return list.concat(result.prefixes); }, []);
+      var allStatsLoaded = accountResults.length === accountIds.length && accountResults.every(function(r) { return !!r.stats; });
+      prefixStats = allStatsLoaded ? combinePrefixStats(accountResults.map(function(r) { return r.stats; })) : null;
+      var combined = activeAccountId === 'all';
+      var accountHeading = document.getElementById('prefix-account-heading');
+      if (accountHeading) accountHeading.classList.toggle('hidden', !combined);
+      if (prefixLoadErrors.length) {
+        showInlineMsg('prefix-msg', prefixLoadErrors.map(function(e) { return e.label + ': ' + e.error; }).join('; '), 'error');
+      } else {
+        clearInlineMsg('prefix-msg');
       }
+      updateStats();
+      updateTagFilter();
+      applyFilters();
     }
 
     function updateStats() {
@@ -2371,6 +2582,7 @@ export function renderDashboard(userEmail: string): string {
       var familyFilter = document.getElementById('filter-family').value;
 
       filteredPrefixes = allPrefixes.filter(function(p) {
+        if (activeAccountId !== 'all' && p._account_id !== activeAccountId) return false;
         if (statusFilter === 'pending' && p.approved !== 'P') return false;
         if (statusFilter === 'advertised' && !p._has_advertised_child) return false;
         if (statusFilter === 'withdrawn' && !p._has_withdrawn_child) return false;
@@ -2401,7 +2613,7 @@ export function renderDashboard(userEmail: string): string {
     function renderPrefixTable() {
       var tbody = document.getElementById('prefix-table-body');
       if (filteredPrefixes.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="px-4 py-8 text-center text-cf-gray">No prefixes match the current filters</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-4 py-8 text-center text-cf-gray">No prefixes match the current filters</td></tr>';
         renderPaginationControls();
         return;
       }
@@ -2417,10 +2629,11 @@ export function renderDashboard(userEmail: string): string {
       var html = '';
       for (var i = 0; i < pageItems.length; i++) {
         var p = pageItems[i];
-        var isExpanded = expandedRows[p.id] || false;
+        var rowKey = prefixKey(p._account_id, p.id);
+        var isExpanded = expandedRows[rowKey] || false;
         html += renderPrefixRow(p, isExpanded);
-        if (isExpanded && childData[p.id]) {
-          html += renderChildRows(p.id, childData[p.id]);
+        if (isExpanded && childData[rowKey]) {
+          html += renderChildRows(p, childData[rowKey]);
         }
       }
       tbody.innerHTML = html;
@@ -2492,14 +2705,14 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // Check if a prefix has delegations (only known after first expansion)
-    function hasDelegations(prefixId) {
-      var cd = childData[prefixId];
+    function hasDelegations(rowKey) {
+      var cd = childData[rowKey];
       return cd && cd.delegations && cd.delegations.length > 0;
     }
 
     // Check if a BGP child prefix has a matching delegation
-    function bgpHasDelegation(prefixId, bgpCidr) {
-      var cd = childData[prefixId];
+    function bgpHasDelegation(rowKey, bgpCidr) {
+      var cd = childData[rowKey];
       if (!cd || !cd.delegations || cd.delegations.length === 0) return false;
       var bgpParsed = parseCIDR(bgpCidr);
       if (!bgpParsed) return false;
@@ -2512,8 +2725,8 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // Check if the parent prefix's address space is fully covered by child BGP sub-prefixes
-    function isChildPrefixSpaceFull(prefixId, parentCidr) {
-      var cd = childData[prefixId];
+    function isChildPrefixSpaceFull(rowKey, parentCidr) {
+      var cd = childData[rowKey];
       if (!cd || !cd.bgp_prefixes || cd.bgp_prefixes.length === 0) return false;
       var parentParsed = parseCIDR(parentCidr);
       if (!parentParsed) return false;
@@ -2530,14 +2743,18 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function renderPrefixRow(p, isExpanded) {
+      var rowKey = prefixKey(p._account_id, p.id);
+      var keyAttr = escAttr(rowKey);
+      var accountArg = escAttr(p._account_id);
       var chevClass = isExpanded ? 'chevron open' : 'chevron';
       var lockIcon = p.on_demand_locked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '';
-      var delegationIcon = hasDelegations(p.id) ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg><span class="info-bubble" style="width:220px">This prefix has ' + childData[p.id].delegations.length + ' delegation(s) to other accounts.</span></span>' : '';
+      var delegationIcon = hasDelegations(rowKey) ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3.5 h-3.5 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg><span class="info-bubble" style="width:220px">This prefix has ' + childData[rowKey].delegations.length + ' delegation(s) to other accounts.</span></span>' : '';
       var statusBadge = statusBadgeHtml(p);
       var irrBadge = validationBadge(p.irr_validation_state, 'irr');
-      var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr);
-      var isChecked = selectedPrefixes.has(p.id);
+      var rpkiBadge = validationBadge(p.rpki_validation_state, 'rpki', p.cidr, p._account_id);
+      var isChecked = selectedPrefixes.has(rowKey);
       var canBulkToggle = canToggleAdvertisement(p);
+      var accountCell = activeAccountId === 'all' ? '<td class="px-3 py-2.5">' + accountBadge(p._account_id, p._account_label) + '</td>' : '';
 
       // Parent-level toggle button — shown only for active on-demand prefixes.
       // Locked prefixes still render the toggle (disabled) so the lock reason is visible,
@@ -2558,24 +2775,25 @@ export function renderDashboard(userEmail: string): string {
               ? 'Currently advertised. Click to withdraw this prefix and stop announcing it via BGP to the Internet.'
               : 'Currently withdrawn. Click to advertise this prefix and begin announcing it via BGP to the Internet.';
         parentToggleHtml = '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (isAdv ? ' active' : '') + '"' +
-          (p.on_demand_locked ? ' disabled' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + escAttr(p.id) + '\\',' + newState + ',\\'' + escAttr(p.cidr) + '\\')"') +
+          (p.on_demand_locked ? ' disabled' : ' onclick="event.stopPropagation();confirmParentToggle(\\'' + keyAttr + '\\',' + newState + ',\\'' + escAttr(p.cidr) + '\\')"') +
           '><span class="toggle-knob"></span></button><span class="validation-tip">' + toggleTip + '</span></span>';
       }
 
       // Description with inline edit
-      var descHtml = '<span id="desc-display-' + escAttr(p.id) + '">' +
+      var descHtml = '<span id="desc-display-' + keyAttr + '">' +
         '<span class="desc-text">' + renderDescriptionWithTags(p.description) + '</span>' +
-        '<button onclick="event.stopPropagation();startEditDescription(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.description || '') + '\\')" class="text-cf-gray hover:text-cf-orange ml-1 inline-flex align-middle" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+        '<button onclick="event.stopPropagation();startEditDescription(\\'' + keyAttr + '\\',\\'' + escAttr(p.description || '') + '\\')" class="text-cf-gray hover:text-cf-orange ml-1 inline-flex align-middle" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
         '</span>' +
-        '<span id="desc-edit-' + escAttr(p.id) + '" class="hidden">' +
-          '<input type="text" value="' + escAttr(p.description || '') + '" placeholder="e.g. My prefix #production #us-east" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none w-40" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveDescription(\\'' + escAttr(p.id) + '\\',this.value)}else if(event.key===\\'Escape\\'){cancelEditDescription(\\'' + escAttr(p.id) + '\\')}" onblur="saveDescription(\\'' + escAttr(p.id) + '\\',this.value)">' +
-          '<span id="desc-spinner-' + escAttr(p.id) + '" class="hidden ml-1"><span class="spinner" style="width:12px;height:12px"></span></span>' +
+        '<span id="desc-edit-' + keyAttr + '" class="hidden">' +
+          '<input type="text" value="' + escAttr(p.description || '') + '" placeholder="e.g. My prefix #production #us-east" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none w-40" onclick="event.stopPropagation()" onkeydown="if(event.key===\\'Enter\\'){event.stopPropagation();saveDescription(\\'' + keyAttr + '\\',this.value)}else if(event.key===\\'Escape\\'){cancelEditDescription(\\'' + keyAttr + '\\')}" onblur="saveDescription(\\'' + keyAttr + '\\',this.value)">' +
+          '<span id="desc-spinner-' + keyAttr + '" class="hidden ml-1"><span class="spinner" style="width:12px;height:12px"></span></span>' +
         '</span>';
 
-      return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + p.id + '\\')">' +
-        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + escAttr(p.id) + '" ' + (isChecked && canBulkToggle ? 'checked' : '') + (canBulkToggle ? '' : ' disabled title="Cannot advertise/withdraw: ' + escAttr(toggleDisabledReason(p)) + '"') + ' onchange="updateBulkSelection()" style="cursor:' + (canBulkToggle ? 'pointer' : 'not-allowed') + ';accent-color:#F6821F' + (canBulkToggle ? '' : ';opacity:0.4') + '"></td>' +
+      return '<tr class="prefix-row border-b border-cf-border" onclick="toggleRow(\\'' + keyAttr + '\\')">' +
+        '<td class="px-2 py-2.5" onclick="event.stopPropagation()"><input type="checkbox" class="prefix-checkbox" value="' + keyAttr + '" ' + (isChecked && canBulkToggle ? 'checked' : '') + (canBulkToggle ? '' : ' disabled title="Cannot advertise/withdraw: ' + escAttr(toggleDisabledReason(p)) + '"') + ' onchange="updateBulkSelection()" style="cursor:' + (canBulkToggle ? 'pointer' : 'not-allowed') + ';accent-color:#F6821F' + (canBulkToggle ? '' : ';opacity:0.4') + '"></td>' +
         '<td class="px-3 py-2.5"><span class="' + chevClass + '" style="font-size:16px">&#9656;</span></td>' +
         '<td class="px-2 py-2.5">' + lockIcon + delegationIcon + '</td>' +
+        accountCell +
         '<td class="px-3 py-2.5 font-mono font-medium" style="color:var(--text-strong)"><span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(p.cidr) + '\\',this)">' + escHtml(p.cidr) + '<span class="rdap-tip"></span></span></td>' +
         '<td class="px-3 py-2.5 text-cf-gray">' + (p.asn != null ? p.asn : '—') + '</td>' +
         '<td class="px-3 py-2.5">' + statusBadge + '</td>' +
@@ -2584,17 +2802,22 @@ export function renderDashboard(userEmail: string): string {
         '<td class="px-3 py-2.5 text-cf-gray max-w-[200px] truncate">' + descHtml + '</td>' +
         '<td class="px-3 py-2.5 flex gap-1 items-center">' +
           parentToggleHtml +
-          '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + escAttr(p.id) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
-          '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
-          '<button onclick="event.stopPropagation();openBindingModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
-          (!isChildPrefixSpaceFull(p.id, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
-          (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
-          '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + escAttr(p.id) + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix (unapproved prefixes only)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
+          '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + keyAttr + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
+          '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\',\\'' + accountArg + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
+          '<button onclick="event.stopPropagation();openBindingModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
+          (!isChildPrefixSpaceFull(rowKey, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
+          (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
+          '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix (unapproved prefixes only)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
         '</td>' +
       '</tr>';
     }
 
-    function renderChildRows(prefixId, data) {
+    function renderChildRows(parent, data) {
+      var prefixId = parent.id;
+      var rowKey = prefixKey(parent._account_id, prefixId);
+      var keyAttr = escAttr(rowKey);
+      var accountArg = escAttr(parent._account_id);
+      var childAccountCell = activeAccountId === 'all' ? '<td class="px-3 py-2.5">' + accountBadge(parent._account_id, parent._account_label) + '</td>' : '';
       var html = '';
       // Service bindings on parent prefix
       if (data.bindings && data.bindings.length > 0) {
@@ -2604,11 +2827,12 @@ export function renderDashboard(userEmail: string): string {
             '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-2"></td>' +
+            childAccountCell +
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-purple-400 mr-1">&#9500;&#9472;</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? (b.provisioning.state.charAt(0).toUpperCase() + b.provisioning.state.slice(1)) : 'Unknown') + '</span></td>' +
             '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
-            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
+            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + keyAttr + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
           '</tr>';
         }
       }
@@ -2617,26 +2841,27 @@ export function renderDashboard(userEmail: string): string {
         for (var d = 0; d < data.delegations.length; d++) {
           var del = data.delegations[d];
           var delDesc = del.description || '';
-          var descCell = '<span id="del-desc-' + escAttr(del.id) + '" class="del-desc-display" style="display:inline-flex;align-items:center;gap:4px">' +
+          var descCell = '<span id="del-desc-' + keyAttr + '::' + escAttr(del.id) + '" class="del-desc-display" style="display:inline-flex;align-items:center;gap:4px">' +
             (delDesc ? '<span class="text-cf-gray text-[10px] max-w-[160px] truncate" title="' + escAttr(delDesc) + '">' + escHtml(delDesc) + '</span>' : '<span class="text-cf-gray text-[10px] italic opacity-50">No description</span>') +
-            '<button onclick="event.stopPropagation();startEditDelegationDesc(\\'' + escAttr(del.id) + '\\',\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(delDesc) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+            '<button onclick="event.stopPropagation();startEditDelegationDesc(\\'' + escAttr(del.id) + '\\',\\'' + keyAttr + '\\',\\'' + escAttr(delDesc) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
           '</span>';
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-2"><svg class="w-3 h-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></td>' +
+            childAccountCell +
             '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-teal-400 mr-1">&#9500;&#9472;</span> <span class="badge-delegation">Delegation</span> <span class="text-cf-gray ml-1">' + escHtml(del.cidr) + '</span></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3 text-cf-gray text-[10px] font-mono" title="Delegated Account ID">' + escHtml(del.delegated_account_id) + '</td>' +
             '<td class="px-3"></td><td class="px-3"></td>' +
             '<td class="px-3">' + descCell + '</td>' +
-            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
+            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + keyAttr + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
           '</tr>';
         }
       }
       // BGP sub-prefixes
       if (data.bgp_prefixes && data.bgp_prefixes.length > 0) {
-        var bgpParentCidr = parentCidrFor(prefixId);
+        var bgpParentCidr = parent.cidr;
         for (var j = 0; j < data.bgp_prefixes.length; j++) {
           var bp = data.bgp_prefixes[j];
           // A BGP prefix equal to its parent is the whole-prefix advertisement,
@@ -2648,7 +2873,7 @@ export function renderDashboard(userEmail: string): string {
           var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
           // Only allow advertise/withdraw when the sub-prefix has a known (active) state.
           var bgpActive = bp.on_demand && (bp.on_demand.advertised === true || bp.on_demand.advertised === false);
-          var bgpDelegationIcon = bgpHasDelegation(prefixId, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
+          var bgpDelegationIcon = bgpHasDelegation(rowKey, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
           var bgpToggleTip = bgpLocked
             ? 'This sub-prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
             : bgpAdv
@@ -2656,70 +2881,80 @@ export function renderDashboard(userEmail: string): string {
               : 'Currently withdrawn. Click to advertise this sub-prefix and begin announcing it via BGP.';
           var toggleHtml = !bgpActive ? '' :
             '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
-            (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + prefixId + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
+            (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + keyAttr + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
             '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
-          var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
-          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + escAttr(prefixId) + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="' + (bgpIsFullPrefix ? 'Delete BGP Prefix' : 'Delete Child Prefix') + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
+          var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
+          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + keyAttr + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="' + (bgpIsFullPrefix ? 'Delete BGP Prefix' : 'Delete Child Prefix') + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
 
           html += '<tr class="child-row border-b border-cf-border">' +
             '<td class="px-2"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + bgpDelegationIcon + '</td>' +
+            childAccountCell +
             '<td class="px-3 pl-8 font-mono" style="color:var(--text-strong)"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
             '<td class="px-3 text-cf-gray">' + (bp.asn != null ? bp.asn : '—') + '</td>' +
             '<td class="px-3">' + bgpStatusBadgeHtml(bp.on_demand ? bp.on_demand.advertised : undefined) + '</td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
             '<td class="px-3"></td>' +
-            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + bgpDeleteBtn + '</td>' +
+            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\',\\'' + accountArg + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + bgpDeleteBtn + '</td>' +
           '</tr>';
         }
       }
       if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0) && (!data.delegations || data.delegations.length === 0)) {
-        html += '<tr class="child-row border-b border-cf-border"><td colspan="10" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
+        html += '<tr class="child-row border-b border-cf-border"><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
       }
       return html;
     }
 
     // ─── Row Expansion ────────────────────────────────────────────
-    async function toggleRow(prefixId) {
-      if (expandedRows[prefixId]) {
-        expandedRows[prefixId] = false;
+    async function readChildResourceResponse(response, label) {
+      var data;
+      try { data = await response.json(); } catch (_e) { throw new Error(label + ' returned an invalid response'); }
+      if (!response.ok || data.error) throw new Error(data.error || ('Failed to load ' + label));
+      return data;
+    }
+
+    async function toggleRow(rowKey) {
+      if (expandedRows[rowKey]) {
+        expandedRows[rowKey] = false;
         renderPrefixTable();
         return;
       }
-
-      expandedRows[prefixId] = true;
-
-      if (!childData[prefixId]) {
-        childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: true };
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      expandedRows[rowKey] = true;
+      if (!childData[rowKey]) {
+        childData[rowKey] = { bgp_prefixes: [], bindings: [], delegations: [], loading: true };
         renderPrefixTable();
-
         try {
-          var bgpResp = fetch('/api/prefixes/' + prefixId + '/bgp?account_id=' + activeAccountId);
-          var bindResp = fetch('/api/prefixes/' + prefixId + '/bindings?account_id=' + activeAccountId);
-          var delResp = fetch('/api/prefixes/' + prefixId + '/delegations?account_id=' + activeAccountId);
-          var results = await Promise.all([bgpResp, bindResp, delResp]);
-          var bgpData = await results[0].json();
-          var bindData = await results[1].json();
-          var delData = await results[2].json();
-          childData[prefixId] = {
-            bgp_prefixes: bgpData.bgp_prefixes || [],
-            bindings: bindData.bindings || [],
-            delegations: delData.delegations || [],
-            loading: false
+          var base = '/api/prefixes/' + encodeURIComponent(prefix.id);
+          var qs = '?account_id=' + encodeURIComponent(prefix._account_id);
+          var results = await Promise.all([fetch(base + '/bgp' + qs), fetch(base + '/bindings' + qs), fetch(base + '/delegations' + qs)]);
+          var childResults = await Promise.all([
+            readChildResourceResponse(results[0], 'BGP prefixes'),
+            readChildResourceResponse(results[1], 'service bindings'),
+            readChildResourceResponse(results[2], 'delegations')
+          ]);
+          var bgpData = childResults[0];
+          var bindData = childResults[1];
+          var delData = childResults[2];
+          childData[rowKey] = {
+            bgp_prefixes: bgpData.bgp_prefixes || [], bindings: bindData.bindings || [],
+            delegations: delData.delegations || [], loading: false
           };
         } catch (e) {
-          childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
+          childData[rowKey] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
         }
       }
-
       renderPrefixTable();
     }
 
     // ─── Advertisement Toggle ─────────────────────────────────────
-    function confirmToggle(prefixId, bgpPrefixId, newState, cidr) {
-      pendingToggle = { prefixId: prefixId, bgpPrefixId: bgpPrefixId, advertised: newState, cidr: cidr };
+    function confirmToggle(rowKey, bgpPrefixId, newState, cidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      pendingToggle = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, bgpPrefixId: bgpPrefixId, advertised: newState, cidr: cidr };
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> the BGP prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
@@ -2747,16 +2982,16 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/prefixes/' + t.prefixId + '/bgp/' + t.bgpPrefixId + '/toggle', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ advertised: t.advertised, account_id: activeAccountId })
+          body: JSON.stringify({ advertised: t.advertised, account_id: t.accountId })
         });
         var data = await resp.json();
         if (data.ok) {
           // Refresh parent prefix data and child data
-          delete childData[t.prefixId];
+          delete childData[t.rowKey];
           await loadPrefixes();
           // Re-expand the row to show updated child data
-          if (!expandedRows[t.prefixId]) {
-            toggleRow(t.prefixId);
+          if (!expandedRows[t.rowKey]) {
+            toggleRow(t.rowKey);
           }
           refreshActivityLog();
         } else {
@@ -2768,14 +3003,16 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Parent Prefix Toggle ─────────────────────────────────────
-    async function confirmParentToggle(prefixId, newState, cidr) {
+    async function confirmParentToggle(rowKey, newState, cidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
         '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>';
 
       // We need to fetch BGP sub-prefixes to toggle them
-      pendingToggle = { prefixId: prefixId, advertised: newState, cidr: cidr, isParent: true };
+      pendingToggle = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, advertised: newState, cidr: cidr, isParent: true };
       document.getElementById('confirm-modal').classList.remove('hidden');
     }
 
@@ -2783,10 +3020,10 @@ export function renderDashboard(userEmail: string): string {
       try {
         // Fetch BGP sub-prefixes if not cached
         var bgpPrefixes;
-        if (childData[t.prefixId] && childData[t.prefixId].bgp_prefixes) {
-          bgpPrefixes = childData[t.prefixId].bgp_prefixes;
+        if (childData[t.rowKey] && childData[t.rowKey].bgp_prefixes) {
+          bgpPrefixes = childData[t.rowKey].bgp_prefixes;
         } else {
-          var resp = await fetch('/api/prefixes/' + t.prefixId + '/bgp?account_id=' + activeAccountId);
+          var resp = await fetch('/api/prefixes/' + t.prefixId + '/bgp?account_id=' + encodeURIComponent(t.accountId));
           var data = await resp.json();
           bgpPrefixes = data.bgp_prefixes || [];
         }
@@ -2802,7 +3039,7 @@ export function renderDashboard(userEmail: string): string {
             var toggleResp = await fetch('/api/prefixes/' + t.prefixId + '/bgp/' + bp.id + '/toggle', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ advertised: t.advertised, account_id: activeAccountId })
+              body: JSON.stringify({ advertised: t.advertised, account_id: t.accountId })
             });
             var toggleData = await toggleResp.json();
             if (toggleData.ok) {
@@ -2824,7 +3061,7 @@ export function renderDashboard(userEmail: string): string {
         }
 
         // Refresh
-        delete childData[t.prefixId];
+        delete childData[t.rowKey];
         loadPrefixes();
         refreshActivityLog();
       } catch (e) {
@@ -2855,15 +3092,17 @@ export function renderDashboard(userEmail: string): string {
       if (edit) edit.classList.add('hidden');
     }
 
-    async function saveDescription(prefixId, newDesc) {
-      var display = document.getElementById('desc-display-' + prefixId);
-      var edit = document.getElementById('desc-edit-' + prefixId);
-      var spinner = document.getElementById('desc-spinner-' + prefixId);
+    async function saveDescription(rowKey, newDesc) {
+      var display = document.getElementById('desc-display-' + rowKey);
+      var edit = document.getElementById('desc-edit-' + rowKey);
+      var spinner = document.getElementById('desc-spinner-' + rowKey);
 
       // Find current description to compare
-      var prefix = allPrefixes.find(function(p) { return p.id === prefixId; });
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      var prefixId = prefix.id;
       if (prefix && newDesc === (prefix.description || '')) {
-        cancelEditDescription(prefixId);
+        cancelEditDescription(rowKey);
         return;
       }
 
@@ -2875,7 +3114,7 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/description', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: newDesc, account_id: activeAccountId })
+          body: JSON.stringify({ description: newDesc, account_id: prefix._account_id })
         });
         var data = await resp.json();
         if (data.ok) {
@@ -2886,11 +3125,11 @@ export function renderDashboard(userEmail: string): string {
           refreshActivityLog();
         } else {
           showInlineMsg('prefix-msg', 'Failed to update description: ' + (data.error || 'Unknown error'), 'error');
-          cancelEditDescription(prefixId);
+          cancelEditDescription(rowKey);
         }
       } catch (e) {
         showInlineMsg('prefix-msg', 'Failed to update description: ' + e, 'error');
-        cancelEditDescription(prefixId);
+        cancelEditDescription(rowKey);
       } finally {
         if (spinner) spinner.classList.add('hidden');
         if (input) input.disabled = false;
@@ -2902,7 +3141,7 @@ export function renderDashboard(userEmail: string): string {
       var startIdx = (currentPage - 1) * pageSize;
       var endIdx = Math.min(startIdx + pageSize, filteredPrefixes.length);
       var ids = new Set();
-      for (var i = startIdx; i < endIdx; i++) ids.add(filteredPrefixes[i].id);
+      for (var i = startIdx; i < endIdx; i++) ids.add(prefixKey(filteredPrefixes[i]._account_id, filteredPrefixes[i].id));
       return ids;
     }
 
@@ -2956,15 +3195,13 @@ export function renderDashboard(userEmail: string): string {
     function bulkToggle(advertised) {
       if (selectedPrefixes.size === 0) return;
       var action = advertised ? 'ADVERTISE' : 'WITHDRAW';
-      var prefixIds = Array.from(selectedPrefixes);
-      var selected = prefixIds.map(function(id) {
-        return allPrefixes.find(function(p) { return p.id === id; });
-      }).filter(Boolean);
+      var selectedKeys = Array.from(selectedPrefixes);
+      var selected = selectedKeys.map(prefixByKey).filter(Boolean);
 
       var listHtml = selected.map(function(p) {
         var badge = statusBadgeHtml(p);
         var lockNote = p.on_demand_locked ? ' <span class="text-red-500">(locked - will be skipped)</span>' : '';
-        return '<div class="flex items-center gap-2 py-1">' + badge + ' <span>' + escHtml(p.cidr) + '</span>' + lockNote + '</div>';
+        return '<div class="flex items-center gap-2 py-1">' + (activeAccountId === 'all' ? accountBadge(p._account_id, p._account_label) : '') + badge + ' <span>' + escHtml(p.cidr) + '</span>' + lockNote + '</div>';
       }).join('');
 
       var lockedCount = selected.filter(function(p) { return p.on_demand_locked; }).length;
@@ -2985,7 +3222,7 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('bulk-confirm-results').classList.add('hidden');
       document.getElementById('bulk-confirm-btn').disabled = false;
       document.getElementById('bulk-confirm-btn').textContent = 'Confirm';
-      pendingBulkToggle = { prefix_ids: prefixIds, advertised: advertised };
+      pendingBulkToggle = { prefixes: selected, advertised: advertised };
       document.getElementById('bulk-confirm-modal').classList.remove('hidden');
     }
 
@@ -3002,27 +3239,48 @@ export function renderDashboard(userEmail: string): string {
       btn.textContent = 'Processing...';
 
       try {
-        var resp = await fetch('/api/prefixes/bulk-toggle', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix_ids: t.prefix_ids, advertised: t.advertised, account_id: activeAccountId })
+        var groups = {};
+        t.prefixes.forEach(function(p) {
+          if (!groups[p._account_id]) groups[p._account_id] = [];
+          groups[p._account_id].push(p.id);
         });
-        var data = await resp.json();
-        if (data.ok && data.results) {
+        var responses = await Promise.all(Object.keys(groups).map(async function(accountId) {
+          try {
+            var resp = await fetch('/api/prefixes/bulk-toggle', {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ prefix_ids: groups[accountId], advertised: t.advertised, account_id: accountId })
+            });
+            var result = await resp.json();
+            if (!resp.ok || !result.ok) return { accountId: accountId, error: result.error || 'Request failed', results: [] };
+            return { accountId: accountId, results: result.results || [] };
+          } catch (e) { return { accountId: accountId, error: String(e), results: [] }; }
+        }));
+        var data = {
+          ok: responses.some(function(r) { return r.results.length > 0; }),
+          results: responses.reduce(function(all, r) {
+            return all.concat(r.results.map(function(item) { item._account_id = r.accountId; return item; }));
+          }, []),
+          errors: responses.filter(function(r) { return r.error; })
+        };
+        if (data.results) {
           var totalToggled = 0, totalSkipped = 0, totalErrors = 0;
           var resultLines = data.results.map(function(r) {
             totalToggled += r.toggled;
             totalSkipped += r.skipped;
             totalErrors += r.errors.length;
             var status = r.toggled > 0 ? '<span class="badge-valid">OK</span>' : (r.errors.length > 0 ? '<span class="badge-invalid">Error</span>' : '<span class="badge-unknown">Skipped</span>');
-            return '<div class="py-1">' + status + ' <span class="font-mono">' + escHtml(r.cidr || r.prefix_id) + '</span> — ' + r.toggled + ' toggled, ' + r.skipped + ' skipped' + (r.errors.length > 0 ? ', ' + r.errors.length + ' error(s)' : '') + '</div>';
+            return '<div class="py-1">' + status + ' ' + (activeAccountId === 'all' ? accountBadge(r._account_id) : '') + ' <span class="font-mono">' + escHtml(r.cidr || r.prefix_id) + '</span> — ' + r.toggled + ' toggled, ' + r.skipped + ' skipped' + (r.errors.length > 0 ? ', ' + r.errors.length + ' error(s)' : '') + '</div>';
           });
 
+          var requestErrorLines = data.errors.map(function(r) {
+            totalErrors++;
+            return '<div class="py-1"><span class="badge-invalid">Error</span> ' + accountBadge(r.accountId) + ' ' + escHtml(r.error) + '</div>';
+          });
           var resultsEl = document.getElementById('bulk-confirm-results');
           resultsEl.innerHTML =
             '<div class="border border-cf-border rounded-lg p-2 mb-2">' +
               '<div class="font-medium mb-1" style="color:var(--text-strong)">Results: ' + totalToggled + ' toggled, ' + totalSkipped + ' skipped, ' + totalErrors + ' error(s)</div>' +
-              resultLines.join('') +
+              resultLines.concat(requestErrorLines).join('') +
             '</div>';
           resultsEl.classList.remove('hidden');
 
@@ -3127,8 +3385,8 @@ export function renderDashboard(userEmail: string): string {
       return pa.v6 === pb.v6 && pa.maskLen === pb.maskLen && pa.network === pb.network;
     }
 
-    function parentCidrFor(prefixId) {
-      var p = allPrefixes.find(function(x){ return x.id === prefixId; });
+    function parentCidrFor(rowKey) {
+      var p = prefixByKey(rowKey);
       return p ? p.cidr : '';
     }
 
@@ -3137,7 +3395,11 @@ export function renderDashboard(userEmail: string): string {
     // whose CIDR differs from the parent; the equal-to-parent BGP prefix is not
     // counted as a dependency.
     function blockingDependencies(prefixId, parentCidr) {
-      var d = childData[prefixId] || {};
+      var d = childData[prefixId];
+      if (!d || d.loading || d.error) {
+        return { childBgp: 0, bindings: 0, delegations: 0, total: 1,
+                 error: d && d.error ? d.error : 'Dependency data is unavailable' };
+      }
       var childBgp = (d.bgp_prefixes || []).filter(function(bp){ return !(parentCidr && cidrEquals(bp.cidr, parentCidr)); });
       var bindings = (d.bindings || []).length;
       var delegations = (d.delegations || []).length;
@@ -3146,6 +3408,10 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function dependencyBlockMessage(deps) {
+      if (deps.error) {
+        return '<span class="text-red-500">Unable to verify dependent resources.</span><br><br>' +
+               escHtml(deps.error) + ' Delete is disabled until the dependency check succeeds.';
+      }
       var items = [];
       if (deps.childBgp > 0) items.push(deps.childBgp + ' child BGP prefix' + (deps.childBgp === 1 ? '' : 'es'));
       if (deps.bindings > 0) items.push(deps.bindings + ' service binding' + (deps.bindings === 1 ? '' : 's'));
@@ -3156,27 +3422,30 @@ export function renderDashboard(userEmail: string): string {
 
     // Fetch child data (BGP prefixes, bindings, delegations) if not already
     // cached — used by the delete guards where the row may not be expanded.
-    async function ensureChildData(prefixId) {
-      if (childData[prefixId] && !childData[prefixId].loading) return childData[prefixId];
+    async function ensureChildData(rowKey) {
+      if (childData[rowKey] && !childData[rowKey].loading) return childData[rowKey];
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return null;
       try {
-        var results = await Promise.all([
-          fetch('/api/prefixes/' + prefixId + '/bgp?account_id=' + activeAccountId),
-          fetch('/api/prefixes/' + prefixId + '/bindings?account_id=' + activeAccountId),
-          fetch('/api/prefixes/' + prefixId + '/delegations?account_id=' + activeAccountId)
+        var base = '/api/prefixes/' + encodeURIComponent(prefix.id);
+        var qs = '?account_id=' + encodeURIComponent(prefix._account_id);
+        var results = await Promise.all([fetch(base + '/bgp' + qs), fetch(base + '/bindings' + qs), fetch(base + '/delegations' + qs)]);
+        var childResults = await Promise.all([
+          readChildResourceResponse(results[0], 'BGP prefixes'),
+          readChildResourceResponse(results[1], 'service bindings'),
+          readChildResourceResponse(results[2], 'delegations')
         ]);
-        var bgpData = await results[0].json();
-        var bindData = await results[1].json();
-        var delData = await results[2].json();
-        childData[prefixId] = {
-          bgp_prefixes: bgpData.bgp_prefixes || [],
-          bindings: bindData.bindings || [],
-          delegations: delData.delegations || [],
-          loading: false
+        var bgpData = childResults[0];
+        var bindData = childResults[1];
+        var delData = childResults[2];
+        childData[rowKey] = {
+          bgp_prefixes: bgpData.bgp_prefixes || [], bindings: bindData.bindings || [],
+          delegations: delData.delegations || [], loading: false
         };
       } catch (e) {
-        childData[prefixId] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
+        childData[rowKey] = { bgp_prefixes: [], bindings: [], delegations: [], loading: false, error: String(e) };
       }
-      return childData[prefixId];
+      return childData[rowKey];
     }
 
     function ipToString(n, v6) {
@@ -3257,7 +3526,7 @@ export function renderDashboard(userEmail: string): string {
       var parsed = parseCIDR(bindingModalContext.parentCidr);
       if (!parsed) return;
 
-      var existingBindings = (childData[bindingModalContext.prefixId] && childData[bindingModalContext.prefixId].bindings) || [];
+      var existingBindings = (childData[bindingModalContext.rowKey] && childData[bindingModalContext.rowKey].bindings) || [];
       // Skip auto-fill for first binding (CIDR is locked to parent prefix)
       if (existingBindings.length === 0) return;
 
@@ -3284,13 +3553,13 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
-    async function loadServices() {
-      if (servicesCache[activeAccountId]) return servicesCache[activeAccountId];
+    async function loadServices(accountId) {
+      if (servicesCache[accountId]) return servicesCache[accountId];
       try {
-        var resp = await fetch('/api/services?account_id=' + activeAccountId);
+        var resp = await fetch('/api/services?account_id=' + encodeURIComponent(accountId));
         var data = await resp.json();
         var services = data.services || [];
-        servicesCache[activeAccountId] = services;
+        servicesCache[accountId] = services;
         return services;
       } catch (e) {
         return [];
@@ -3314,7 +3583,7 @@ export function renderDashboard(userEmail: string): string {
       var parentEnd = parsed.network + parentSize;
 
       // Collect existing child BGP prefixes (skip the parent-level prefix itself)
-      var existingBgp = (childData[childPrefixModalContext.prefixId] && childData[childPrefixModalContext.prefixId].bgp_prefixes) || [];
+      var existingBgp = (childData[childPrefixModalContext.rowKey] && childData[childPrefixModalContext.rowKey].bgp_prefixes) || [];
       var children = [];
       for (var i = 0; i < existingBgp.length; i++) {
         if (existingBgp[i].cidr === childPrefixModalContext.parentCidr) continue;
@@ -3351,8 +3620,10 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
-    function openChildPrefixModal(prefixId, parentCidr) {
-      childPrefixModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+    function openChildPrefixModal(rowKey, parentCidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      childPrefixModalContext = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, parentCidr: parentCidr };
       var parsed = parseCIDR(parentCidr);
       if (!parsed) return;
 
@@ -3388,7 +3659,7 @@ export function renderDashboard(userEmail: string): string {
     function validateChildPrefix() {
       if (!childPrefixModalContext) return null;
       var parentCidr = childPrefixModalContext.parentCidr;
-      var prefixId = childPrefixModalContext.prefixId;
+      var rowKey = childPrefixModalContext.rowKey;
       var parentParsed = parseCIDR(parentCidr);
       if (!parentParsed) return 'Invalid parent prefix';
 
@@ -3407,7 +3678,7 @@ export function renderDashboard(userEmail: string): string {
       if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
 
       // Check overlap with existing BGP child prefixes (skip the parent prefix itself)
-      var existingBgp = (childData[prefixId] && childData[prefixId].bgp_prefixes) || [];
+      var existingBgp = (childData[rowKey] && childData[rowKey].bgp_prefixes) || [];
       for (var i = 0; i < existingBgp.length; i++) {
         if (existingBgp[i].cidr === parentCidr) continue;
         var existing = parseCIDR(existingBgp[i].cidr);
@@ -3445,15 +3716,16 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/prefixes/' + prefixId + '/bgp', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cidr: cidr, account_id: activeAccountId })
+          body: JSON.stringify({ cidr: cidr, account_id: childPrefixModalContext.accountId })
         });
         var data = await resp.json();
         if (data.ok) {
+          var refreshKey = childPrefixModalContext.rowKey;
           closeChildPrefixModal();
           // Refresh the child data for this prefix
-          delete childData[prefixId];
-          expandedRows[prefixId] = false;
-          setTimeout(function() { toggleRow(prefixId); }, 100);
+          delete childData[refreshKey];
+          expandedRows[refreshKey] = false;
+          setTimeout(function() { toggleRow(refreshKey); }, 100);
           refreshActivityLog();
         } else {
           var errEl = document.getElementById('child-prefix-error');
@@ -3521,7 +3793,7 @@ export function renderDashboard(userEmail: string): string {
       var parsed = parseCIDR(bindingModalContext.parentCidr);
       if (!parsed) return;
       var maskSel = document.getElementById('binding-mask');
-      var existingBindings = (childData[bindingModalContext.prefixId] && childData[bindingModalContext.prefixId].bindings) || [];
+      var existingBindings = (childData[bindingModalContext.rowKey] && childData[bindingModalContext.rowKey].bindings) || [];
       var isFirst = existingBindings.length === 0;
 
       // CDN and Spectrum can bind down to /32 (IPv4) or /128 (IPv6)
@@ -3560,8 +3832,11 @@ export function renderDashboard(userEmail: string): string {
       autoFillBindingIp();
     }
 
-    async function openBindingModal(prefixId, parentCidr) {
-      bindingModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+    async function openBindingModal(rowKey, parentCidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      var modalContext = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, parentCidr: parentCidr };
+      bindingModalContext = modalContext;
       var parsed = parseCIDR(parentCidr);
       if (!parsed) return;
 
@@ -3583,8 +3858,9 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('binding-mask').onchange = function() { autoFillBindingIp(); };
       document.getElementById('binding-modal').classList.remove('hidden');
 
-      var allServicesList = await loadServices();
-      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      var allServicesList = await loadServices(modalContext.accountId);
+      if (bindingModalContext !== modalContext || document.getElementById('binding-modal').classList.contains('hidden')) return;
+      var existingBindings = (childData[rowKey] && childData[rowKey].bindings) || [];
       var available = getAvailableServices(allServicesList, existingBindings, parsed.maskLen);
 
       if (available.length === 0) {
@@ -3643,7 +3919,7 @@ export function renderDashboard(userEmail: string): string {
       if (!cidrContains(parentParsed, childParsed)) return 'CIDR ' + childCidr + ' is not within parent prefix ' + parentCidr;
 
       // Collect all existing bindings (parent prefix bindings)
-      var existingBindings = (childData[prefixId] && childData[prefixId].bindings) || [];
+      var existingBindings = (childData[bindingModalContext.rowKey] && childData[bindingModalContext.rowKey].bindings) || [];
 
       // Egress can only be bound if no other binding exists at the same CIDR length
       if (isEgress(selectedService)) {
@@ -3723,15 +3999,16 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/prefixes/' + prefixId + '/bindings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ cidr: cidr, service_id: serviceId, account_id: activeAccountId })
+          body: JSON.stringify({ cidr: cidr, service_id: serviceId, account_id: bindingModalContext.accountId })
         });
         var data = await resp.json();
         if (data.ok) {
+          var refreshKey = bindingModalContext.rowKey;
           closeBindingModal();
           // Refresh the child data for this prefix
-          delete childData[prefixId];
-          expandedRows[prefixId] = false;
-          setTimeout(function() { toggleRow(prefixId); }, 100);
+          delete childData[refreshKey];
+          expandedRows[refreshKey] = false;
+          setTimeout(function() { toggleRow(refreshKey); }, 100);
           refreshActivityLog();
         } else {
           var errEl = document.getElementById('binding-error');
@@ -3751,8 +4028,10 @@ export function renderDashboard(userEmail: string): string {
     // ─── Delete Service Binding ──────────────────────────────────
     var pendingDeleteBinding = null;
 
-    function confirmDeleteBinding(prefixId, bindingId, serviceName, cidr) {
-      pendingDeleteBinding = { prefixId: prefixId, bindingId: bindingId, serviceName: serviceName, cidr: cidr };
+    function confirmDeleteBinding(rowKey, bindingId, serviceName, cidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      pendingDeleteBinding = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, bindingId: bindingId, serviceName: serviceName, cidr: cidr };
       document.getElementById('delete-binding-message').innerHTML =
         'Are you sure you want to delete the service binding <strong>' + escHtml(serviceName) + '</strong> for <strong class="font-mono">' + escHtml(cidr) + '</strong>?';
       document.getElementById('delete-binding-btn').disabled = false;
@@ -3774,15 +4053,15 @@ export function renderDashboard(userEmail: string): string {
       btn.textContent = 'Deleting...';
 
       try {
-        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bindings/' + d.bindingId + '?account_id=' + activeAccountId, {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bindings/' + d.bindingId + '?account_id=' + encodeURIComponent(d.accountId), {
           method: 'DELETE'
         });
         var data = await resp.json();
         if (data.ok) {
           closeDeleteBindingModal();
-          delete childData[d.prefixId];
-          expandedRows[d.prefixId] = false;
-          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          delete childData[d.rowKey];
+          expandedRows[d.rowKey] = false;
+          setTimeout(function() { toggleRow(d.rowKey); }, 100);
           refreshActivityLog();
         } else {
           showInlineMsg('delete-binding-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
@@ -3799,9 +4078,11 @@ export function renderDashboard(userEmail: string): string {
     // ─── Delete BGP Child Prefix ──────────────────────────────────
     var pendingDeleteBgpPrefix = null;
 
-    function confirmDeleteBgpPrefix(prefixId, bgpPrefixId, cidr) {
-      pendingDeleteBgpPrefix = { prefixId: prefixId, bgpPrefixId: bgpPrefixId, cidr: cidr };
-      var parentCidr = parentCidrFor(prefixId);
+    function confirmDeleteBgpPrefix(rowKey, bgpPrefixId, cidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      pendingDeleteBgpPrefix = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, bgpPrefixId: bgpPrefixId, cidr: cidr };
+      var parentCidr = prefix.cidr;
       var isFullPrefix = parentCidr && cidrEquals(cidr, parentCidr);
       var noun = isFullPrefix ? 'BGP prefix' : 'BGP child prefix';
       document.getElementById('delete-bgp-prefix-title').textContent = isFullPrefix ? 'Delete BGP Prefix' : 'Delete BGP Child Prefix';
@@ -3811,7 +4092,7 @@ export function renderDashboard(userEmail: string): string {
 
       // A BGP prefix equal to the parent can only be removed once nothing else
       // depends on the prefix (other BGP prefixes, service bindings, delegations).
-      var deps = isFullPrefix ? blockingDependencies(prefixId, parentCidr) : { total: 0 };
+      var deps = isFullPrefix ? blockingDependencies(rowKey, parentCidr) : { total: 0 };
       if (deps.total > 0) {
         document.getElementById('delete-bgp-prefix-message').innerHTML = dependencyBlockMessage(deps);
         btn.disabled = true;
@@ -3836,15 +4117,15 @@ export function renderDashboard(userEmail: string): string {
       btn.textContent = 'Deleting...';
 
       try {
-        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bgp/' + d.bgpPrefixId + '?account_id=' + activeAccountId, {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/bgp/' + d.bgpPrefixId + '?account_id=' + encodeURIComponent(d.accountId), {
           method: 'DELETE'
         });
         var data = await resp.json();
         if (data.ok) {
           closeDeleteBgpPrefixModal();
-          delete childData[d.prefixId];
-          expandedRows[d.prefixId] = false;
-          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          delete childData[d.rowKey];
+          expandedRows[d.rowKey] = false;
+          setTimeout(function() { toggleRow(d.rowKey); }, 100);
           refreshActivityLog();
         } else {
           showInlineMsg('delete-bgp-prefix-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
@@ -3861,8 +4142,11 @@ export function renderDashboard(userEmail: string): string {
     // ─── Delete Parent Prefix ─────────────────────────────────────
     var pendingDeletePrefix = null;
 
-    async function confirmDeletePrefix(prefixId, cidr) {
-      pendingDeletePrefix = { prefixId: prefixId, cidr: cidr };
+    async function confirmDeletePrefix(rowKey, cidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      var prefixId = prefix.id;
+      pendingDeletePrefix = { rowKey: rowKey, prefixId: prefixId, accountId: prefix._account_id, cidr: cidr };
       var msgEl = document.getElementById('delete-prefix-message');
       var btn = document.getElementById('delete-prefix-btn');
       btn.textContent = 'Delete';
@@ -3874,11 +4158,11 @@ export function renderDashboard(userEmail: string): string {
       // The parent prefix can only be deleted once its dependent resources are
       // gone (child BGP prefixes, service bindings, delegations). The default
       // BGP prefix equal to the parent is not counted as a dependency.
-      await ensureChildData(prefixId);
+      await ensureChildData(rowKey);
       // Bail if the modal was closed or switched to another prefix meanwhile.
-      if (!pendingDeletePrefix || pendingDeletePrefix.prefixId !== prefixId) return;
+      if (!pendingDeletePrefix || pendingDeletePrefix.rowKey !== rowKey) return;
 
-      var deps = blockingDependencies(prefixId, cidr);
+      var deps = blockingDependencies(rowKey, cidr);
       if (deps.total > 0) {
         msgEl.innerHTML = dependencyBlockMessage(deps);
         btn.disabled = true;
@@ -3901,14 +4185,14 @@ export function renderDashboard(userEmail: string): string {
       btn.textContent = 'Deleting...';
 
       try {
-        var resp = await fetch('/api/prefixes/' + d.prefixId + '?account_id=' + activeAccountId, {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '?account_id=' + encodeURIComponent(d.accountId), {
           method: 'DELETE'
         });
         var data = await resp.json();
         if (data.ok) {
           closeDeletePrefixModal();
-          delete childData[d.prefixId];
-          delete expandedRows[d.prefixId];
+          delete childData[d.rowKey];
+          delete expandedRows[d.rowKey];
           await loadPrefixes();
           refreshActivityLog();
         } else {
@@ -3925,8 +4209,10 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Delegation Modal ──────────────────────────────────────────
 
-    function openDelegationModal(prefixId, parentCidr) {
-      delegationModalContext = { prefixId: prefixId, parentCidr: parentCidr };
+    function openDelegationModal(rowKey, parentCidr) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      delegationModalContext = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, parentCidr: parentCidr };
       var parsed = parseCIDR(parentCidr);
       if (!parsed) return;
 
@@ -4012,7 +4298,7 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('delegation-error').classList.add('hidden');
 
       try {
-        var postBody = { cidr: cidr, delegated_account_id: delegatedAccountId, account_id: activeAccountId };
+        var postBody = { cidr: cidr, delegated_account_id: delegatedAccountId, account_id: delegationModalContext.accountId };
         if (description) postBody.description = description;
         var resp = await fetch('/api/prefixes/' + prefixId + '/delegations', {
           method: 'POST',
@@ -4021,11 +4307,12 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (data.ok) {
+          var refreshKey = delegationModalContext.rowKey;
           closeDelegationModal();
           // Refresh the child data for this prefix
-          delete childData[prefixId];
-          expandedRows[prefixId] = false;
-          setTimeout(function() { toggleRow(prefixId); }, 100);
+          delete childData[refreshKey];
+          expandedRows[refreshKey] = false;
+          setTimeout(function() { toggleRow(refreshKey); }, 100);
           refreshActivityLog();
         } else {
           var errEl = document.getElementById('delegation-error');
@@ -4044,8 +4331,10 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Delete Delegation ───────────────────────────────────────
 
-    function confirmDeleteDelegation(prefixId, delegationId, cidr, delegatedAccountId) {
-      pendingDeleteDelegation = { prefixId: prefixId, delegationId: delegationId, cidr: cidr, delegatedAccountId: delegatedAccountId };
+    function confirmDeleteDelegation(rowKey, delegationId, cidr, delegatedAccountId) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      pendingDeleteDelegation = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, delegationId: delegationId, cidr: cidr, delegatedAccountId: delegatedAccountId };
       document.getElementById('delete-delegation-message').innerHTML =
         'Are you sure you want to delete the delegation of <strong class="font-mono">' + escHtml(cidr) + '</strong> to account <strong class="font-mono">' + escHtml(delegatedAccountId) + '</strong>?';
       document.getElementById('delete-delegation-btn').disabled = false;
@@ -4067,15 +4356,15 @@ export function renderDashboard(userEmail: string): string {
       btn.textContent = 'Deleting...';
 
       try {
-        var resp = await fetch('/api/prefixes/' + d.prefixId + '/delegations/' + d.delegationId + '?account_id=' + activeAccountId, {
+        var resp = await fetch('/api/prefixes/' + d.prefixId + '/delegations/' + d.delegationId + '?account_id=' + encodeURIComponent(d.accountId), {
           method: 'DELETE'
         });
         var data = await resp.json();
         if (data.ok) {
           closeDeleteDelegationModal();
-          delete childData[d.prefixId];
-          expandedRows[d.prefixId] = false;
-          setTimeout(function() { toggleRow(d.prefixId); }, 100);
+          delete childData[d.rowKey];
+          expandedRows[d.rowKey] = false;
+          setTimeout(function() { toggleRow(d.rowKey); }, 100);
           refreshActivityLog();
         } else {
           showInlineMsg('delete-delegation-error', 'Delete failed: ' + (data.error || 'Unknown error'), 'error');
@@ -4091,18 +4380,20 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Inline Edit Delegation Description ─────────────────────────
     function startEditDelegationDesc(delegationId, prefixId, currentDesc) {
-      var container = document.getElementById('del-desc-' + delegationId);
+      var delegationKey = prefixId + '::' + delegationId;
+      var container = document.getElementById('del-desc-' + delegationKey);
       if (!container) return;
       container.innerHTML =
-        '<input id="del-desc-input-' + delegationId + '" type="text" value="' + escAttr(currentDesc) + '" placeholder="Add description" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-[10px] text-white focus:border-cf-orange focus:outline-none" style="width:140px" onkeydown="if(event.key===\\'Enter\\')saveDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\');if(event.key===\\'Escape\\')cancelEditDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\')">' +
+        '<input id="del-desc-input-' + delegationKey + '" type="text" value="' + escAttr(currentDesc) + '" placeholder="Add description" class="px-1.5 py-0.5 rounded border border-cf-border bg-cf-dark text-[10px] text-white focus:border-cf-orange focus:outline-none" style="width:140px" onkeydown="if(event.key===\\'Enter\\')saveDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\');if(event.key===\\'Escape\\')cancelEditDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\')">' +
         '<button onclick="event.stopPropagation();saveDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\')" class="text-teal-400 hover:text-teal-300 ml-1" title="Save"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg></button>' +
         '<button onclick="event.stopPropagation();cancelEditDelegationDesc(\\'' + escAttr(delegationId) + '\\',\\'' + escAttr(prefixId) + '\\')" class="text-cf-gray hover:text-red-400 ml-0.5" title="Cancel"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg></button>';
-      var inp = document.getElementById('del-desc-input-' + delegationId);
+      var inp = document.getElementById('del-desc-input-' + delegationKey);
       if (inp) { inp.focus(); inp.select(); }
     }
 
     async function saveDelegationDesc(delegationId, prefixId) {
-      var inp = document.getElementById('del-desc-input-' + delegationId);
+      var delegationKey = prefixId + '::' + delegationId;
+      var inp = document.getElementById('del-desc-input-' + delegationKey);
       if (!inp) return;
       var desc = inp.value.trim();
 
@@ -4110,7 +4401,7 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/delegations/' + delegationId + '/description', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ description: desc, account_id: activeAccountId })
+          body: JSON.stringify({ description: desc, account_id: prefixByKey(prefixId)._account_id })
         });
         var data = await resp.json();
         if (data.ok) {
@@ -4170,11 +4461,22 @@ export function renderDashboard(userEmail: string): string {
       { cidr: '::ffff:0:0/96' }
     ];
 
+    function workflowAccountId() {
+      return addPrefixAccountId || (activeAccountId !== 'all' ? activeAccountId : '');
+    }
+
     function openAddPrefixModal() {
       if (!activeAccountId) {
         showInlineMsg('prefix-msg', 'Please configure an account in Settings first.', 'error');
         return;
       }
+      var selectingAggregateTarget = activeAccountId === 'all' && savedAccounts.length > 1;
+      addPrefixAccountId = selectingAggregateTarget ? '' : activeAccountId;
+      var accountWrap = document.getElementById('add-prefix-account-wrap');
+      var accountSel = document.getElementById('add-prefix-account');
+      accountWrap.classList.toggle('hidden', !selectingAggregateTarget);
+      accountSel.innerHTML = (selectingAggregateTarget ? '<option value="">Select target account...</option>' : '') + accountOptions(false);
+      accountSel.value = addPrefixAccountId;
       // Reset state
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
@@ -4300,7 +4602,7 @@ export function renderDashboard(userEmail: string): string {
       try {
         var formData = new FormData();
         formData.append('loa_document', file);
-        formData.append('account_id', activeAccountId);
+        formData.append('account_id', workflowAccountId());
 
         var resp = await fetch('/api/loa-upload', {
           method: 'POST',
@@ -4611,6 +4913,7 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function validateNewPrefix() {
+      if (!workflowAccountId()) return 'Select a target account for the new prefix.';
       // Validate each prefix row
       for (var i = 0; i < addPrefixRows.length; i++) {
         var row = addPrefixRows[i];
@@ -4688,7 +4991,7 @@ export function renderDashboard(userEmail: string): string {
             fetch('/api/prefixes/validate-new', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cidr: cidr, asn: asn, account_id: activeAccountId })
+              body: JSON.stringify({ cidr: cidr, asn: asn, account_id: workflowAccountId() })
             }).then(function(r) { return r.json(); })
           );
         }
@@ -4908,6 +5211,7 @@ export function renderDashboard(userEmail: string): string {
 
       for (var i = 0; i < allPrefixes.length; i++) {
         var p = allPrefixes[i];
+        if (p._account_id !== workflowAccountId()) continue;
         var pParts = p.cidr.split('/');
         var pIp = pParts[0];
         var pMask = parseInt(pParts[1], 10);
@@ -5005,7 +5309,7 @@ export function renderDashboard(userEmail: string): string {
           var errEl = document.getElementById('add-prefix-error');
           errEl.innerHTML = 'This prefix falls within an existing parent prefix <strong>' + escHtml(parentPrefix.cidr) + '</strong>. ' +
             'Use the <strong>Add Child Prefix</strong> button on the parent prefix row to create it as a delegation. ' +
-            '<a href="#" onclick="event.preventDefault();closeAddPrefixModal();openChildPrefixModal(\\\'' + escAttr(parentPrefix.id) + '\\\',\\\'' + escAttr(parentPrefix.cidr) + '\\\')" style="color:#F6821F;font-weight:500">Create child prefix now</a>';
+            '<a href="#" onclick="event.preventDefault();closeAddPrefixModal();openChildPrefixModal(\\\'' + escAttr(prefixKey(parentPrefix._account_id, parentPrefix.id)) + '\\\',\\\'' + escAttr(parentPrefix.cidr) + '\\\')" style="color:#F6821F;font-weight:500">Create child prefix now</a>';
           errEl.classList.remove('hidden');
           return;
         }
@@ -5033,7 +5337,7 @@ export function renderDashboard(userEmail: string): string {
             var valResp = await fetch('/api/prefixes/validate-new', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ cidr: prefixes[0].cidr, asn: prefixes[0].asn, account_id: activeAccountId })
+              body: JSON.stringify({ cidr: prefixes[0].cidr, asn: prefixes[0].asn, account_id: workflowAccountId() })
             });
             var valData = await valResp.json();
             if (valData.result) {
@@ -5046,16 +5350,17 @@ export function renderDashboard(userEmail: string): string {
         if (addPrefixValidationResult && !addPrefixValidationResult.summary.ready) {
           var hasErrors = addPrefixValidationResult.summary.errors && addPrefixValidationResult.summary.errors.length > 0;
           if (hasErrors) {
-            showConfirm({ title: 'Validation issues', message: 'Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '. Continue anyway?', confirmLabel: 'Continue', danger: true, onConfirm: function() { finishAddPrefix(prefixes, description, delegateLoaCreation); } });
+            var accountId = workflowAccountId();
+            showConfirm({ title: 'Validation issues', message: 'Validation found issues: ' + addPrefixValidationResult.summary.errors.join('; ') + '. Continue anyway?', confirmLabel: 'Continue', danger: true, onConfirm: function() { finishAddPrefix(prefixes, description, delegateLoaCreation, accountId); } });
             return;
           }
         }
       }
 
-      finishAddPrefix(prefixes, description, delegateLoaCreation);
+      finishAddPrefix(prefixes, description, delegateLoaCreation, workflowAccountId());
     }
 
-    async function finishAddPrefix(prefixes, description, delegateLoaCreation) {
+    async function finishAddPrefix(prefixes, description, delegateLoaCreation, accountId) {
       var btn = document.getElementById('add-prefix-submit-btn');
       btn.disabled = true;
 
@@ -5067,7 +5372,7 @@ export function renderDashboard(userEmail: string): string {
             cidr: prefixes[0].cidr,
             asn: prefixes[0].asn,
             delegate_loa_creation: delegateLoaCreation,
-            account_id: activeAccountId
+            account_id: accountId
           };
           if (description) postBody.description = description;
           if (addPrefixLoaDocumentId) postBody.loa_document_id = addPrefixLoaDocumentId;
@@ -5094,10 +5399,10 @@ export function renderDashboard(userEmail: string): string {
             if (isByoAsn && hasRirCreds) {
               // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
               var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
-              showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult);
+              showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId);
             } else if (isByoAsn && token) {
               // Manual flow: show token and instructions
-              showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token);
+              showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token, accountId);
             }
           } else {
             var errEl = document.getElementById('add-prefix-error');
@@ -5119,7 +5424,7 @@ export function renderDashboard(userEmail: string): string {
           var batchBody = {
             prefixes: prefixes,
             delegate_loa_creation: delegateLoaCreation,
-            account_id: activeAccountId
+            account_id: accountId
           };
           if (description) batchBody.description = description;
           if (addPrefixLoaDocumentId) batchBody.loa_document_id = addPrefixLoaDocumentId;
@@ -5177,14 +5482,14 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Post-Creation Guide ─────────────────────────────────────
-    var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false };
+    var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false, accountId: '' };
 
     // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
-    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult) {
+    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId) {
       // If token is missing, try to fetch it from the prefix details
       if (!token && prefixId) {
         try {
-          var prefixResp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '?account_id=' + encodeURIComponent(activeAccountId));
+          var prefixResp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '?account_id=' + encodeURIComponent(accountId));
           var prefixData = await prefixResp.json();
           if (prefixData.prefix) {
             token = prefixData.prefix.ownership_validation_token || null;
@@ -5198,11 +5503,11 @@ export function renderDashboard(userEmail: string): string {
       if (!token) {
         // Cannot proceed without a token - fall back to manual guide
         console.warn('[auto-create] No validation token available, falling back to manual guide');
-        showPostCreationGuide(cidr, asn, '(token unavailable - check prefix details)');
+        showPostCreationGuide(cidr, asn, '(token unavailable - check prefix details)', accountId);
         return;
       }
 
-      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
+      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false, accountId: accountId };
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
 
       var html = '';
@@ -5281,7 +5586,7 @@ export function renderDashboard(userEmail: string): string {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              account_id: activeAccountId,
+              account_id: accountId,
               prefix: cidr,
               origin_asn: asn,
               validation_token: token,
@@ -5310,7 +5615,7 @@ export function renderDashboard(userEmail: string): string {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              account_id: activeAccountId,
+              account_id: accountId,
               asn: asn,
               validation_token: token,
               rir: detectedRir,
@@ -5338,7 +5643,7 @@ export function renderDashboard(userEmail: string): string {
           var r = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: activeAccountId })
+            body: JSON.stringify({ account_id: accountId })
           });
           var d = await r.json();
           if (d.ok) {
@@ -5379,8 +5684,8 @@ export function renderDashboard(userEmail: string): string {
       loadPrefixes();
     }
 
-    function showPostCreationGuide(cidr, asn, token) {
-      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false };
+    function showPostCreationGuide(cidr, asn, token, accountId) {
+      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false, accountId: accountId };
       var isCustomAsn = asn !== 13335;
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
 
@@ -5551,7 +5856,7 @@ export function renderDashboard(userEmail: string): string {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account_id: activeAccountId,
+          account_id: postCreationState.accountId,
           prefix: postCreationState.cidr,
           origin_asn: postCreationState.asn,
           validation_token: postCreationState.token,
@@ -5583,7 +5888,7 @@ export function renderDashboard(userEmail: string): string {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account_id: activeAccountId,
+          account_id: postCreationState.accountId,
           prefix: postCreationState.cidr,
           origin_asn: postCreationState.asn,
           validation_token: postCreationState.token,
@@ -5611,7 +5916,7 @@ export function renderDashboard(userEmail: string): string {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account_id: activeAccountId,
+          account_id: postCreationState.accountId,
           asn: postCreationState.asn,
           validation_token: postCreationState.token,
           rir: postCreationState.rir
@@ -5641,7 +5946,7 @@ export function renderDashboard(userEmail: string): string {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          account_id: activeAccountId,
+          account_id: postCreationState.accountId,
           asn: postCreationState.asn,
           validation_token: postCreationState.token,
           rir: rir,
@@ -5700,21 +6005,22 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── RPKI Details Hover ──────────────────────────────────────
-    async function showRpkiDetails(cidr, state, el) {
+    async function showRpkiDetails(cidr, state, accountId, el) {
       var tipEl = el.querySelector('.validation-tip');
       if (!tipEl) return;
-      if (rpkiCache[cidr]) {
-        tipEl.innerHTML = formatRpkiDetails(rpkiCache[cidr], state, cidr);
+      var cacheKey = accountId + '::' + cidr;
+      if (rpkiCache[cacheKey]) {
+        tipEl.innerHTML = formatRpkiDetails(rpkiCache[cacheKey], state, cidr);
         positionTooltip(el, tipEl);
         return;
       }
       tipEl.innerHTML = '<div class="rdap-row"><span class="rdap-label">Loading ROA data...</span></div>';
       positionTooltip(el, tipEl);
       try {
-        var resp = await fetch('/api/rpki?prefix=' + encodeURIComponent(cidr) + '&account_id=' + encodeURIComponent(activeAccountId));
+        var resp = await fetch('/api/rpki?prefix=' + encodeURIComponent(cidr) + '&account_id=' + encodeURIComponent(accountId));
         var data = await resp.json();
         if (data.result) {
-          rpkiCache[cidr] = data.result;
+          rpkiCache[cacheKey] = data.result;
           tipEl.innerHTML = formatRpkiDetails(data.result, state, cidr);
         } else {
           tipEl.innerHTML = formatRpkiDetails(null, state, cidr);
@@ -5766,15 +6072,17 @@ export function renderDashboard(userEmail: string): string {
     }
 
     // ─── Prefix Re-validation ─────────────────────────────────────
-    async function revalidatePrefix(prefixId) {
-      if (!activeAccountId) return;
+    async function revalidatePrefix(rowKey) {
+      var prefix = prefixByKey(rowKey);
+      if (!prefix) return;
+      var prefixId = prefix.id;
       var btn = event.target.closest('button');
       if (btn) btn.disabled = true;
       try {
         var resp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_id: activeAccountId })
+          body: JSON.stringify({ account_id: prefix._account_id })
         });
         var data = await resp.json();
         if (data.ok) {
@@ -5794,6 +6102,7 @@ export function renderDashboard(userEmail: string): string {
     var lgState = {
       result: null,
       prefix: '',
+      accountId: '',
       isIPv6: false,
       asnInfoMap: {},
       rpkiMap: {},
@@ -6357,7 +6666,7 @@ export function renderDashboard(userEmail: string): string {
         var lgPromise = fetch('/api/looking-glass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix: lgState.prefix, account_id: activeAccountId })
+          body: JSON.stringify({ prefix: lgState.prefix, account_id: lgState.accountId })
         });
         var ripestatPromise = fetch('/api/ripestat-visibility?prefix=' + encodeURIComponent(lgState.prefix))
           .then(function(r) { return r.json(); })
@@ -6573,7 +6882,7 @@ export function renderDashboard(userEmail: string): string {
       });
     }
 
-    async function openLgModal(prefix) {
+    async function openLgModal(prefix, accountId) {
       document.getElementById('lg-prefix-label').textContent = prefix;
       document.getElementById('lg-content').innerHTML =
         '<div class="flex items-center justify-center py-12"><div class="spinner"></div><span class="ml-2 text-xs text-cf-gray">Loading BGP routes for ' + escHtml(prefix) + '...</span></div>';
@@ -6582,6 +6891,7 @@ export function renderDashboard(userEmail: string): string {
       // Reset state
       lgState.result = null;
       lgState.prefix = prefix;
+      lgState.accountId = accountId;
       lgState.isIPv6 = prefix.indexOf(':') !== -1;
       lgState.asnInfoMap = {};
       lgState.rpkiMap = {};
@@ -6603,7 +6913,7 @@ export function renderDashboard(userEmail: string): string {
         var lgPromise = fetch('/api/looking-glass', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix: prefix, account_id: activeAccountId })
+          body: JSON.stringify({ prefix: prefix, account_id: accountId })
         });
         var ripestatPromise = fetch('/api/ripestat-visibility?prefix=' + encodeURIComponent(prefix))
           .then(function(r) { return r.json(); })
@@ -6758,7 +7068,7 @@ export function renderDashboard(userEmail: string): string {
       return '';
     }
 
-    function validationBadge(state, type, cidr) {
+    function validationBadge(state, type, cidr, accountId) {
       var badge;
       if (!state) {
         badge = '<span class="badge-unknown">—</span>';
@@ -6770,7 +7080,7 @@ export function renderDashboard(userEmail: string): string {
         else badge = '<span class="badge-unknown">' + escHtml(state) + '</span>';
       }
       if (type === 'rpki' && cidr) {
-        return '<span class="validation-hover" onmouseenter="showRpkiDetails(\\'' + escAttr(cidr) + '\\',\\'' + escAttr(state || '') + '\\',this)">' + badge + '<span class="validation-tip">' + validationTooltipText(state, type) + '</span></span>';
+        return '<span class="validation-hover" onmouseenter="showRpkiDetails(\\'' + escAttr(cidr) + '\\',\\'' + escAttr(state || '') + '\\',\\'' + escAttr(accountId || '') + '\\',this)">' + badge + '<span class="validation-tip">' + validationTooltipText(state, type) + '</span></span>';
       }
       if (type) {
         var tip = validationTooltipText(state, type);
@@ -6789,6 +7099,7 @@ export function renderDashboard(userEmail: string): string {
       var sourceSel = document.getElementById('activity-log-source');
       var actionSel = document.getElementById('activity-log-action');
       var windowSel = document.getElementById('activity-log-window');
+      var accountSel = document.getElementById('activity-log-account');
       if (activityLogExpanded) {
         body.classList.remove('hidden');
         chevron.classList.add('open');
@@ -6797,6 +7108,7 @@ export function renderDashboard(userEmail: string): string {
         if (sourceSel) sourceSel.classList.remove('hidden');
         if (actionSel) actionSel.classList.remove('hidden');
         if (windowSel) windowSel.classList.remove('hidden');
+        if (accountSel && savedAccounts.length > 1) accountSel.classList.remove('hidden');
         if (!activityLogLoaded) loadActivityLog();
       } else {
         body.classList.add('hidden');
@@ -6806,25 +7118,31 @@ export function renderDashboard(userEmail: string): string {
         if (sourceSel) sourceSel.classList.add('hidden');
         if (actionSel) actionSel.classList.add('hidden');
         if (windowSel) windowSel.classList.add('hidden');
+        if (accountSel) accountSel.classList.add('hidden');
       }
     }
 
     async function loadActivityLog() {
+      var loadGeneration = ++activityLoadGeneration;
       try {
         var params = [];
-        if (activeAccountId) params.push('account_id=' + encodeURIComponent(activeAccountId));
+        if (activityAccountId) params.push('account_id=' + encodeURIComponent(activityAccountId));
         params.push('days=' + encodeURIComponent(activityLogDays));
         var url = '/api/activity?' + params.join('&');
         var resp = await fetch(url);
         var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load activity log');
+        if (loadGeneration !== activityLoadGeneration) return;
         activityLogLoaded = true;
         activityLogEntries = data.activity || [];
         activityLogAuditError = data.audit_error || '';
         updateActivityLogActionFilter(activityLogEntries);
         renderActivityLog(activityLogEntries);
       } catch (e) {
+        if (loadGeneration !== activityLoadGeneration) return;
+        activityLogLoaded = false;
         document.getElementById('activity-log-content').innerHTML =
-          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load activity log</div>';
+          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load activity log: ' + escHtml(e && e.message ? e.message : e) + '</div>';
       }
     }
 
@@ -6939,7 +7257,10 @@ export function renderDashboard(userEmail: string): string {
 
     function formatActivityTime(dateStr) {
       try {
-        var d = new Date(dateStr + (dateStr.endsWith('Z') ? '' : 'Z'));
+        var value = String(dateStr || '');
+        var normalized = /[zZ]|[+-]\\d\\d:?\\d\\d$/.test(value) ? value : value.replace(' ', 'T') + 'Z';
+        var d = new Date(normalized);
+        if (isNaN(d.getTime())) return value;
         return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) +
           ' ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
       } catch (e) {
@@ -6949,7 +7270,7 @@ export function renderDashboard(userEmail: string): string {
 
     function activityLogTs(v) {
       var s = String(v || '');
-      var norm = /[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z';
+      var norm = /[zZ]|[+-]\\d\\d:?\\d\\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z';
       var t = new Date(norm).getTime();
       return isNaN(t) ? 0 : t;
     }
@@ -6958,7 +7279,8 @@ export function renderDashboard(userEmail: string): string {
       var filtered = (entries || []).filter(function(e) {
         var sourceOk = activityLogSource === 'all' || (e.source || 'local') === activityLogSource;
         var actionOk = activityLogAction === 'all' || activityLogActionLabel(e.action) === activityLogAction;
-        return sourceOk && actionOk;
+        var accountOk = activityAccountId === 'all' || !activityAccountId || e.account_id === activityAccountId;
+        return sourceOk && actionOk && accountOk;
       });
 
       filtered.sort(function(a, b) {
@@ -6976,7 +7298,7 @@ export function renderDashboard(userEmail: string): string {
       if (activityLogAuditError && activityLogSource !== 'local') {
         banner = '<div class="px-4 py-2 text-[11px] text-red-500 border-b border-cf-border" style="background:rgba(234,179,8,0.08)">' +
           '&#9888; Audit log unavailable: ' + escHtml(activityLogAuditError) +
-          '. The Audit Logs v2 API requires the <strong>Account Settings: Read</strong> token permission.</div>';
+          '. Verify the account, token permissions, and Audit Logs API availability.</div>';
       }
 
       if (filtered.length === 0) {
@@ -6988,8 +7310,10 @@ export function renderDashboard(userEmail: string): string {
       }
 
       var sortArrow = activityLogSortDir === 'asc' ? ' &#9650;' : ' &#9660;';
+      var showAccounts = activityAccountId === 'all' && savedAccounts.length > 1;
       var html = banner + '<table class="w-full text-xs">' +
         '<thead><tr class="border-b border-cf-border text-left">' +
+        (showAccounts ? '<th class="px-3 py-2.5 text-cf-gray font-medium">Account</th>' : '') +
         '<th class="px-4 py-2.5 text-cf-gray font-medium cursor-pointer select-none hover:text-cf-orange transition" style="min-width:150px" onclick="toggleActivityLogSort()" title="Sort by date">Date / Time' + sortArrow + '</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:70px">Source</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">Action</th>' +
@@ -7000,6 +7324,7 @@ export function renderDashboard(userEmail: string): string {
       for (var i = 0; i < filtered.length; i++) {
         var e = filtered[i];
         html += '<tr class="al-row">' +
+          (showAccounts ? '<td class="px-3 py-2.5">' + accountBadge(e.account_id, e.account_label) + '</td>' : '') +
           '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
           '<td class="px-3 py-2.5">' + sourceBadge(e.source) + '</td>' +
           '<td class="px-3 py-2.5">' + formatActionBadge(e.action) + '</td>' +
@@ -7019,30 +7344,39 @@ export function renderDashboard(userEmail: string): string {
       var chevron = document.getElementById('notif-queue-chevron');
       var hint = document.getElementById('notif-queue-hint');
       var refreshBtn = document.getElementById('notif-queue-refresh');
+      var accountSel = document.getElementById('notif-queue-account');
       if (notifQueueExpanded) {
         body.classList.remove('hidden');
         chevron.classList.add('open');
         if (hint) hint.textContent = 'Click to collapse';
         if (refreshBtn) refreshBtn.classList.remove('hidden');
+        if (accountSel && savedAccounts.length > 1) accountSel.classList.remove('hidden');
         if (!notifQueueLoaded) loadNotifQueue();
       } else {
         body.classList.add('hidden');
         chevron.classList.remove('open');
         if (hint) hint.textContent = 'Click to expand';
         if (refreshBtn) refreshBtn.classList.add('hidden');
+        if (accountSel) accountSel.classList.add('hidden');
       }
     }
 
     async function loadNotifQueue() {
+      var loadGeneration = ++notifLoadGeneration;
       try {
-        var url = '/api/notifications/log' + (activeAccountId ? '?account_id=' + encodeURIComponent(activeAccountId) : '');
-        var resp = await fetch(url);
+        var params = notifAccountId && notifAccountId !== 'all' ? '?account_id=' + encodeURIComponent(notifAccountId) : '';
+        var resp = await fetch('/api/notifications/log' + params);
         var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load notifications');
+        if (loadGeneration !== notifLoadGeneration) return;
         notifQueueLoaded = true;
-        renderNotifQueue(data.log || []);
+        notifQueueEntries = data.log || [];
+        renderNotifQueue(notifQueueEntries);
       } catch (e) {
+        if (loadGeneration !== notifLoadGeneration) return;
+        notifQueueLoaded = false;
         document.getElementById('notif-queue-content').innerHTML =
-          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load notifications</div>';
+          '<div class="px-4 py-8 text-center text-red-400 text-xs">Failed to load notifications: ' + escHtml(e && e.message ? e.message : e) + '</div>';
       }
     }
 
@@ -7063,6 +7397,8 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function renderNotifQueue(entries) {
+      entries = (entries || []).filter(function(e) { return notifAccountId === 'all' || !notifAccountId || e.account_id === notifAccountId; });
+      var showAccounts = notifAccountId === 'all' && savedAccounts.length > 1;
       var sent = 0, failed = 0;
       entries.forEach(function(e) {
         if (e.status === 'sent') sent++;
@@ -7079,6 +7415,7 @@ export function renderDashboard(userEmail: string): string {
       }
       var html = '<table class="w-full text-xs">' +
         '<thead><tr class="border-b border-cf-border text-left">' +
+        (showAccounts ? '<th class="px-3 py-2.5 text-cf-gray font-medium">Account</th>' : '') +
         '<th class="px-4 py-2.5 text-cf-gray font-medium" style="min-width:150px">Time</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium">Event</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium">Channel</th>' +
@@ -7092,6 +7429,7 @@ export function renderDashboard(userEmail: string): string {
         var canRetry = (e.status === 'dead_letter' || e.status === 'failed');
         var detail = e.error ? ('<span class="text-red-400">' + escHtml(e.error) + '</span>') : escHtml(e.title || e.details || '');
         html += '<tr class="al-row">' +
+          (showAccounts ? '<td class="px-3 py-2.5">' + accountBadge(e.account_id, e.account_label) + '</td>' : '') +
           '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
           '<td class="px-3 py-2.5">' + formatActionBadge(e.event_type) + '</td>' +
           '<td class="px-3 py-2.5 text-cf-gray">' + escHtml(e.channel_type) + '</td>' +

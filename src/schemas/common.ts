@@ -13,7 +13,8 @@ export const AccountIdQuerySchema = z.object({
   account_id: z.string().optional().describe('Cloudflare account ID (uses default if omitted)'),
 });
 
-export const ActivityQuerySchema = AccountIdQuerySchema.extend({
+export const ActivityQuerySchema = z.object({
+  account_id: z.string().optional().describe('Cloudflare account ID, "all", or default if omitted'),
   days: z.coerce
     .number()
     .int()

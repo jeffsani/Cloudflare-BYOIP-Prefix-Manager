@@ -103,7 +103,7 @@ export class CreateBgpPrefix extends OpenAPIRoute {
       }
 
       const bgpCreateDetails = `Child prefix ${body.cidr} created on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'create_bgp_prefix', bgpCreateDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'create_bgp_prefix', bgpCreateDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'create_bgp_prefix',
         title: body.cidr, details: bgpCreateDetails,
@@ -160,7 +160,7 @@ export class DeleteBgpPrefix extends OpenAPIRoute {
       }
 
       const bgpDeleteDetails = `Deleted BGP child prefix ${bgpPrefixId} on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'delete_bgp_prefix', bgpDeleteDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'delete_bgp_prefix', bgpDeleteDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'delete_bgp_prefix',
         title: bgpPrefixId, details: bgpDeleteDetails,
@@ -240,7 +240,7 @@ export class ToggleBgpAdvertisement extends OpenAPIRoute {
       const toggleCidr = result.result?.cidr || bgpPrefixId;
       const toggleAction = body.advertised ? 'advertise' : 'withdraw';
       const toggleDetails = `BGP prefix ${toggleCidr} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, toggleAction, toggleDetails);
+      await logActivity(c.env.DB, email, acct.account_id, toggleAction, toggleDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: toggleAction,
         title: toggleCidr, details: toggleDetails,

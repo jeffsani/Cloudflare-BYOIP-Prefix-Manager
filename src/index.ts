@@ -8,7 +8,7 @@ import { getToken, resolveAccount } from './helpers';
 
 // ─── Endpoint Imports ───────────────────────────────────────────────
 
-import { ListAccounts, CreateAccount, DeleteAccount, ClearAccountToken, SetDefaultAccount, TestToken } from './endpoints/settings';
+import { ListAccounts, UpdateAccountPreferences, CreateAccount, DeleteAccount, ClearAccountToken, SetDefaultAccount, TestToken } from './endpoints/settings';
 import { ListPrefixes, CreatePrefix, BatchCreatePrefix, DeletePrefix, GetPrefixStats, ValidateNewPrefix, UpdatePrefixDescription, ValidateExistingPrefix, BulkToggle } from './endpoints/prefixes';
 import { ListBgpPrefixes, CreateBgpPrefix, DeleteBgpPrefix, ToggleBgpAdvertisement } from './endpoints/bgp';
 import { ListBindings, CreateBinding, DeleteBinding } from './endpoints/bindings';
@@ -130,6 +130,7 @@ const openapi = fromHono(app, {
 
 // Account Settings
 openapi.get('/api/settings', ListAccounts);
+openapi.put('/api/settings/preferences', UpdateAccountPreferences);
 openapi.post('/api/settings', CreateAccount);
 openapi.delete('/api/settings/:id', DeleteAccount);
 openapi.delete('/api/settings/:id/token', ClearAccountToken);

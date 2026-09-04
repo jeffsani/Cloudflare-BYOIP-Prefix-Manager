@@ -4,9 +4,11 @@ import { z } from 'zod';
 // Cloudflare audit-log entry. Local rows populate the base fields; audit rows
 // additionally populate the actor/resource fields below.
 export const ActivityLogEntrySchema = z.object({
-  source: z.enum(['local', 'audit']).default('local'),
+  source: z.enum(['local', 'audit', 'webhook', 'radar']).default('local'),
   id: z.union([z.number(), z.string()]).optional(),
   user_email: z.string().optional(),
+  account_id: z.string().nullable().optional(),
+  account_label: z.string().optional(),
   action: z.string(),
   details: z.string(),
   created_at: z.string(),

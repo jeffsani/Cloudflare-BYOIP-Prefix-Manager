@@ -5,8 +5,9 @@ import type { Env, UserAccount } from '../types';
 import { maskToken, isRealSecret } from '../helpers';
 import { verifyTokenPermissions } from '../api';
 import {
-  AccountSchema,
+  AccountPreferencesSchema,
   CreateAccountRequestSchema,
+  SettingsResponseSchema,
   TokenTestRequestSchema,
   TokenTestResponseSchema,
 } from '../schemas/accounts';
@@ -23,7 +24,7 @@ export class ListAccounts extends OpenAPIRoute {
     responses: {
       '200': {
         description: 'List of accounts',
-        ...contentJson(z.object({ accounts: z.array(AccountSchema) })),
+        ...contentJson(SettingsResponseSchema),
       },
     },
   };
@@ -45,7 +46,53 @@ export class ListAccounts extends OpenAPIRoute {
       api_rate_limit_5min: r.api_rate_limit_5min ?? 1200,
       updated_at: r.updated_at,
     }));
-    return c.json({ accounts });
+    let aggregateAccounts = false;
+    try {
+      const preferences = await c.env.DB.prepare(
+        'SELECT aggregate_accounts FROM user_preferences WHERE user_email = ?',
+      )
+        .bind(email)
+        .first<{ aggregate_accounts: number }>();
+      aggregateAccounts = !!preferences?.aggregate_accounts;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      if (!/no such table:\s*user_preferences\b/i.test(message)) throw e;
+    }
+
+    return c.json({ accounts, aggregate_accounts: aggregateAccounts });
+  }
+}
+
+// PUT /api/settings/preferences
+export class UpdateAccountPreferences extends OpenAPIRoute {
+  schema = {
+    tags: ['Account Settings'],
+    summary: 'Update account display preferences',
+    description: 'Update aggregate multi-account behavior for the authenticated user.',
+    request: {
+      body: contentJson(AccountPreferencesSchema),
+    },
+    responses: {
+      '200': {
+        description: 'Preferences updated',
+        ...contentJson(AccountPreferencesSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+    const aggregateAccounts = data.body.aggregate_accounts;
+
+    await c.env.DB.prepare(
+      `INSERT INTO user_preferences (user_email, aggregate_accounts) VALUES (?, ?)
+       ON CONFLICT(user_email) DO UPDATE SET aggregate_accounts = excluded.aggregate_accounts`,
+    )
+      .bind(email, aggregateAccounts ? 1 : 0)
+      .run();
+
+    return c.json({ aggregate_accounts: aggregateAccounts });
   }
 }
 

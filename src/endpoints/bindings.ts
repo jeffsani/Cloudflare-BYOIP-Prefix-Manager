@@ -102,7 +102,7 @@ export class CreateBinding extends OpenAPIRoute {
       }
 
       const bindCreateDetails = `Service binding ${body.cidr} → ${result.result?.service_name || body.service_id} on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'create_binding', bindCreateDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'create_binding', bindCreateDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'create_binding',
         title: body.cidr, details: bindCreateDetails,
@@ -159,7 +159,7 @@ export class DeleteBinding extends OpenAPIRoute {
       }
 
       const bindDeleteDetails = `Deleted service binding ${bindingId} on prefix ${prefixId} in account ${acct.account_id}`;
-      await logActivity(c.env.DB, email, 'delete_binding', bindDeleteDetails);
+      await logActivity(c.env.DB, email, acct.account_id, 'delete_binding', bindDeleteDetails);
       await enqueueNotification(c.env, {
         user_email: email, account_id: acct.account_id, event_type: 'delete_binding',
         title: bindingId, details: bindDeleteDetails,
