@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS prefix_radar_state (
   source             TEXT NOT NULL DEFAULT 'radar', -- radar|webhook|control_plane
   last_webhook_at    TEXT,
   last_webhook_event TEXT,
+  -- Debounce/hysteresis: a change from the committed `announced` value must be
+  -- observed for CONFIRM_POLLS consecutive polls before it is committed and an
+  -- external advertise/withdraw event is emitted. This absorbs transient Radar
+  -- realtime visibility jitter that would otherwise flap the state every poll.
+  pending_announced  INTEGER,             -- candidate announced value awaiting confirmation
+  pending_count      INTEGER NOT NULL DEFAULT 0, -- consecutive polls the candidate has held
+  pending_since      TEXT,                -- when the current candidate was first observed
   updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(account_id, cidr)
 );

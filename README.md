@@ -256,6 +256,7 @@ For specific migrations, apply the dedicated migration files required by the rel
 ```bash
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-account-aggregation.sql
+npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-radar-debounce.sql
 ```
 
 The account-aggregation migration adds the per-user dashboard preference and structured account ownership for new activity-log entries. Historical activity remains available in the all-accounts view but cannot be reliably assigned to an individual account.
@@ -616,6 +617,7 @@ prefix-mgr/
 ├── schema.sql                  — Full database schema
 ├── migrate-query-api.sql       — Migration for existing deployments (Query API tables)
 ├── migrate-account-aggregation.sql — Migration for aggregate preferences and account-scoped activity
+├── migrate-radar-debounce.sql  — Migration adding poller debounce columns to prefix_radar_state
 └── src/
     ├── index.ts                — Hono app, chanfana OpenAPI setup, route registration
     ├── helpers.ts              — Shared helpers (getToken, logActivity, resolveAccount)
@@ -668,12 +670,14 @@ One row per notification delivery attempt; tracks status (queued/sent/retrying/f
 ### `prefix_radar_state` / `prefix_monitor_cache`
 Consolidated per-CIDR state and a cache of the CIDR set to poll per account. `prefix_radar_state` holds the Radar-observed global BGP state (authoritative `announced` flag) augmented with the control-plane `cf_advertised` flag and inbound-webhook provenance (`source`, `last_webhook_at`, `last_webhook_event`).
 
+The poller debounces its `announced` signal to avoid flapping on transient Radar realtime jitter. For each CIDR it queries Cloudflare Radar's real-time BGP routes, filters the returned routes/origins to the **exact** queried prefix (so an aggregate and its more-specifics don't contaminate each other), and treats the prefix as announced only when peer visibility clears a minimum threshold (`MIN_VISIBILITY`). A change from the committed state must then persist for `CONFIRM_POLLS` consecutive polls — tracked in the `pending_announced` / `pending_count` / `pending_since` columns — before it is committed and an `external_advertise` / `external_withdraw` event is emitted. This means a genuine change is reported after up to `CONFIRM_POLLS` polls (and, when many CIDRs are sliced across ticks, proportionally longer); both thresholds are constants in `src/poller.ts`.
+
 ### `api_keys` / `webhook_endpoints` / `webhook_events`
 Per-account API keys for the Query API (SHA‑256 hashed), inbound webhook secrets (SHA‑256 hashed, matched against the `cf-webhook-auth` header), and an audit log of raw inbound webhook payloads.
 
 > Existing deployments should apply the migrations required by their upgrade, including
-> `migrate-query-api.sql` and `migrate-account-aggregation.sql`. Reapplying a migration that
-> contains `ALTER TABLE` can report an expected "duplicate column" error.
+> `migrate-query-api.sql`, `migrate-account-aggregation.sql`, and `migrate-radar-debounce.sql`.
+> Reapplying a migration that contains `ALTER TABLE` can report an expected "duplicate column" error.
 
 ## API Documentation
 
