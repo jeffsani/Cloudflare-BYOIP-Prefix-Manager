@@ -10,12 +10,17 @@ CREATE TABLE IF NOT EXISTS user_accounts (
   -- Editable per-account Cloudflare API budget (requests / 5 min). Used to size the
   -- Radar-based advertisement poller so it stays within the account's rate limit.
   api_rate_limit_5min INTEGER NOT NULL DEFAULT 1200,
+  -- Per-account activity/log retention in days. Local log tables (activity_log,
+  -- audit_log_events, notification_log, webhook_events) are auto-purged past this
+  -- window by the scheduled cron. Defaults to 180 days.
+  activity_retention_days INTEGER NOT NULL DEFAULT 180,
   updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_email, account_id)
 );
 
 -- Migration for existing databases (safe to run repeatedly; ignore "duplicate column" error):
 -- ALTER TABLE user_accounts ADD COLUMN api_rate_limit_5min INTEGER NOT NULL DEFAULT 1200;
+-- ALTER TABLE user_accounts ADD COLUMN activity_retention_days INTEGER NOT NULL DEFAULT 180;
 
 -- Per-user display preferences
 CREATE TABLE IF NOT EXISTS user_preferences (

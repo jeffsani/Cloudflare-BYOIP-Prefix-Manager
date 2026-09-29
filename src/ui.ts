@@ -950,6 +950,17 @@ export function renderDashboard(userEmail: string): string {
           <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
         </div>
 
+        <!-- Dev/test: skip RIR record creation -->
+        <div class="mb-3 p-2 rounded-lg border border-dashed border-yellow-500/40" style="background:rgba(234,179,8,0.06)">
+          <label class="flex items-start gap-2 text-xs cursor-pointer">
+            <input id="add-prefix-skip-rir" type="checkbox" class="mt-0.5" style="accent-color:#F6821F">
+            <span>
+              <span style="color:var(--text-primary)">Dev: skip RIR record creation (test validation)</span>
+              <span class="block text-[10px] text-cf-gray mt-0.5">Creates the prefix and triggers Cloudflare validation <strong>without</strong> writing the token to your route/aut-num objects. Use this to confirm validation actually fails when the registrar records are missing. BYO-ASN only.</span>
+            </span>
+          </label>
+        </div>
+
         <!-- Validation Results -->
         <div id="add-prefix-validation-results" class="hidden mb-3 p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">
           <div class="flex items-center gap-2 mb-2">
@@ -4529,6 +4540,8 @@ export function renderDashboard(userEmail: string): string {
       addPrefixRows = [{ cidr: '', asn: '13335' }];
 
       document.getElementById('add-prefix-description').value = '';
+      var skipRirCb = document.getElementById('add-prefix-skip-rir');
+      if (skipRirCb) skipRirCb.checked = false;
       document.getElementById('add-prefix-error').classList.add('hidden');
       document.getElementById('add-prefix-validation-results').classList.add('hidden');
       document.getElementById('add-prefix-batch-results').classList.add('hidden');
@@ -5409,6 +5422,8 @@ export function renderDashboard(userEmail: string): string {
     async function finishAddPrefix(prefixes, description, delegateLoaCreation, accountId) {
       var btn = document.getElementById('add-prefix-submit-btn');
       btn.disabled = true;
+      var skipRirCb = document.getElementById('add-prefix-skip-rir');
+      var skipRir = !!(skipRirCb && skipRirCb.checked);
 
       if (prefixes.length === 1) {
         // Single prefix: use existing endpoint for backward compatibility
@@ -5442,7 +5457,11 @@ export function renderDashboard(userEmail: string): string {
             var hasRirCreds = savedValidationResult && savedValidationResult.rir_credentials && savedValidationResult.rir_credentials.length > 0;
             var isByoAsn = prefixes[0].asn !== 13335;
 
-            if (isByoAsn && hasRirCreds) {
+            if (isByoAsn && skipRir) {
+              // Dev/test: skip RIR record creation entirely, still trigger validation
+              // so the operator can confirm Cloudflare validation does not pass.
+              showPostCreationGuideSkipRir(prefixes[0].cidr, prefixes[0].asn, token, prefixId, accountId);
+            } else if (isByoAsn && hasRirCreds) {
               // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
               var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
               showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId);
@@ -5529,6 +5548,58 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Post-Creation Guide ─────────────────────────────────────
     var postCreationState = { cidr: '', asn: 0, token: '', rir: '', rirSupported: false, accountId: '' };
+
+    // Dev/test flow: deliberately skip writing the token to RIR records, then
+    // trigger Cloudflare validation so the operator can confirm validation does
+    // not pass when the registrar records are missing.
+    async function showPostCreationGuideSkipRir(cidr, asn, token, prefixId, accountId) {
+      if (!token && prefixId) {
+        try {
+          var prefixResp = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '?account_id=' + encodeURIComponent(accountId));
+          var prefixData = await prefixResp.json();
+          if (prefixData.prefix) token = prefixData.prefix.ownership_validation_token || null;
+        } catch (e) { /* ignore */ }
+      }
+
+      postCreationState = { cidr: cidr, asn: asn, token: token || '', rir: '', rirSupported: false, accountId: accountId };
+
+      var html = '';
+      html += '<div class="mb-3"><span class="badge-valid">Created</span> <span class="font-mono font-semibold" style="color:var(--text-strong)">' + escHtml(cidr) + '</span> (AS' + asn + ')</div>';
+      html += '<div class="mb-3 p-2 rounded-lg border border-dashed border-yellow-500/40 text-[11px]" style="background:rgba(234,179,8,0.08);color:var(--text-primary)"><strong>Test mode:</strong> RIR record creation was skipped. No validation token was written to your route/route6 or aut-num objects. Cloudflare validation should therefore <strong>not</strong> pass.</div>';
+      if (token) {
+        html += '<div class="mb-2"><span class="text-[10px] font-semibold" style="color:var(--text-strong)">Validation Token:</span></div>';
+        html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border font-mono text-[10px] mb-3" style="background:var(--card-bg)"><span class="flex-1 break-all">' + escHtml(token) + '</span>' + copyIcon(token) + '</div>';
+      }
+
+      html += '<div class="space-y-2">';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" style="opacity:0.7"><span class="badge-unknown" style="min-width:14px;text-align:center">&#8213;</span> <span class="text-xs">Skipped: add validation token to route/aut-num objects</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="skip-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
+      html += '</div>';
+
+      document.getElementById('post-creation-guide-body').innerHTML = html;
+      document.getElementById('post-creation-guide-modal').classList.remove('hidden');
+
+      if (prefixId) {
+        document.getElementById('skip-step-validate').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Requesting Cloudflare validation...</span>';
+        try {
+          var r = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account_id: accountId })
+          });
+          var d = await r.json();
+          if (d.ok) {
+            document.getElementById('skip-step-validate').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Validation requested. Watch the prefix in the table &mdash; ownership/IRR states should stay <strong>non-valid</strong> since no records were created.</span>';
+          } else {
+            document.getElementById('skip-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Validation request returned: ' + escHtml(d.error || 'pending') + '</span>';
+          }
+        } catch (e) {
+          document.getElementById('skip-step-validate').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">Could not trigger validation.</span>';
+        }
+      }
+
+      loadPrefixes();
+    }
 
     // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
     async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId) {
