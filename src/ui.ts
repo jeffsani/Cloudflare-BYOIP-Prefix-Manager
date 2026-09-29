@@ -1404,7 +1404,7 @@ export function renderDashboard(userEmail: string): string {
               '<div class="flex items-center gap-3">' +
                 '<svg id="acct-chev-' + escAttr(aid) + '" class="w-4 h-4 text-cf-gray transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"/></svg>' +
                 '<span class="text-sm font-medium" style="color:var(--text-strong)">' + escHtml(a.account_label || 'Untitled') + '</span>' +
-                '<span class="text-xs text-cf-gray font-mono">' + aid + '</span>' +
+                '<span class="text-xs text-cf-gray font-mono">' + escHtml(aid) + '</span>' +
                 defBadge +
               '</div>' +
               '<div class="flex gap-2" onclick="event.stopPropagation()">' +

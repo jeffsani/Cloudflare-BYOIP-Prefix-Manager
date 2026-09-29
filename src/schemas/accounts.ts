@@ -21,7 +21,7 @@ export const SettingsResponseSchema = z.object({
 
 export const CreateAccountRequestSchema = z.object({
   account_label: z.string().optional().default(''),
-  account_id: z.string().min(1, 'account_id is required'),
+  account_id: z.string().regex(/^[0-9a-fA-F]{32}$/, 'account_id must be a 32-character Cloudflare account ID'),
   api_token: z.string().optional(),
   api_rate_limit_5min: z.number().int().positive().optional().default(1200),
 });

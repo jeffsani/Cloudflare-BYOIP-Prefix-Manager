@@ -26,7 +26,10 @@ export async function accessAuthMiddleware(c: Context<AppEnv>, next: Next) {
     return next();
   }
 
-  if (c.env.ENVIRONMENT !== 'production') {
+  // Fail closed: only bypass auth when ENVIRONMENT is explicitly set to
+  // "development" (as the `dev` npm script does). An unset or mistyped var
+  // (e.g. anything other than "production") must not silently disable auth.
+  if (c.env.ENVIRONMENT === 'development') {
     c.set('userEmail', 'dev@localhost');
     return next();
   }

@@ -1039,7 +1039,7 @@ export async function lookupRdap(prefix: string): Promise<RdapResult> {
 
   // Try rdap.org first (follows redirects to the correct RIR)
   try {
-    const r = await fetch(`https://rdap.org/ip/${ip}`, { headers, redirect: 'follow' });
+    const r = await fetch(`https://rdap.org/ip/${encodeURIComponent(ip)}`, { headers, redirect: 'follow' });
     if (r.ok) {
       const data = (await r.json()) as RdapResponse;
       const result = parseRdapResponse(data);
@@ -1614,7 +1614,11 @@ export async function updateRipeRouteObject(
   try {
     const isV6 = prefix.includes(':');
     const objectType = isV6 ? 'route6' : 'route';
-    const url = `${RIPE_DB_API}/ripe/${objectType}/${encodeURIComponent(prefix)}AS${originAsn}`;
+    // Per RIPE docs the route/route6 primary key is the prefix + origin AS
+    // concatenated with the CIDR slash left literal in the URL path (e.g.
+    // /ripe/route/193.0.22.0/23AS3333) — encodeURIComponent would turn it
+    // into %2F and break the lookup.
+    const url = `${RIPE_DB_API}/ripe/${objectType}/${prefix}AS${originAsn}`;
 
     // Step 1: GET existing object
     const getResp = await fetch(url, {
