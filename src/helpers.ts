@@ -77,11 +77,11 @@ export function isRealSecret(value: string | undefined | null): value is string 
 export async function resolveRirCreds(
   db: D1Database, email: string, accountId: string, rir: string,
   bodyKey?: string, bodyMnt?: string,
-): Promise<{ apiKey: string; maintainer: string } | null> {
-  if (bodyKey) return { apiKey: bodyKey, maintainer: bodyMnt || '' };
+): Promise<{ apiKey: string; maintainer: string; tokenRecord: string } | null> {
+  if (bodyKey) return { apiKey: bodyKey, maintainer: bodyMnt || '', tokenRecord: '' };
   const stored = await db.prepare(
-    'SELECT api_key, maintainer FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
-  ).bind(email, accountId, rir).first<{ api_key: string; maintainer: string }>();
+    'SELECT api_key, maintainer, token_record FROM rir_credentials WHERE user_email = ? AND account_id = ? AND rir = ?',
+  ).bind(email, accountId, rir).first<{ api_key: string; maintainer: string; token_record: string }>();
   if (!stored?.api_key) return null;
-  return { apiKey: stored.api_key, maintainer: stored.maintainer || '' };
+  return { apiKey: stored.api_key, maintainer: stored.maintainer || '', tokenRecord: stored.token_record || '' };
 }

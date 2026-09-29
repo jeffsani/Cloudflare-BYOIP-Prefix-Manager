@@ -315,6 +315,8 @@ descr:   cf-validation: <ownership_validation_token>
 The route/route6 object proves control of the prefix. The aut-num object proves control of the ASN.
 
 > **In the dashboard:** If RIR API keys are saved (ARIN or RIPE), the tool creates/updates these objects automatically via the RIR Reg-RWS / DB APIs. Otherwise it shows a manual copy-paste guide.
+>
+> Each saved registrar (RIR credential) has a **Validation record** setting that controls which record(s) receive the validation token during onboarding: **Route/route6 only**, **aut-num only**, or **Both**. The automated flow and the manual guide only act on the selected record(s). A record must be chosen when saving a registrar in **Account Settings**.
 
 ### Step 3: Request validation
 

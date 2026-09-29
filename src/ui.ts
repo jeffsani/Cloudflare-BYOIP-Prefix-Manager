@@ -2078,6 +2078,40 @@ export function renderDashboard(userEmail: string): string {
       if (f) f.classList.add('hidden');
     }
 
+    // Human-readable label for the token-record selection stored per registrar.
+    function rirTokenRecordLabel(v) {
+      if (v === 'route') return 'Route/route6 only';
+      if (v === 'autnum') return 'aut-num only';
+      if (v === 'both') return 'Route + aut-num';
+      return 'Not set';
+    }
+
+    // Resolve which registrar record(s) to use for a given RIR from the saved
+    // validate-new credentials list. Legacy rows with no stored value fall back
+    // to 'both' so onboarding never silently skips a record.
+    function rirRecordSelectionFor(savedValidationResult, rir) {
+      var creds = savedValidationResult && savedValidationResult.rir_credentials ? savedValidationResult.rir_credentials : [];
+      var target = (rir || '').toLowerCase();
+      for (var i = 0; i < creds.length; i++) {
+        if ((creds[i].rir || '').toLowerCase() === target) {
+          return creds[i].token_record || 'both';
+        }
+      }
+      return 'both';
+    }
+
+    // Build the "Validation record" <select>. When includePlaceholder is true a
+    // blank, required-looking option is shown first so the user must choose.
+    function rirRecordSelectHtml(id, selected, includePlaceholder) {
+      var opts = '';
+      if (includePlaceholder) opts += '<option value=""' + (selected ? '' : ' selected') + '>Select record…</option>';
+      var choices = [['route', 'Route/route6 only'], ['autnum', 'aut-num only'], ['both', 'Route + aut-num']];
+      choices.forEach(function(ch) {
+        opts += '<option value="' + ch[0] + '"' + (selected === ch[0] ? ' selected' : '') + '>' + ch[1] + '</option>';
+      });
+      return '<select id="' + id + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white">' + opts + '</select>';
+    }
+
     async function loadAccountRirCredentials(accountId) {
       var el = document.getElementById('acct-rir-' + accountId);
       if (!el) return;
@@ -2105,6 +2139,11 @@ export function renderDashboard(userEmail: string): string {
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
             html += '<span class="font-mono text-cf-gray">' + escHtml(c.api_key) + '</span>';
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
+            if (c.token_record) {
+              html += '<span class="badge-unknown" title="Registrar record(s) that receive the validation token">' + escHtml(rirTokenRecordLabel(c.token_record)) + '</span>';
+            } else {
+              html += '<span class="badge-invalid" title="Choose which registrar record(s) receive the validation token">Record not set</span>';
+            }
             html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>';
             html += '<button onclick="editRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>';
             html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + aid + '\\')" class="text-red-400 hover:text-red-300 text-xs ml-1">Delete</button>';
@@ -2116,6 +2155,7 @@ export function renderDashboard(userEmail: string): string {
             html += '<div><label class="block text-xs text-cf-gray mb-1">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
             html += '<div><label class="block text-xs text-cf-gray mb-1">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
             html += '<div><label class="block text-xs text-cf-gray mb-1">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-32" placeholder="e.g. DC-403"></div>';
+            html += '<div><label class="block text-xs text-cf-gray mb-1">Validation record</label>' + rirRecordSelectHtml('rir-edit-record-' + c.id, c.token_record || '', true) + '</div>';
             html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
             html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>';
             html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange">Cancel</button>';
@@ -2131,11 +2171,13 @@ export function renderDashboard(userEmail: string): string {
 
         // Add new credential form (hidden by default)
         html += '<div id="rir-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
-        html += '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">';
+        html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-2">';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">RIR</label><select id="acct-rir-sel-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">API Key</label><input id="acct-rir-key-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="API key"></div>';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Org ID</label><input id="acct-rir-mnt-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="e.g. DC-403"></div>';
+        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Validation record</label>' + rirRecordSelectHtml('acct-rir-record-' + aid, '', true) + '</div>';
         html += '</div>';
+        html += '<div class="text-[10px] text-cf-gray">Which registrar record(s) the Cloudflare validation token is written to and checked in during onboarding.</div>';
         html += '<div class="flex gap-2 items-center">';
         html += '<button onclick="validateRirCredentialInput(\\'' + aid + '\\')" class="px-3 py-1 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
         html += '<button onclick="saveAccountRirCredential(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save</button>';
@@ -2154,11 +2196,13 @@ export function renderDashboard(userEmail: string): string {
       var rir = document.getElementById('acct-rir-sel-' + accountId).value;
       var apiKey = document.getElementById('acct-rir-key-' + accountId).value.trim();
       var maintainer = document.getElementById('acct-rir-mnt-' + accountId).value.trim();
+      var tokenRecord = document.getElementById('acct-rir-record-' + accountId).value;
       if (!apiKey) { showInlineMsg('acct-rir-validate-result-' + accountId, 'API key is required.', 'error'); return; }
+      if (!tokenRecord) { showInlineMsg('acct-rir-validate-result-' + accountId, 'Choose which registrar record(s) receive the validation token.', 'error'); return; }
       var r = await fetch('/api/rir/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, rir: rir, api_key: apiKey, maintainer: maintainer })
+        body: JSON.stringify({ account_id: accountId, rir: rir, api_key: apiKey, maintainer: maintainer, token_record: tokenRecord })
       });
       var data = await r.json();
       if (data.ok) {
@@ -2194,7 +2238,9 @@ export function renderDashboard(userEmail: string): string {
     async function saveEditRirCredential(id, accountId, rir) {
       var apiKey = document.getElementById('rir-edit-key-' + id).value.trim();
       var maintainer = document.getElementById('rir-edit-mnt-' + id).value.trim();
-      var body = { maintainer: maintainer };
+      var tokenRecord = document.getElementById('rir-edit-record-' + id).value;
+      if (!tokenRecord) { showInlineMsg('rir-edit-validate-result-' + id, 'Choose which registrar record(s) receive the validation token.', 'error'); return; }
+      var body = { maintainer: maintainer, token_record: tokenRecord };
       if (apiKey) body.api_key = apiKey;
       var r = await fetch('/api/rir/credentials/' + id, {
         method: 'PATCH',
@@ -5114,7 +5160,7 @@ export function renderDashboard(userEmail: string): string {
       if (isCustomAsn && summary.ready) {
         html += '<div style="padding:6px 0">';
         if (hasRirCreds) {
-          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR route object and aut-num will be auto-created at ' + result.rir_credentials.map(function(r) { return r.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
+          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR records will be auto-created at ' + result.rir_credentials.map(function(r) { return r.rir.toUpperCase() + (r.token_record ? ' (' + rirTokenRecordLabel(r.token_record) + ')' : ''); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
         } else {
           html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR API keys in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
         }
@@ -5576,8 +5622,22 @@ export function renderDashboard(userEmail: string): string {
         }
       }
 
+      // Determine which registrar record(s) to update for the detected RIR.
+      var tokenRecord = rirRecordSelectionFor(savedValidationResult, detectedRir);
+      var doRoute = tokenRecord !== 'autnum';
+      var doAutnum = tokenRecord !== 'route';
+      // Hide the steps that this registrar's selection skips.
+      if (!doRoute) {
+        var skipRouteEl = document.getElementById('auto-step-route');
+        if (skipRouteEl) skipRouteEl.style.display = 'none';
+      }
+      if (!doAutnum) {
+        var skipAutnumEl = document.getElementById('auto-step-autnum');
+        if (skipAutnumEl) skipAutnumEl.style.display = 'none';
+      }
+
       // Step 2: Create or update route object with validation token
-      if (!anyFailed) {
+      if (!anyFailed && doRoute) {
         var routeAction = irrAlreadyExists ? 'update' : 'create';
         document.getElementById('auto-step-route').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Adding validation token to ' + routeType + ' at ' + detectedRir.toUpperCase() + '...</span>';
         try {
@@ -5608,7 +5668,7 @@ export function renderDashboard(userEmail: string): string {
       }
 
       // Step 3: Update aut-num
-      if (!anyFailed) {
+      if (!anyFailed && doAutnum) {
         document.getElementById('auto-step-autnum').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Adding validation token to aut-num at ' + detectedRir.toUpperCase() + '...</span>';
         try {
           var r = await fetch('/api/rir/ensure-autnum', {
@@ -5664,16 +5724,20 @@ export function renderDashboard(userEmail: string): string {
         fbHtml += '<div class="text-[10px] space-y-1" style="color:var(--text-primary)">';
         fbHtml += '<div class="font-semibold">Validation Token:</div>';
         fbHtml += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border font-mono" style="background:var(--input-bg);word-break:break-all"><span class="flex-1 break-all">' + escHtml(token) + '</span>' + copyIcon(token) + '</div>';
-        fbHtml += '<div class="mt-2">Add to your <strong>' + routeType + '</strong> object:</div>';
-        fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
-        fbHtml += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>origin: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
-        fbHtml += copyBlockBtn();
-        fbHtml += '</div>';
-        fbHtml += '<div class="mt-2">Add to your <strong>aut-num</strong> object:</div>';
-        fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
-        fbHtml += '<code>aut-num: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
-        fbHtml += copyBlockBtn();
-        fbHtml += '</div>';
+        if (doRoute) {
+          fbHtml += '<div class="mt-2">Add to your <strong>' + routeType + '</strong> object:</div>';
+          fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+          fbHtml += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>origin: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
+          fbHtml += copyBlockBtn();
+          fbHtml += '</div>';
+        }
+        if (doAutnum) {
+          fbHtml += '<div class="mt-2">Add to your <strong>aut-num</strong> object:</div>';
+          fbHtml += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono" style="background:var(--input-bg)">';
+          fbHtml += '<code>aut-num: AS' + asn + '<br>descr: cf-validation: ' + escHtml(token) + '</code>';
+          fbHtml += copyBlockBtn();
+          fbHtml += '</div>';
+        }
         fbHtml += '<div class="mt-2">Then click <strong>re-validate</strong> on the prefix in the table.</div>';
         fbHtml += '</div></div>';
         fb.innerHTML = fbHtml;
@@ -5699,7 +5763,7 @@ export function renderDashboard(userEmail: string): string {
       if (isCustomAsn) {
         // Step 1: Route object
         html += '<div class="space-y-3">';
-        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div id="pcg-step-route" class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
         html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 1: Add validation token to ' + routeType + ' object</div>';
         html += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += '<code>' + routeType + ': ' + escHtml(cidr) + '<br>';
@@ -5712,7 +5776,7 @@ export function renderDashboard(userEmail: string): string {
         html += '</div>';
 
         // Step 2: aut-num object
-        html += '<div class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
+        html += '<div id="pcg-step-autnum" class="p-3 rounded-lg border border-cf-border" style="background:var(--input-bg)">';
         html += '<div class="font-semibold mb-1" style="color:var(--text-strong)">Step 2: Add validation token to aut-num object</div>';
         html += '<div class="relative p-2 pr-8 rounded border border-cf-border font-mono text-[10px] mb-2" style="background:var(--card-bg)">';
         html += '<code>aut-num: AS' + asn + '<br>';
@@ -5789,6 +5853,31 @@ export function renderDashboard(userEmail: string): string {
       } catch (e) {
         detectEl.innerHTML = '<span class="text-cf-gray">RIR detection failed</span>';
       }
+
+      // Honor the per-registrar validation-record selection: hide the step for a
+      // record this registrar isn't configured to use. Falls back to showing both
+      // when no matching saved credential/selection exists.
+      try {
+        var tokenRecord = '';
+        if (postCreationState.rir && postCreationState.accountId) {
+          var cr = await fetch('/api/rir/credentials?account_id=' + encodeURIComponent(postCreationState.accountId));
+          var cd = await cr.json();
+          var creds = cd.credentials || [];
+          for (var i = 0; i < creds.length; i++) {
+            if ((creds[i].rir || '').toLowerCase() === postCreationState.rir.toLowerCase()) {
+              tokenRecord = creds[i].token_record || '';
+              break;
+            }
+          }
+        }
+        if (tokenRecord === 'route') {
+          var hideAutnum = document.getElementById('pcg-step-autnum');
+          if (hideAutnum) hideAutnum.style.display = 'none';
+        } else if (tokenRecord === 'autnum') {
+          var hideRoute = document.getElementById('pcg-step-route');
+          if (hideRoute) hideRoute.style.display = 'none';
+        }
+      } catch (e) { /* default to showing both records */ }
 
       renderRirActionButtons(cidr, asn, token);
     }

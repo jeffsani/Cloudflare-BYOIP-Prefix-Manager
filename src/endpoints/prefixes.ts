@@ -477,13 +477,17 @@ export class ValidateNewPrefix extends OpenAPIRoute {
         });
       }
 
-      // Fetch saved RIR credential types for this account
+      // Fetch saved RIR credential types (and their token-record selection) for
+      // this account so the onboarding flow knows which registrar record(s) to use.
       const rirCredResult = await c.env.DB.prepare(
-        'SELECT rir FROM rir_credentials WHERE user_email = ? AND account_id = ?',
+        'SELECT rir, token_record FROM rir_credentials WHERE user_email = ? AND account_id = ?',
       )
         .bind(email, acct.account_id)
         .all();
-      const rirCredentials = (rirCredResult.results || []).map((r: Record<string, unknown>) => r.rir as string);
+      const rirCredentials = (rirCredResult.results || []).map((r: Record<string, unknown>) => ({
+        rir: r.rir as string,
+        token_record: (r.token_record as string) || '',
+      }));
 
       // Build summary
       const warnings: string[] = [];

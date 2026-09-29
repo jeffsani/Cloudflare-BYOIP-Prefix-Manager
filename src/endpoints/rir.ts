@@ -30,6 +30,36 @@ import { ErrorResponseSchema, OkResponseSchema } from '../schemas/common';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 
+// Valid selections for which registrar record(s) the Cloudflare validation token
+// is written to / checked in during prefix onboarding.
+const TOKEN_RECORD_VALUES = ['route', 'autnum', 'both'] as const;
+
+// Ensure the rir_credentials table exists with the token_record column. CREATE
+// TABLE IF NOT EXISTS won't add columns to a pre-existing table, so we also run a
+// guarded ALTER TABLE that tolerates the column already being present.
+async function ensureRirCredentialsTable(db: D1Database): Promise<void> {
+  await db.prepare(
+    `CREATE TABLE IF NOT EXISTS rir_credentials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_email TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      rir TEXT NOT NULL,
+      api_key TEXT NOT NULL DEFAULT '',
+      maintainer TEXT NOT NULL DEFAULT '',
+      token_record TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(user_email, account_id, rir)
+    )`,
+  ).run();
+  try {
+    await db.prepare("ALTER TABLE rir_credentials ADD COLUMN token_record TEXT NOT NULL DEFAULT ''").run();
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (!/duplicate column name/i.test(message)) throw e;
+  }
+}
+
 // GET /api/rir/credentials
 export class ListRirCredentials extends OpenAPIRoute {
   schema = {
@@ -58,25 +88,13 @@ export class ListRirCredentials extends OpenAPIRoute {
     const data = await this.getValidatedData<typeof this.schema>();
     const accountId = data.query.account_id;
 
-    await c.env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS rir_credentials (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_email TEXT NOT NULL,
-        account_id TEXT NOT NULL,
-        rir TEXT NOT NULL,
-        api_key TEXT NOT NULL DEFAULT '',
-        maintainer TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(user_email, account_id, rir)
-      )`,
-    ).run();
+    await ensureRirCredentialsTable(c.env.DB);
 
     const rows = await c.env.DB.prepare(
-      'SELECT id, rir, api_key, maintainer, updated_at FROM rir_credentials WHERE user_email = ? AND account_id = ?',
+      'SELECT id, rir, api_key, maintainer, token_record, updated_at FROM rir_credentials WHERE user_email = ? AND account_id = ?',
     )
       .bind(email, accountId)
-      .all<{ id: number; rir: string; api_key: string; maintainer: string; updated_at: string }>();
+      .all<{ id: number; rir: string; api_key: string; maintainer: string; token_record: string; updated_at: string }>();
 
     const masked = (rows.results || []).map((r) => ({
       ...r,
@@ -118,27 +136,20 @@ export class SaveRirCredentials extends OpenAPIRoute {
       return c.json({ error: 'rir must be "arin" or "ripe"' }, 400);
     }
 
-    await c.env.DB.prepare(
-      `CREATE TABLE IF NOT EXISTS rir_credentials (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        user_email TEXT NOT NULL,
-        account_id TEXT NOT NULL,
-        rir TEXT NOT NULL,
-        api_key TEXT NOT NULL DEFAULT '',
-        maintainer TEXT NOT NULL DEFAULT '',
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-        UNIQUE(user_email, account_id, rir)
-      )`,
-    ).run();
+    const tokenRecord = body.token_record;
+    if (!TOKEN_RECORD_VALUES.includes(tokenRecord)) {
+      return c.json({ error: 'token_record must be one of "route", "autnum", or "both"' }, 400);
+    }
+
+    await ensureRirCredentialsTable(c.env.DB);
 
     await c.env.DB.prepare(
-      `INSERT INTO rir_credentials (user_email, account_id, rir, api_key, maintainer)
-       VALUES (?, ?, ?, ?, ?)
+      `INSERT INTO rir_credentials (user_email, account_id, rir, api_key, maintainer, token_record)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(user_email, account_id, rir)
-       DO UPDATE SET api_key = excluded.api_key, maintainer = excluded.maintainer, updated_at = datetime('now')`,
+       DO UPDATE SET api_key = excluded.api_key, maintainer = excluded.maintainer, token_record = excluded.token_record, updated_at = datetime('now')`,
     )
-      .bind(email, body.account_id, rir, body.api_key, body.maintainer || '')
+      .bind(email, body.account_id, rir, body.api_key, body.maintainer || '', tokenRecord)
       .run();
 
     return c.json({ ok: true });
@@ -182,6 +193,13 @@ export class PatchRirCredentials extends OpenAPIRoute {
     if (body.maintainer !== undefined) {
       sets.push('maintainer = ?');
       vals.push(body.maintainer);
+    }
+    if (body.token_record !== undefined) {
+      if (!TOKEN_RECORD_VALUES.includes(body.token_record)) {
+        return c.json({ error: 'token_record must be one of "route", "autnum", or "both"' }, 400);
+      }
+      sets.push('token_record = ?');
+      vals.push(body.token_record);
     }
     if (sets.length === 0) {
       return c.json({ error: 'Nothing to update' }, 400);

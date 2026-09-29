@@ -5,6 +5,7 @@ export const RirCredentialMaskedSchema = z.object({
   rir: z.string(),
   api_key: z.string().describe('Masked API key'),
   maintainer: z.string(),
+  token_record: z.string().describe('Which registrar record(s) receive the validation token: route, autnum, or both'),
   updated_at: z.string(),
 });
 
@@ -13,11 +14,13 @@ export const SaveRirCredentialRequestSchema = z.object({
   rir: z.string().min(1, 'rir is required'),
   api_key: z.string().min(1, 'api_key is required'),
   maintainer: z.string().optional(),
+  token_record: z.enum(['route', 'autnum', 'both']),
 });
 
 export const PatchRirCredentialRequestSchema = z.object({
   api_key: z.string().optional(),
   maintainer: z.string().optional(),
+  token_record: z.enum(['route', 'autnum', 'both']).optional(),
 });
 
 export const ValidateRirCredentialRequestSchema = z.object({

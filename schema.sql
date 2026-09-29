@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS rir_credentials (
   rir             TEXT NOT NULL,
   api_key         TEXT NOT NULL DEFAULT '',
   maintainer      TEXT NOT NULL DEFAULT '',
+  token_record    TEXT NOT NULL DEFAULT '',
   created_at      TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at      TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_email, account_id, rir)

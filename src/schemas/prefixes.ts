@@ -111,7 +111,7 @@ export const ValidateNewPrefixResponseSchema = z.object({
   result: z.object({
     roa: RoaInfoSchema,
     irr: IrrInfoSchema,
-    rir_credentials: z.array(z.string()),
+    rir_credentials: z.array(z.object({ rir: z.string(), token_record: z.string() })),
     summary: ValidationSummarySchema,
   }),
 });

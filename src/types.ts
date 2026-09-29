@@ -431,6 +431,7 @@ export interface RirCredential {
   rir: 'arin' | 'ripe';
   api_key: string;
   maintainer: string;
+  token_record: 'route' | 'autnum' | 'both' | '';
   created_at: string;
   updated_at: string;
 }
