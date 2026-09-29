@@ -18,6 +18,7 @@ export interface UserAccount {
   api_token: string;
   is_default: number;
   api_rate_limit_5min: number;
+  activity_retention_days: number;
   updated_at: string;
 }
 
