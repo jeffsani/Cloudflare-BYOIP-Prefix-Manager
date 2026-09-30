@@ -5624,30 +5624,11 @@ export function renderDashboard(userEmail: string): string {
 
       html += '<div class="space-y-2">';
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border" style="opacity:0.7"><span class="badge-unknown" style="min-width:14px;text-align:center">&#8213;</span> <span class="text-xs">Skipped: add validation token to route/aut-num objects</span></div>';
-      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="skip-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border"><span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Cloudflare validates automatically (within ~10 min). Watch the prefix in the table &mdash; ownership/IRR states should stay <strong>non-valid</strong> since no records were created.</span></div>';
       html += '</div>';
 
       document.getElementById('post-creation-guide-body').innerHTML = html;
       document.getElementById('post-creation-guide-modal').classList.remove('hidden');
-
-      if (prefixId) {
-        document.getElementById('skip-step-validate').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Requesting Cloudflare validation...</span>';
-        try {
-          var r = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: accountId })
-          });
-          var d = await r.json();
-          if (d.ok) {
-            document.getElementById('skip-step-validate').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Validation requested. Watch the prefix in the table &mdash; ownership/IRR states should stay <strong>non-valid</strong> since no records were created.</span>';
-          } else {
-            document.getElementById('skip-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Validation request returned: ' + escHtml(d.error || 'pending') + '</span>';
-          }
-        } catch (e) {
-          document.getElementById('skip-step-validate').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">Could not trigger validation.</span>';
-        }
-      }
 
       loadPrefixes();
     }
@@ -5693,7 +5674,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-route"><span class="text-xs">Add validation token to ' + routeType + ' object</span></div>';
       }
       html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-autnum"><span class="text-xs">Add validation token to aut-num object</span></div>';
-      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-validate"><span class="text-xs">Request Cloudflare validation</span></div>';
+      html += '<div class="flex items-center gap-2 p-2 rounded border border-cf-border text-cf-gray" id="auto-step-validate"><span class="text-xs">Cloudflare validation</span></div>';
       html += '</div>';
 
       // Fallback area for manual instructions if something fails
@@ -5818,24 +5799,12 @@ export function renderDashboard(userEmail: string): string {
         }
       }
 
-      // Step 4: Trigger Cloudflare validation
-      if (!anyFailed && prefixId) {
-        document.getElementById('auto-step-validate').innerHTML = '<div class="spinner" style="width:12px;height:12px"></div> <span class="text-xs">Requesting Cloudflare validation...</span>';
-        try {
-          var r = await fetch('/api/prefixes/' + encodeURIComponent(prefixId) + '/validate', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ account_id: accountId })
-          });
-          var d = await r.json();
-          if (d.ok) {
-            document.getElementById('auto-step-validate').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Validation requested &mdash; may take up to 10 minutes to complete</span>';
-          } else {
-            document.getElementById('auto-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Validation request returned: ' + escHtml(d.error || 'pending') + '. You can re-validate from the prefix table.</span>';
-          }
-        } catch (e) {
-          document.getElementById('auto-step-validate').innerHTML = '<span class="badge-pending" style="min-width:14px;text-align:center">&#9888;</span> <span class="text-xs">Could not trigger validation. Re-validate from the prefix table once RIR changes propagate.</span>';
-        }
+      // Cloudflare automatically queues validation (RPKI, IRR, ownership) when the
+      // prefix is created, so we don't trigger it ourselves — a redundant immediate
+      // call would only run before the RIR changes have propagated. The operator
+      // uses the "re-validate" button in the prefix table once records propagate.
+      if (!anyFailed) {
+        document.getElementById('auto-step-validate').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">Cloudflare validates automatically (within ~10 min). Re-validate from the table once RIR changes propagate.</span>';
       }
 
       // Show fallback instructions if any step failed

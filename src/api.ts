@@ -44,6 +44,39 @@ async function fetchWithRetry(input: RequestInfo, init?: RequestInit): Promise<R
   throw new Error('Retry loop exited unexpectedly');
 }
 
+// Transient statuses worth retrying for third-party (RIR / IRR / Whois) calls:
+// rate limiting plus upstream/edge failures. 520-527, 529, 530 are Cloudflare
+// edge errors (e.g. 525 = SSL handshake failed) that ARIN/RIPE sit behind and
+// that commonly clear on a retry, so we must not treat them as hard failures.
+const TRANSIENT_STATUSES = new Set([429, 500, 502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527, 529, 530]);
+
+// True for a status that represents a transient upstream/edge failure rather
+// than a definitive answer (e.g. 404 not-found is NOT transient).
+export function isTransientStatus(status: number): boolean {
+  return TRANSIENT_STATUSES.has(status);
+}
+
+// Retry wrapper for external RIR/IRR/Whois GETs. Retries transient HTTP statuses
+// and network errors with linear backoff, returning the last Response (even when
+// not ok) so callers can inspect the final status.
+async function fetchExternalWithRetry(input: RequestInfo, init?: RequestInit, maxRetries = MAX_RETRIES): Promise<Response> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      const r = await fetch(input, init);
+      if (!TRANSIENT_STATUSES.has(r.status) || attempt === maxRetries) return r;
+      const retryAfter = r.headers.get('retry-after');
+      const waitSec = retryAfter ? Math.min(parseInt(retryAfter, 10) || 2, 15) : Math.min(2 * (attempt + 1), 10);
+      await new Promise((resolve) => setTimeout(resolve, waitSec * 1000));
+    } catch (e) {
+      lastErr = e;
+      if (attempt === maxRetries) throw e;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(2 * (attempt + 1), 10) * 1000));
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error('Retry loop exited unexpectedly');
+}
+
 // --- Addressing Prefixes ---
 
 export async function listPrefixes(
@@ -1078,7 +1111,7 @@ const RIPE_DB_API = 'https://rest.db.ripe.net';
  */
 export async function lookupArinOrgPocs(orgId: string): Promise<{ adminC: string; techC: string } | null> {
   try {
-    const r = await fetch(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}/pocs`, {
+    const r = await fetchExternalWithRetry(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}/pocs`, {
       headers: { Accept: 'application/json' },
     });
     if (!r.ok) return null;
@@ -1114,10 +1147,13 @@ export async function validateArinCredentials(
 ): Promise<{ valid: boolean; orgName?: string; adminC?: string; techC?: string; apiKeyValid?: boolean; error?: string }> {
   // Step 1: Validate Org ID via Whois
   try {
-    const orgResp = await fetch(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}`, {
+    const orgResp = await fetchExternalWithRetry(`${ARIN_WHOIS_API}/org/${encodeURIComponent(orgId)}`, {
       headers: { Accept: 'application/json' },
     });
     if (!orgResp.ok) {
+      if (isTransientStatus(orgResp.status)) {
+        return { valid: false, error: `ARIN Whois is temporarily unavailable (HTTP ${orgResp.status}) while looking up Org '${orgId}'. This is usually transient — please try again in a moment.` };
+      }
       return { valid: false, error: `Org ID '${orgId}' not found at ARIN (HTTP ${orgResp.status}). Check the Org ID is correct (e.g., DC-403).` };
     }
     const orgData = await orgResp.json() as { org?: { orgName?: { $?: string }; handle?: { $?: string } } };
@@ -1133,7 +1169,7 @@ export async function validateArinCredentials(
     let apiKeyValid: boolean | undefined;
     if (apiKey) {
       try {
-        const testResp = await fetch(`${ARIN_IRR_API}/route/0.0.0.0/0/AS0`, {
+        const testResp = await fetchExternalWithRetry(`${ARIN_IRR_API}/route/0.0.0.0/0/AS0`, {
           method: 'GET',
           headers: {
             Authorization: `ApiKey ${apiKey}`,
@@ -1190,7 +1226,7 @@ export async function validateRipeCredentials(
 ): Promise<{ valid: boolean; apiKeyValid?: boolean; error?: string }> {
   try {
     // Step 1: Check the maintainer object exists (public, no auth needed).
-    const r = await fetch(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
+    const r = await fetchExternalWithRetry(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
       headers: { Accept: 'application/json' },
     });
     if (r.status === 404) return { valid: false, error: `Maintainer '${maintainer}' not found in RIPE database.` };
@@ -1799,7 +1835,7 @@ export async function updateRipeAutnum(
  */
 export async function lookupRipeMntnerContact(maintainer: string): Promise<string | null> {
   try {
-    const r = await fetch(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
+    const r = await fetchExternalWithRetry(`${RIPE_DB_API}/ripe/mntner/${encodeURIComponent(maintainer)}.json`, {
       headers: { Accept: 'application/json' },
     });
     if (!r.ok) return null;
