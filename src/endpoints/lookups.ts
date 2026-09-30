@@ -22,6 +22,18 @@ import {
 import { ActivityLogEntrySchema } from '../schemas/activity';
 import { ErrorResponseSchema, AccountIdQuerySchema, ActivityQuerySchema } from '../schemas/common';
 
+// DELETE helper that tolerates optional log tables missing on unmigrated DBs.
+async function clearTable(db: D1Database, sql: string, binds: unknown[]): Promise<number> {
+  try {
+    const res = await db.prepare(sql).bind(...binds).run();
+    return res.meta?.changes ?? 0;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    if (/no such table/i.test(message)) return 0;
+    throw e;
+  }
+}
+
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 
 // POST /api/looking-glass
@@ -302,6 +314,64 @@ export class GetActivity extends OpenAPIRoute {
       .slice(0, 100);
 
     return c.json({ activity: merged, audit_error: auditError });
+  }
+}
+
+// DELETE /api/activity
+export class ClearActivity extends OpenAPIRoute {
+  schema = {
+    tags: ['Activity'],
+    summary: 'Clear activity log',
+    description:
+      'Delete all local log rows (activity_log, notification_log, audit_log_events, ' +
+      'webhook_events) for the specified account. Account-scoped audit/webhook rows ' +
+      'are shared across users of the same Cloudflare account.',
+    request: {
+      query: AccountIdQuerySchema,
+    },
+    responses: {
+      '200': {
+        description: 'Logs cleared',
+        ...contentJson(z.object({ ok: z.literal(true), deleted: z.number() })),
+      },
+      '400': {
+        description: 'No account configured',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+
+    const acct = await resolveAccount(c.env.DB, email, data.query.account_id);
+    if (!acct) return c.json({ error: 'No account configured' }, 400);
+    const accountId = acct.account_id;
+
+    let deleted = 0;
+    deleted += await clearTable(
+      c.env.DB,
+      'DELETE FROM activity_log WHERE user_email = ? AND account_id = ?',
+      [email, accountId],
+    );
+    deleted += await clearTable(
+      c.env.DB,
+      'DELETE FROM notification_log WHERE user_email = ? AND account_id = ?',
+      [email, accountId],
+    );
+    deleted += await clearTable(
+      c.env.DB,
+      'DELETE FROM audit_log_events WHERE account_id = ?',
+      [accountId],
+    );
+    deleted += await clearTable(
+      c.env.DB,
+      'DELETE FROM webhook_events WHERE account_id = ?',
+      [accountId],
+    );
+
+    return c.json({ ok: true as const, deleted });
   }
 }
 

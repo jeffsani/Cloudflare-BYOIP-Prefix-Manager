@@ -4,7 +4,7 @@ import type { Env } from './types';
 import { accessAuthMiddleware } from './auth';
 import { renderDashboard } from './ui';
 import { uploadLoaDocument } from './api';
-import { getToken, resolveAccount } from './helpers';
+import { getToken, resolveAccount, purgeExpiredLogs } from './helpers';
 
 // ─── Endpoint Imports ───────────────────────────────────────────────
 
@@ -15,7 +15,7 @@ import { ListBindings, CreateBinding, DeleteBinding } from './endpoints/bindings
 import { ListDelegations, CreateDelegationEndpoint, DeleteDelegationEndpoint, UpdateDelegationDescription } from './endpoints/delegations';
 import { ListServicesEndpoint } from './endpoints/services';
 import { ListRirCredentials, SaveRirCredentials, PatchRirCredentials, DeleteRirCredentials, ValidateRirCredentialsEndpoint, EnsureRoute, EnsureAutnum, DetectRir } from './endpoints/rir';
-import { LookingGlass, RdapLookup, RpkiLookup, RipestatVisibility, GetActivity } from './endpoints/lookups';
+import { LookingGlass, RdapLookup, RpkiLookup, RipestatVisibility, GetActivity, ClearActivity } from './endpoints/lookups';
 import {
   listChannels, createChannel, updateChannel, deleteChannel, testChannel,
   getSubscriptions, updateSubscription, listLog, retryLog,
@@ -188,6 +188,7 @@ openapi.get('/api/ripestat-visibility', RipestatVisibility);
 
 // Activity
 openapi.get('/api/activity', GetActivity);
+openapi.delete('/api/activity', ClearActivity);
 
 // ─── Notifications (plain Hono routes) ──────────────────────────────
 
@@ -332,6 +333,20 @@ export default {
         console.error('pollAdvertisementChanges failed:', err);
       }
     })());
+
+    // The cron fires every minute; enforce per-account log retention at most
+    // once an hour (top of the hour) since retention is measured in days.
+    if (new Date().getUTCMinutes() === 0) {
+      ctx.waitUntil((async () => {
+        try {
+          const res = await purgeExpiredLogs(env);
+          console.log(`Log purge: ${res.purged} rows removed, ${res.errors.length} errors`);
+          if (res.errors.length) console.error('Purge errors:', res.errors.slice(0, 10).join('; '));
+        } catch (err) {
+          console.error('purgeExpiredLogs failed:', err);
+        }
+      })());
+    }
   },
 
   async queue(batch: MessageBatch<NotifyMessage>, env: Env) {

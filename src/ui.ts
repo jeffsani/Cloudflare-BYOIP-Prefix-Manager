@@ -405,6 +405,10 @@ export function renderDashboard(userEmail: string): string {
             <label class="block text-xs font-medium text-cf-gray mb-1">API rate limit (req / 5 min)${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>
             <input id="set-rate-limit" type="number" min="1" value="1200" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
           </div>
+          <div>
+            <label class="block text-xs font-medium text-cf-gray mb-1">Activity log retention (days)${infoTip('Local activity, audit, notification, and webhook log entries older than this are automatically purged. Defaults to <strong>180 days</strong>.')}</label>
+            <input id="set-retention" type="number" min="1" value="180" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+          </div>
         </div>
         <div class="flex gap-2 items-center">
           <button onclick="saveAccount()" class="px-4 py-1.5 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:bg-orange-600 transition">Save Account</button>
@@ -1236,12 +1240,14 @@ export function renderDashboard(userEmail: string): string {
       var accId = document.getElementById('set-account-id');
       var token = document.getElementById('set-api-token');
       var rl = document.getElementById('set-rate-limit');
+      var retention = document.getElementById('set-retention');
       var msg = document.getElementById('set-account-msg');
       var result = document.getElementById('test-token-result');
       if (label) label.value = '';
       if (accId) accId.value = '';
       if (token) token.value = '';
       if (rl) rl.value = '1200';
+      if (retention) retention.value = '180';
       if (msg) msg.innerHTML = '';
       if (result) result.innerHTML = '';
     }
@@ -1457,6 +1463,16 @@ export function renderDashboard(userEmail: string): string {
                 '</div>' +
                 '<div id="acct-rl-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
+              // Activity log retention
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Activity log retention <span class="font-normal text-cf-gray">(days &mdash; logs older than this are auto-purged; default 180)</span></label>' +
+                '<div class="flex gap-2 items-center flex-wrap">' +
+                  '<input id="acct-retention-' + escAttr(aid) + '" type="number" min="1" value="' + (a.activity_retention_days || 180) + '" class="w-40 px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="updateAccountRetention(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
+                  '<button onclick="clearAccountLogs(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-red-400 text-xs font-medium rounded-lg hover:border-red-400 transition">Clear logs now</button>' +
+                '</div>' +
+                '<div id="acct-retention-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
+              '</div>' +
               // Notifications
               '<div class="border-t border-cf-border pt-3 pb-3">' +
                 '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">Notifications <span class="font-normal text-cf-gray">(channels &amp; per-event subscriptions for this account)</span></label>' +
@@ -1562,6 +1578,40 @@ export function renderDashboard(userEmail: string): string {
         reexpandAccount(accountId);
         showInlineMsg(msgId, 'Rate limit updated.', 'success');
       } else { showInlineMsg(msgId, 'Failed to update rate limit.', 'error'); }
+    }
+
+    async function updateAccountRetention(accountId) {
+      var msgId = 'acct-retention-msg-' + accountId;
+      var input = document.getElementById('acct-retention-' + accountId);
+      var val = input ? parseInt(input.value, 10) : 0;
+      if (!val || val < 1) { showInlineMsg(msgId, 'Enter a positive number of days.', 'error'); return; }
+      var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      var resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', activity_retention_days: val })
+      });
+      if (resp.ok) {
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg(msgId, 'Retention updated.', 'success');
+      } else { showInlineMsg(msgId, 'Failed to update retention.', 'error'); }
+    }
+
+    function clearAccountLogs(accountId) {
+      showConfirm({ title: 'Clear Activity Logs', message: 'Delete all stored activity, audit, notification, and webhook log entries for this account? This cannot be undone.', confirmLabel: 'Clear logs', danger: true, onConfirm: async function() {
+        var msgId = 'acct-retention-msg-' + accountId;
+        var resp = await fetch('/api/activity?account_id=' + encodeURIComponent(accountId), { method: 'DELETE' });
+        if (resp.ok) {
+          var data = await resp.json().catch(function() { return {}; });
+          var n = data && typeof data.deleted === 'number' ? data.deleted : 0;
+          showInlineMsg(msgId, 'Cleared ' + n + ' log ' + (n === 1 ? 'entry' : 'entries') + '.', 'success');
+          activityLogLoaded = false;
+          refreshActivityLog();
+        } else {
+          showInlineMsg(msgId, 'Failed to clear logs.', 'error');
+        }
+      } });
     }
 
     // ─── Per-account API Access & Integrations ────────────────────
@@ -2402,12 +2452,13 @@ export function renderDashboard(userEmail: string): string {
       var accountId = document.getElementById('set-account-id').value.trim();
       var apiToken = document.getElementById('set-api-token').value.trim();
       var rateLimit = parseInt(document.getElementById('set-rate-limit').value, 10) || 1200;
+      var retention = parseInt(document.getElementById('set-retention').value, 10) || 180;
       if (!accountId) { showInlineMsg('set-account-msg', 'Account ID is required.', 'error'); return; }
       try {
         await fetch('/api/settings', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined, api_rate_limit_5min: rateLimit })
+          body: JSON.stringify({ account_label: label, account_id: accountId, api_token: apiToken || undefined, api_rate_limit_5min: rateLimit, activity_retention_days: retention })
         });
         await loadAccounts();
         hideAccountForm();

@@ -7,6 +7,7 @@ export const AccountSchema = z.object({
   api_token: z.string().describe('Masked API token'),
   is_default: z.number(),
   api_rate_limit_5min: z.number().int().positive().describe('Editable Cloudflare API budget (requests / 5 min)'),
+  activity_retention_days: z.number().int().min(1).describe('Days of local log history to retain before auto-purge'),
   updated_at: z.string(),
 });
 
@@ -23,7 +24,10 @@ export const CreateAccountRequestSchema = z.object({
   account_label: z.string().optional().default(''),
   account_id: z.string().regex(/^[0-9a-fA-F]{32}$/, 'account_id must be a 32-character Cloudflare account ID'),
   api_token: z.string().optional(),
-  api_rate_limit_5min: z.number().int().positive().optional().default(1200),
+  // Left undefined when the caller doesn't intend to change it, so partial
+  // updates (e.g. editing only the token) don't reset the stored value.
+  api_rate_limit_5min: z.number().int().positive().optional(),
+  activity_retention_days: z.number().int().min(1).optional(),
 });
 
 export const TokenTestRequestSchema = z.object({
