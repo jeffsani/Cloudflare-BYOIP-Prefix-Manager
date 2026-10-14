@@ -994,8 +994,8 @@ export function renderDashboard(userEmail: string): string {
           <label class="flex items-start gap-2 text-xs cursor-pointer">
             <input id="add-prefix-skip-rir" type="checkbox" class="mt-0.5" style="accent-color:#F6821F">
             <span>
-              <span style="color:var(--text-primary)">Dev: skip RIR record creation (test validation)</span>
-              <span class="block text-[10px] text-cf-gray mt-0.5">Creates the prefix and triggers Cloudflare validation <strong>without</strong> writing the token to your route/aut-num objects. Use this to confirm validation actually fails when the registrar records are missing. BYO-ASN only.</span>
+              <span style="color:var(--text-primary)">Dev: skip RIR record validation (test validation failure)</span>
+              <span class="block text-[10px] text-cf-gray mt-0.5">Creates the prefix and triggers Cloudflare validation <strong>without</strong> dynamic token injection into your route/aut-num objects. Use this to confirm validation actually fails when the registrar records are missing. BYOASN only.</span>
             </span>
           </label>
         </div>

@@ -309,9 +309,23 @@ export class GetActivity extends OpenAPIRoute {
       const s = String(v || '');
       return new Date(/[zZ]|[+-]\d\d:?\d\d$/.test(s) ? s : s.replace(' ', 'T') + 'Z').getTime();
     };
-    const merged = [...localEntries, ...auditEntries]
-      .sort((a, b) => ts(b.created_at) - ts(a.created_at))
-      .slice(0, 100);
+    // Cap each source independently, then merge. A single cross-source cap on
+    // the sorted union lets a high-volume source (e.g. Cloudflare audit, which
+    // can emit hundreds of events a day) crowd the other out entirely: with
+    // >N audit rows newer than a local tool action, the local entry gets sorted
+    // past the cap and silently dropped before it reaches the UI (and before
+    // the client-side source filter runs). Limiting per source first guarantees
+    // local tool activity is always represented alongside audit activity.
+    const MAX_LOCAL = 100;
+    const MAX_AUDIT = 100;
+    const byNewest = <T extends { created_at?: unknown }>(rows: T[]) =>
+      [...rows].sort((a, b) => ts(b.created_at) - ts(a.created_at));
+    // Sort each source by time before capping (audit entries arrive grouped by
+    // account, not globally ordered), so each cap keeps that source's newest.
+    const merged = byNewest([
+      ...byNewest(localEntries).slice(0, MAX_LOCAL),
+      ...byNewest(auditEntries).slice(0, MAX_AUDIT),
+    ]);
 
     return c.json({ activity: merged, audit_error: auditError });
   }
