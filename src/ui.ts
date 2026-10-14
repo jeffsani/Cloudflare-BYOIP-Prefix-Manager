@@ -87,13 +87,13 @@ export function renderDashboard(userEmail: string): string {
     .info-tip { position: relative; display: inline-flex; vertical-align: middle; margin-left: 4px; outline: none; }
     .info-ico { width: 14px; height: 14px; border-radius: 50%; border: 1px solid var(--border); color: var(--muted); display: flex; align-items: center; justify-content: center; font-size: 9px; font-weight: 700; font-style: normal; line-height: 1; cursor: help; transition: all 0.15s; }
     .info-tip:hover .info-ico, .info-tip:focus .info-ico { color: #F6821F; border-color: #F6821F; }
-    .info-bubble { display: none; position: fixed; z-index: 9999; width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); text-transform: none; letter-spacing: normal; white-space: normal; }
+    .info-bubble { display: none; position: fixed; z-index: 9999; width: 240px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); text-transform: none; letter-spacing: normal; white-space: normal; user-select: none; -webkit-user-select: none; }
     .info-tip:hover .info-bubble, .info-tip:focus .info-bubble, .info-tip:focus-within .info-bubble { display: block; }
     .cidr-hover { position: relative; cursor: help; }
-    .rdap-tip { display: none; position: fixed; z-index: 9999; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; }
+    .rdap-tip { display: none; position: fixed; z-index: 9999; min-width: 260px; padding: 10px 12px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.4); font-size: 11px; font-weight: 400; line-height: 1.5; color: var(--text-primary); white-space: nowrap; pointer-events: none; user-select: none; -webkit-user-select: none; }
     .cidr-hover:hover .rdap-tip { display: block; }
     .validation-hover { position: relative; display: inline-block; cursor: help; }
-    .validation-tip { display: none; position: fixed; z-index: 9999; min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: auto; }
+    .validation-tip { display: none; position: fixed; z-index: 9999; min-width: 240px; max-width: 300px; padding: 8px 10px; border-radius: 8px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,0.35); font-size: 11px; font-weight: 400; line-height: 1.45; color: var(--text-primary); white-space: normal; pointer-events: auto; user-select: none; -webkit-user-select: none; }
     .validation-tip::before { content: ''; position: absolute; bottom: 100%; left: 0; right: 0; height: 6px; }
     .validation-hover:hover .validation-tip { display: block; }
     .rdap-row { display: flex; gap: 6px; }
@@ -133,7 +133,7 @@ export function renderDashboard(userEmail: string): string {
     .lg-path-toggle button:disabled { opacity: 0.4; cursor: not-allowed; }
     .lg-info-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid var(--border); font-size: 10px; color: var(--muted); cursor: help; position: relative; }
     .lg-info-icon:hover { color: #F6821F; border-color: #F6821F; }
-    .lg-info-icon .lg-info-tip { display: none; position: fixed; z-index: 9999; width: 300px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 10px; color: var(--text-primary); white-space: normal; font-weight: 400; pointer-events: none; }
+    .lg-info-icon .lg-info-tip { display: none; position: fixed; z-index: 9999; width: 300px; padding: 8px 10px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,0.3); font-size: 10px; color: var(--text-primary); white-space: normal; font-weight: 400; pointer-events: none; user-select: none; -webkit-user-select: none; }
     .lg-info-icon:hover .lg-info-tip { display: block; }
     .lg-vis-section { border-top: 1px solid var(--border); padding-top: 12px; margin-top: 12px; }
     .lg-vis-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
@@ -174,7 +174,7 @@ export function renderDashboard(userEmail: string): string {
     .lg-table-row-invalid { background: rgba(239,68,68,0.05); }
     .lg-table-row-invalid:hover { background: rgba(239,68,68,0.1) !important; }
     .lg-chip-tip { position: relative; }
-    .lg-chip-tip .lg-chip-tiptext { display: none; position: absolute; z-index: 60; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 10px; white-space: nowrap; color: var(--text-primary); pointer-events: none; }
+    .lg-chip-tip .lg-chip-tiptext { display: none; position: absolute; z-index: 60; bottom: calc(100% + 4px); left: 50%; transform: translateX(-50%); padding: 4px 8px; border-radius: 4px; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 2px 8px rgba(0,0,0,0.3); font-size: 10px; white-space: nowrap; color: var(--text-primary); pointer-events: none; user-select: none; -webkit-user-select: none; }
     .lg-chip-tip:hover .lg-chip-tiptext { display: block; }
     .al-badge { display: inline-flex; padding: 2px 8px; border-radius: 6px; font-size: 0.65rem; font-weight: 600; white-space: nowrap; }
     .al-badge-green { background: rgba(34,197,94,0.15); color: #22c55e; border: 1px solid rgba(34,197,94,0.3); }
@@ -184,7 +184,7 @@ export function renderDashboard(userEmail: string): string {
     .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
     .al-row { border-bottom: 1px solid var(--border); }
     .al-row:last-child { border-bottom: none; }
-    .sel-copy-btn { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
+    .sel-copy-btn { position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
     .sel-copy-btn.visible { display: inline-flex; opacity: 1; }
     .sel-copy-btn:hover { border-color: #F6821F; color: #F6821F; }
     .sel-copy-btn.copied { border-color: #22c55e; color: #22c55e; }
