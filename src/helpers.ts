@@ -66,7 +66,9 @@ export async function logActivity(
     const message = e instanceof Error ? e.message : String(e);
     // A DB that never got the account-aggregation migration is missing the
     // account_id column; add it on the fly and retry once so the entry isn't lost.
-    if (/no such column: account_id/i.test(message)) {
+    // SQLite phrases this as "no such column" (reads) or "has no column named"
+    // (inserts); match both since D1 may surface either.
+    if (/account_id/i.test(message) && /(no such column|has no column named)/i.test(message)) {
       try {
         await ensureActivityLogSchema(db);
         await insert();
