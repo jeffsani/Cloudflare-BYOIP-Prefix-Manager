@@ -184,6 +184,10 @@ export function renderDashboard(userEmail: string): string {
     .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
     .al-row { border-bottom: 1px solid var(--border); }
     .al-row:last-child { border-bottom: none; }
+    .sel-copy-btn { position: fixed; bottom: 20px; right: 20px; z-index: 9998; display: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
+    .sel-copy-btn.visible { display: inline-flex; opacity: 1; }
+    .sel-copy-btn:hover { border-color: #F6821F; color: #F6821F; }
+    .sel-copy-btn.copied { border-color: #22c55e; color: #22c55e; }
     /* ── Architecture + prefix-creation flow diagrams (About panel) ── */
     .arch-diagram { display: flex; flex-direction: column; gap: 6px; overflow-x: auto; padding: 4px 0; }
     .arch-layer { display: flex; flex-wrap: wrap; align-items: stretch; justify-content: center; gap: 8px; }
@@ -707,6 +711,9 @@ export function renderDashboard(userEmail: string): string {
       </div>
     </div>
   </div>
+
+  <!-- Floating copy-on-selection button -->
+  <button id="sel-copy-btn" class="sel-copy-btn" onmousedown="event.preventDefault()" onclick="copySelectionText()" title="Copy selected text" aria-label="Copy selected text"><span id="sel-copy-label">Copy</span><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg></button>
 
   <!-- Delete Service Binding Confirm Modal -->
   <div id="delete-binding-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeDeleteBindingModal()">
@@ -7783,6 +7790,43 @@ export function renderDashboard(userEmail: string): string {
       var text = code.textContent || '';
       copyToClipboard(btn, text);
     }
+
+    // ─── Copy-on-selection floating button ───────────────────────
+    var _selCopyText = '';
+    var _selCopyResetTimer = null;
+
+    function _updateSelCopyBtn() {
+      var btn = document.getElementById('sel-copy-btn');
+      if (!btn) return;
+      var sel = window.getSelection();
+      var text = sel ? String(sel.toString()).trim() : '';
+      if (text && btn.contains(sel && sel.anchorNode)) return;
+      if (text) {
+        _selCopyText = text;
+        btn.classList.add('visible');
+      } else {
+        _selCopyText = '';
+        btn.classList.remove('visible');
+      }
+    }
+
+    function copySelectionText() {
+      if (!_selCopyText || !navigator.clipboard) return;
+      navigator.clipboard.writeText(_selCopyText).then(function() {
+        var btn = document.getElementById('sel-copy-btn');
+        var label = document.getElementById('sel-copy-label');
+        if (!btn || !label) return;
+        label.textContent = 'Copied!';
+        btn.classList.add('copied');
+        if (_selCopyResetTimer) clearTimeout(_selCopyResetTimer);
+        _selCopyResetTimer = setTimeout(function() {
+          label.textContent = 'Copy';
+          btn.classList.remove('copied');
+        }, 1500);
+      });
+    }
+
+    document.addEventListener('selectionchange', _updateSelCopyBtn);
 
     // ─── Inline messages & confirm modal ──────────────────────────
     function showInlineMsg(targetId, message, type) {
