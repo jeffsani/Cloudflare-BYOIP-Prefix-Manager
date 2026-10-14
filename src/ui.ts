@@ -2951,6 +2951,21 @@ export function renderDashboard(userEmail: string): string {
       return usedSize >= parentSize;
     }
 
+    // Whether the parent prefix has a default edge service binding (a binding
+    // covering its full CIDR). Cloudflare rejects BGP child-prefix creation
+    // with "incomplete_bgp_deployment" until this binding exists. Returns true
+    // / false when child data is loaded, or null when it hasn't been fetched
+    // yet (status unknown — the row has not been expanded).
+    function hasDefaultBinding(rowKey, parentCidr) {
+      var cd = childData[rowKey];
+      if (!cd || cd.loading || cd.error) return null;
+      var bindings = cd.bindings || [];
+      for (var i = 0; i < bindings.length; i++) {
+        if (cidrEquals(bindings[i].cidr, parentCidr)) return true;
+      }
+      return false;
+    }
+
     function renderPrefixRow(p, isExpanded) {
       var rowKey = prefixKey(p._account_id, p.id);
       var keyAttr = escAttr(rowKey);
@@ -3014,7 +3029,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + keyAttr + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
           '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(p.cidr) + '\\',\\'' + accountArg + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' +
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
-          (!isChildPrefixSpaceFull(rowKey, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
+          (!isChildPrefixSpaceFull(rowKey, p.cidr) && !p.on_demand_locked && hasDefaultBinding(rowKey, p.cidr) !== false ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
           (p.approved !== 'V' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
         '</td>' +
@@ -3181,11 +3196,26 @@ export function renderDashboard(userEmail: string): string {
         return out;
       }
 
+      // Surface the default-service-binding prerequisite prominently as soon as
+      // the row is expanded, so it's clear a binding must exist before any BGP
+      // child prefixes can be created (Cloudflare rejects otherwise).
+      var noticeHtml = '';
+      if (!parent.on_demand_locked && hasDefaultBinding(rowKey, parent.cidr) === false) {
+        var colspan = activeAccountId === 'all' ? '11' : '10';
+        noticeHtml = '<tr class="child-row border-b border-cf-border"><td colspan="' + colspan + '" class="px-3 pl-8 py-2.5">' +
+          '<div class="flex items-center gap-2 text-[11px]">' +
+            '<svg class="w-4 h-4 flex-shrink-0" style="color:#eab308" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"/></svg>' +
+            '<span style="color:var(--text-primary)">A <strong>default service binding</strong> is required before you can create BGP child prefixes on this prefix.</span>' +
+            '<button onclick="event.stopPropagation();openBindingModal(\\'' + keyAttr + '\\',\\'' + escAttr(parent.cidr) + '\\')" class="ml-1 px-2 py-0.5 rounded border border-cf-border text-cf-gray hover:border-cf-orange hover:text-cf-orange transition" style="white-space:nowrap">Add Service Binding</button>' +
+          '</div>' +
+        '</td></tr>';
+      }
+
       var roots = buildChildTree(parent, data);
       if (roots.length === 0) {
-        return '<tr class="child-row border-b border-cf-border"><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
+        return noticeHtml + '<tr class="child-row border-b border-cf-border"><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
       }
-      var html = '';
+      var html = noticeHtml;
       for (var r = 0; r < roots.length; r++) {
         html += renderNode(roots[r], 0, r === roots.length - 1);
       }
@@ -3986,7 +4016,7 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
-    function openChildPrefixModal(rowKey, parentCidr) {
+    async function openChildPrefixModal(rowKey, parentCidr) {
       var prefix = prefixByKey(rowKey);
       if (!prefix) return;
       childPrefixModalContext = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, parentCidr: parentCidr };
@@ -4011,15 +4041,43 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('child-prefix-submit-btn').disabled = false;
       document.getElementById('child-prefix-submit-btn').textContent = 'Create Child Prefix';
 
-      // Reset fill-aggregate mode to off and re-enable the IP input
+      // Reset fill-aggregate mode to off and re-enable all inputs (they may have
+      // been disabled by a prior default-binding requirement block).
       document.getElementById('child-prefix-fill-max').checked = false;
+      document.getElementById('child-prefix-fill-max').disabled = false;
       document.getElementById('child-prefix-ip').disabled = false;
+      document.getElementById('child-prefix-mask').disabled = false;
       document.getElementById('child-prefix-fill-count').classList.add('hidden');
+
+      document.getElementById('child-prefix-modal').classList.remove('hidden');
+
+      // Cloudflare requires a default edge service binding before any BGP child
+      // prefix can be created. Make sure we know the binding state (the row may
+      // not have been expanded), then block the form with clear guidance rather
+      // than letting the create fail with "incomplete_bgp_deployment".
+      await ensureChildData(rowKey);
+      if (!childPrefixModalContext || childPrefixModalContext.rowKey !== rowKey) return;
+      if (hasDefaultBinding(rowKey, parentCidr) === false) {
+        showChildPrefixBindingRequirement(rowKey, parentCidr);
+        return;
+      }
 
       // Auto-fill IP with next available address for the selected mask
       autoFillChildPrefixIp();
+    }
 
-      document.getElementById('child-prefix-modal').classList.remove('hidden');
+    // Block the Add Child Prefix form and point the user at the prerequisite:
+    // a default edge service binding covering the full parent prefix.
+    function showChildPrefixBindingRequirement(rowKey, parentCidr) {
+      document.getElementById('child-prefix-ip').disabled = true;
+      document.getElementById('child-prefix-mask').disabled = true;
+      document.getElementById('child-prefix-fill-max').disabled = true;
+      document.getElementById('child-prefix-submit-btn').disabled = true;
+      var errEl = document.getElementById('child-prefix-error');
+      errEl.innerHTML = '<strong>A default service binding is required first.</strong> ' +
+        'Cloudflare won\\'t create BGP child prefixes until this prefix has a default edge service binding covering its full range. ' +
+        '<a href="#" onclick="event.preventDefault();closeChildPrefixModal();openBindingModal(\\'' + escAttr(rowKey) + '\\',\\'' + escAttr(parentCidr) + '\\')" style="color:#F6821F;font-weight:600">Add service binding now</a>';
+      errEl.classList.remove('hidden');
     }
 
     function closeChildPrefixModal() {
