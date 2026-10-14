@@ -6,6 +6,7 @@ import { getToken, logActivity, resolveAccount } from '../helpers';
 import { enqueueNotification } from '../queue';
 import {
   listServiceBindings,
+  listServices,
   createServiceBinding,
   deleteServiceBinding,
 } from '../api';
@@ -13,6 +14,30 @@ import { CfServiceBindingSchema, CreateBindingRequestSchema } from '../schemas/p
 import { ErrorResponseSchema, OkResponseSchema, AccountIdQuerySchema } from '../schemas/common';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
+
+// Magic Transit service bindings are gated per-account. When the binding is not
+// ungated, Cloudflare rejects creation with an `unsupported_binding_configuration`
+// error. Surface actionable guidance instead of the opaque API message.
+const UNSUPPORTED_BINDING_MESSAGE =
+  'Magic Transit service bindings are gated on your account. Please raise this with ' +
+  'your Cloudflare account team to have the binding ungated, or ask your CSM, FDE, PS, ' +
+  'or IM to create the binding for you.';
+
+// Detect the gating error robustly: the `unsupported_binding_configuration` slug may
+// appear in an error `message`, a string `code`, or a nested `error_chain`, so match
+// against the stringified errors array.
+function isUnsupportedBindingError(errors: unknown): boolean {
+  if (!errors) return false;
+  const haystack = JSON.stringify(errors).toLowerCase();
+  return (
+    haystack.includes('unsupported_binding_configuration') ||
+    haystack.includes('unsupported binding configuration')
+  );
+}
+
+function isMagicTransitService(name: string | undefined): boolean {
+  return !!name && name.toLowerCase().includes('magic');
+}
 
 // GET /api/prefixes/:prefixId/bindings
 export class ListBindings extends OpenAPIRoute {
@@ -98,7 +123,26 @@ export class CreateBinding extends OpenAPIRoute {
       const token = await getToken(c.env.DB, email, acct.account_id);
       const result = await createServiceBinding(acct.account_id, prefixId, body.cidr, body.service_id, token);
       if (!result.success) {
-        return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
+        const cfMessage = result.errors?.[0]?.message || 'API error';
+        if (isUnsupportedBindingError(result.errors)) {
+          // Only Magic Transit bindings are gated. Resolve the service name to
+          // confirm before swapping in the friendly message; if the lookup fails
+          // we still show it since Magic Transit is the only gated service.
+          let isMagicTransit = true;
+          try {
+            const services = await listServices(acct.account_id, token);
+            if (services.success) {
+              const svc = services.result?.find((s) => s.id === body.service_id);
+              if (svc) isMagicTransit = isMagicTransitService(svc.name);
+            }
+          } catch {
+            // Keep the default (treat as Magic Transit) on lookup failure.
+          }
+          if (isMagicTransit) {
+            return c.json({ error: UNSUPPORTED_BINDING_MESSAGE }, 502);
+          }
+        }
+        return c.json({ error: cfMessage }, 502);
       }
 
       const bindCreateDetails = `Service binding ${body.cidr} → ${result.result?.service_name || body.service_id} on prefix ${prefixId} in account ${acct.account_id}`;
