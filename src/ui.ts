@@ -217,7 +217,7 @@ export function renderDashboard(userEmail: string): string {
         <svg class="w-7 h-7 flex-shrink-0" viewBox="0 0 64 64" fill="none"><path d="M44.048 43.904H19.2l-1.28-4.352L41.216 36l3.84 3.072-.512 3.84-.496.992z" fill="#F6821F"/><path d="M45.056 43.392l-.512-1.984c-.256-.768-.128-1.536.384-2.048.384-.512.96-.768 1.664-.768h.64l1.024.128c2.304.256 4.864.384 7.552.384h.512c.256 0 .384-.128.512-.256.128-.256.128-.512 0-.768-.896-2.944-3.712-5.056-6.912-5.184l-2.048-.128-.768-1.536c-2.432-5.184-7.68-8.512-13.504-8.512-6.656 0-12.416 4.48-14.08 10.88l-.512 2.048-2.048.256c-3.84.512-6.784 3.84-6.784 7.808 0 .384 0 .768.128 1.152 0 .256.256.384.512.384h34.112c.256 0 .512-.256.64-.512l.128-.384c.128-.384.128-.64.128-.896-.128-.768-.384-1.536-.768-1.984z" fill="#FBAD41"/></svg>
         <div>
           <h1 class="text-base font-semibold leading-tight" style="color:var(--text-strong)">Prefix Manager</h1>
-          <p class="text-[11px] text-cf-gray leading-tight mt-0.5">BYOIP Prefix Manager — View, manage, and monitor IP prefix advertisements on Cloudflare</p>
+          <p class="text-[11px] text-cf-gray leading-tight mt-0.5">Add, manage, and monitor BYOIP and BYOASN IPv4 or IPv6 prefixes onboarded to Cloudflare</p>
         </div>
       </div>
       <div class="flex items-center gap-3">
@@ -816,9 +816,14 @@ export function renderDashboard(userEmail: string): string {
           <div class="flex gap-2">
             <input id="child-prefix-ip" type="text" placeholder="IP address" class="flex-1 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">
             <span class="text-cf-gray self-center">/</span>
-            <select id="child-prefix-mask" onchange="autoFillChildPrefixIp()" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
+            <select id="child-prefix-mask" onchange="onChildPrefixMaskChange()" class="w-20 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none"></select>
           </div>
         </div>
+        <label class="flex items-center gap-2 mb-3 text-xs text-cf-gray cursor-pointer">
+          <input id="child-prefix-fill-max" type="checkbox" onchange="onChildPrefixFillMaxToggle()" style="accent-color:#F6821F;cursor:pointer">
+          <span>Fill aggregate — create the maximum number of child prefixes in free space</span>
+        </label>
+        <div id="child-prefix-fill-count" class="text-[10px] text-cf-gray mb-3 hidden"></div>
         <div id="child-prefix-error" class="text-[10px] text-red-400 mb-3 hidden"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeChildPrefixModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -964,6 +969,16 @@ export function renderDashboard(userEmail: string): string {
         <div class="mb-3">
           <label class="block text-xs text-cf-gray mb-1">Description <span class="text-[10px]">(optional)</span></label>
           <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+
+        <!-- Tags -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">Tags <span class="text-[10px]">(optional)</span></label>
+          <div id="add-prefix-tags" class="flex flex-wrap items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark focus-within:border-cf-orange" onclick="document.getElementById('add-prefix-tags-input').focus()">
+            <span id="add-prefix-tags-chips" class="contents"></span>
+            <input id="add-prefix-tags-input" type="text" placeholder="Type a tag and press Enter" onkeydown="handleAddPrefixTagKeydown(this, event)" onblur="addAddPrefixTag(this.value); this.value='';" class="flex-1 min-w-[120px] bg-transparent text-sm text-white focus:outline-none">
+          </div>
+          <p class="text-[10px] text-cf-gray mt-1">Tags help organize and filter prefixes. They're saved as <span class="font-mono">#tags</span> inside the description (letters, numbers, hyphens, underscores). You can also type <span class="font-mono">#tags</span> directly in the description above.</p>
         </div>
 
         <!-- ASN validation status (BYO-ASN only): which registrar record(s) get the token -->
@@ -2739,7 +2754,7 @@ export function renderDashboard(userEmail: string): string {
 
     function extractTagsRaw(desc) {
       if (!desc) return [];
-      var matches = desc.match(/(?:^|\s)#([a-zA-Z0-9_-]+)/g);
+      var matches = desc.match(/(?:^|\\s)#([a-zA-Z0-9_-]+)/g);
       if (!matches) return [];
       return matches.map(function(m) { return m.trim().slice(1); });
     }
@@ -2993,7 +3008,7 @@ export function renderDashboard(userEmail: string): string {
         '<td class="px-3 py-2.5">' + statusBadge + '</td>' +
         '<td class="px-3 py-2.5">' + irrBadge + '</td>' +
         '<td class="px-3 py-2.5">' + rpkiBadge + '</td>' +
-        '<td class="px-3 py-2.5 text-cf-gray max-w-[200px] truncate">' + descHtml + '</td>' +
+        '<td class="px-3 py-2.5 text-cf-gray align-top max-w-[320px] whitespace-normal break-words">' + descHtml + '</td>' +
         '<td class="px-3 py-2.5 flex gap-1 items-center">' +
           parentToggleHtml +
           '<button onclick="event.stopPropagation();revalidatePrefix(\\'' + keyAttr + '\\')" class="text-cf-gray hover:text-cf-orange" title="Re-validate (RPKI/IRR)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg></button>' +
@@ -3006,97 +3021,173 @@ export function renderDashboard(userEmail: string): string {
       '</tr>';
     }
 
+    // Container-kind precedence used when CIDRs are equal: a BGP sub-prefix
+    // "contains" a delegation/binding of the same CIDR, and a delegation
+    // contains an equal-CIDR binding. Higher number = more container-like.
+    var CHILD_KIND_PRIORITY = { bgp: 3, delegation: 2, binding: 1 };
+
+    // Order siblings by address: IPv4 before IPv6, then network ascending,
+    // then shorter mask (less specific) first, then container-kind precedence.
+    function sortChildSiblings(nodes) {
+      nodes.sort(function (a, b) {
+        var pa = a.parsed, pb = b.parsed;
+        if (!pa || !pb) {
+          if (!pa && !pb) return 0;
+          return pa ? -1 : 1;
+        }
+        if (pa.v6 !== pb.v6) return pa.v6 ? 1 : -1;
+        if (pa.network !== pb.network) return pa.network < pb.network ? -1 : 1;
+        if (pa.maskLen !== pb.maskLen) return pa.maskLen - pb.maskLen;
+        return (CHILD_KIND_PRIORITY[b.kind] || 0) - (CHILD_KIND_PRIORITY[a.kind] || 0);
+      });
+    }
+
+    // Build a CIDR-containment tree out of the parent's BGP sub-prefixes,
+    // delegations, and service bindings. Each node nests under the most-specific
+    // item that contains it; items with no container become roots (direct
+    // children of the parent prefix row). Returns an ordered array of roots.
+    function buildChildTree(parent, data) {
+      var items = [];
+      (data.bgp_prefixes || []).forEach(function (x) { items.push({ kind: 'bgp', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
+      (data.delegations || []).forEach(function (x) { items.push({ kind: 'delegation', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
+      (data.bindings || []).forEach(function (x) { items.push({ kind: 'binding', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
+
+      // The whole-prefix BGP advertisement (cidr == parent) is the parent-level
+      // route, not a more-specific child; exclude it from being a container so
+      // it stays a flat sibling rather than nesting every other item under it.
+      function isWholePrefixBgp(it) {
+        return it.kind === 'bgp' && parent.cidr && cidrEquals(it.cidr, parent.cidr);
+      }
+      function canContain(container, item) {
+        if (container === item) return false;
+        if (!container.parsed || !item.parsed) return false;
+        if (isWholePrefixBgp(container)) return false;
+        if (!cidrContains(container.parsed, item.parsed)) return false;
+        if (container.parsed.maskLen === item.parsed.maskLen) {
+          // Equal CIDR: only a higher-precedence kind acts as container.
+          return (CHILD_KIND_PRIORITY[container.kind] || 0) > (CHILD_KIND_PRIORITY[item.kind] || 0);
+        }
+        return true;
+      }
+
+      var roots = [];
+      items.forEach(function (it) {
+        var best = null;
+        items.forEach(function (cand) {
+          if (!canContain(cand, it)) return;
+          if (!best) { best = cand; return; }
+          if (cand.parsed.maskLen > best.parsed.maskLen) best = cand;
+          else if (cand.parsed.maskLen === best.parsed.maskLen && (CHILD_KIND_PRIORITY[cand.kind] || 0) > (CHILD_KIND_PRIORITY[best.kind] || 0)) best = cand;
+        });
+        if (best) best.children.push(it);
+        else roots.push(it);
+      });
+
+      sortChildSiblings(roots);
+      items.forEach(function (it) { sortChildSiblings(it.children); });
+      return roots;
+    }
+
     function renderChildRows(parent, data) {
       var prefixId = parent.id;
       var rowKey = prefixKey(parent._account_id, prefixId);
       var keyAttr = escAttr(rowKey);
       var accountArg = escAttr(parent._account_id);
       var childAccountCell = activeAccountId === 'all' ? '<td class="px-3 py-2.5">' + accountBadge(parent._account_id, parent._account_label) + '</td>' : '';
-      var html = '';
-      // Service bindings on parent prefix
-      if (data.bindings && data.bindings.length > 0) {
-        for (var i = 0; i < data.bindings.length; i++) {
-          var b = data.bindings[i];
-          html += '<tr class="child-row border-b border-cf-border">' +
-            '<td class="px-2"></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-2"></td>' +
-            childAccountCell +
-            '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-purple-400 mr-1">&#9500;&#9472;</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? (b.provisioning.state.charAt(0).toUpperCase() + b.provisioning.state.slice(1)) : 'Unknown') + '</span></td>' +
-            '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
-            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + keyAttr + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
-          '</tr>';
-        }
-      }
-      // Delegations on parent prefix
-      if (data.delegations && data.delegations.length > 0) {
-        for (var d = 0; d < data.delegations.length; d++) {
-          var del = data.delegations[d];
-          var delDesc = del.description || '';
-          var descCell = '<span id="del-desc-' + keyAttr + '::' + escAttr(del.id) + '" class="del-desc-display" style="display:inline-flex;align-items:center;gap:4px">' +
-            (delDesc ? '<span class="text-cf-gray text-[10px] max-w-[160px] truncate" title="' + escAttr(delDesc) + '">' + escHtml(delDesc) + '</span>' : '<span class="text-cf-gray text-[10px] italic opacity-50">No description</span>') +
-            '<button onclick="event.stopPropagation();startEditDelegationDesc(\\'' + escAttr(del.id) + '\\',\\'' + keyAttr + '\\',\\'' + escAttr(delDesc) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
-          '</span>';
-          html += '<tr class="child-row border-b border-cf-border">' +
-            '<td class="px-2"></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-2"><svg class="w-3 h-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></td>' +
-            childAccountCell +
-            '<td class="px-3 pl-8 font-mono text-cf-gray"><span class="text-teal-400 mr-1">&#9500;&#9472;</span> <span class="badge-delegation">Delegation</span> <span class="text-cf-gray ml-1">' + escHtml(del.cidr) + '</span></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-3 text-cf-gray text-[10px] font-mono" title="Delegated Account ID">' + escHtml(del.delegated_account_id) + '</td>' +
-            '<td class="px-3"></td><td class="px-3"></td>' +
-            '<td class="px-3">' + descCell + '</td>' +
-            '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + keyAttr + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
-          '</tr>';
-        }
-      }
-      // BGP sub-prefixes
-      if (data.bgp_prefixes && data.bgp_prefixes.length > 0) {
-        var bgpParentCidr = parent.cidr;
-        for (var j = 0; j < data.bgp_prefixes.length; j++) {
-          var bp = data.bgp_prefixes[j];
-          // A BGP prefix equal to its parent is the whole-prefix advertisement,
-          // not a more-specific "child" prefix.
-          var bgpIsFullPrefix = bgpParentCidr && cidrEquals(bp.cidr, bgpParentCidr);
-          var isLast = j === data.bgp_prefixes.length - 1 && (!data.bindings || data.bindings.length === 0 || j > 0);
-          var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
-          var bgpAdv = bp.on_demand && bp.on_demand.advertised;
-          var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
-          // Only allow advertise/withdraw when the sub-prefix has a known (active) state.
-          var bgpActive = bp.on_demand && (bp.on_demand.advertised === true || bp.on_demand.advertised === false);
-          var bgpDelegationIcon = bgpHasDelegation(rowKey, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
-          var bgpToggleTip = bgpLocked
-            ? 'This sub-prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
-            : bgpAdv
-              ? 'Currently advertised. Click to withdraw this sub-prefix and stop announcing it via BGP.'
-              : 'Currently withdrawn. Click to advertise this sub-prefix and begin announcing it via BGP.';
-          var toggleHtml = !bgpActive ? '' :
-            '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
-            (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + keyAttr + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
-            '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
-          var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
-          var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + keyAttr + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="' + (bgpIsFullPrefix ? 'Delete BGP Prefix' : 'Delete Child Prefix') + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
 
-          html += '<tr class="child-row border-b border-cf-border">' +
-            '<td class="px-2"></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + bgpDelegationIcon + '</td>' +
-            childAccountCell +
-            '<td class="px-3 pl-8 font-mono" style="color:var(--text-strong)"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
-            '<td class="px-3 text-cf-gray">' + (bp.asn != null ? bp.asn : '—') + '</td>' +
-            '<td class="px-3">' + bgpStatusBadgeHtml(bp.on_demand ? bp.on_demand.advertised : undefined) + '</td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-3"></td>' +
-            '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\',\\'' + accountArg + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + bgpDeleteBtn + '</td>' +
-          '</tr>';
-        }
+      // Depth 0 reproduces the previous flat indent (pl-8 ≈ 2rem = 32px); each
+      // nested level adds a fixed step so containment reads as a hierarchy.
+      function indentPx(depth) { return 32 + depth * 20; }
+
+      function bindingRowHtml(b, depth, connector) {
+        return '<tr class="child-row border-b border-cf-border">' +
+          '<td class="px-2"></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-2"></td>' +
+          childAccountCell +
+          '<td class="px-3 font-mono text-cf-gray" style="padding-left:' + indentPx(depth) + 'px"><span class="text-purple-400 mr-1">' + connector + '</span> <span class="badge-service">' + escHtml(b.service_name) + '</span> <span class="text-cf-gray ml-1">' + escHtml(b.cidr) + '</span></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-3"><span class="badge-' + (b.provisioning && b.provisioning.state === 'active' ? 'valid' : 'pending') + '">' + escHtml(b.provisioning ? (b.provisioning.state.charAt(0).toUpperCase() + b.provisioning.state.slice(1)) : 'Unknown') + '</span></td>' +
+          '<td class="px-3"></td><td class="px-3"></td><td class="px-3"></td>' +
+          '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteBinding(\\'' + keyAttr + '\\',\\'' + escAttr(b.id) + '\\',\\'' + escAttr(b.service_name) + '\\',\\'' + escAttr(b.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
+        '</tr>';
       }
-      if ((!data.bgp_prefixes || data.bgp_prefixes.length === 0) && (!data.bindings || data.bindings.length === 0) && (!data.delegations || data.delegations.length === 0)) {
-        html += '<tr class="child-row border-b border-cf-border"><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
+
+      function delegationRowHtml(del, depth, connector) {
+        var delDesc = del.description || '';
+        var descCell = '<span id="del-desc-' + keyAttr + '::' + escAttr(del.id) + '" class="del-desc-display" style="display:inline-flex;align-items:center;gap:4px">' +
+          (delDesc ? '<span class="text-cf-gray text-[10px] max-w-[160px] truncate" title="' + escAttr(delDesc) + '">' + escHtml(delDesc) + '</span>' : '<span class="text-cf-gray text-[10px] italic opacity-50">No description</span>') +
+          '<button onclick="event.stopPropagation();startEditDelegationDesc(\\'' + escAttr(del.id) + '\\',\\'' + keyAttr + '\\',\\'' + escAttr(delDesc) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Edit description"><svg class="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"/></svg></button>' +
+        '</span>';
+        return '<tr class="child-row border-b border-cf-border">' +
+          '<td class="px-2"></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-2"><svg class="w-3 h-3 text-teal-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></td>' +
+          childAccountCell +
+          '<td class="px-3 font-mono text-cf-gray" style="padding-left:' + indentPx(depth) + 'px"><span class="text-teal-400 mr-1">' + connector + '</span> <span class="badge-delegation">Delegation</span> <span class="text-cf-gray ml-1">' + escHtml(del.cidr) + '</span></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-3 text-cf-gray text-[10px] font-mono" title="Delegated Account ID">' + escHtml(del.delegated_account_id) + '</td>' +
+          '<td class="px-3"></td><td class="px-3"></td>' +
+          '<td class="px-3">' + descCell + '</td>' +
+          '<td class="px-3"><button onclick="event.stopPropagation();confirmDeleteDelegation(\\'' + keyAttr + '\\',\\'' + escAttr(del.id) + '\\',\\'' + escAttr(del.cidr) + '\\',\\'' + escAttr(del.delegated_account_id) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Delegation"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button></td>' +
+        '</tr>';
+      }
+
+      function bgpRowHtml(bp, depth, connector) {
+        // A BGP prefix equal to its parent is the whole-prefix advertisement,
+        // not a more-specific "child" prefix.
+        var bgpIsFullPrefix = parent.cidr && cidrEquals(bp.cidr, parent.cidr);
+        var bgpAdv = bp.on_demand && bp.on_demand.advertised;
+        var bgpLocked = bp.on_demand && bp.on_demand.on_demand_locked;
+        // Only allow advertise/withdraw when the sub-prefix has a known (active) state.
+        var bgpActive = bp.on_demand && (bp.on_demand.advertised === true || bp.on_demand.advertised === false);
+        var bgpDelegationIcon = bgpHasDelegation(rowKey, bp.cidr) ? '<svg class="w-3 h-3 text-teal-400 ml-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>' : '';
+        var bgpToggleTip = bgpLocked
+          ? 'This sub-prefix is locked and cannot be advertised. Contact your Cloudflare account team to unlock.'
+          : bgpAdv
+            ? 'Currently advertised. Click to withdraw this sub-prefix and stop announcing it via BGP.'
+            : 'Currently withdrawn. Click to advertise this sub-prefix and begin announcing it via BGP.';
+        var toggleHtml = !bgpActive ? '' :
+          '<span class="validation-hover" onclick="event.stopPropagation()"><button class="toggle-btn' + (bgpAdv ? ' active' : '') + '"' +
+          (bgpLocked ? ' disabled' : ' onclick="event.stopPropagation();confirmToggle(\\'' + keyAttr + '\\',\\'' + bp.id + '\\',' + (bgpAdv ? 'false' : 'true') + ',\\'' + escAttr(bp.cidr) + '\\')"') +
+          '><span class="toggle-knob"></span></button><span class="validation-tip">' + bgpToggleTip + '</span></span>';
+        var bgpDelegateBtn = !bgpLocked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '';
+        var bgpDeleteBtn = !bgpLocked ? '<button onclick="event.stopPropagation();confirmDeleteBgpPrefix(\\'' + keyAttr + '\\',\\'' + escAttr(bp.id) + '\\',\\'' + escAttr(bp.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="' + (bgpIsFullPrefix ? 'Delete BGP Prefix' : 'Delete Child Prefix') + '"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '';
+
+        return '<tr class="child-row border-b border-cf-border">' +
+          '<td class="px-2"></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-2">' + (bgpLocked ? '<span class="info-tip" tabindex="0" style="cursor:help"><svg class="w-3 h-3 text-yellow-500" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M5 9V7a5 5 0 0110 0v2a2 2 0 012 2v5a2 2 0 01-2 2H5a2 2 0 01-2-2v-5a2 2 0 012-2zm8-2v2H7V7a3 3 0 016 0z" clip-rule="evenodd"/></svg><span class="info-bubble" style="width:220px">This prefix is locked. The advertisement state cannot be modified. To unlock, contact your Cloudflare account team.</span></span>' : '') + bgpDelegationIcon + '</td>' +
+          childAccountCell +
+          '<td class="px-3 font-mono" style="color:var(--text-strong);padding-left:' + indentPx(depth) + 'px"><span class="text-cf-orange mr-1">' + connector + '</span> <span class="cidr-hover" onmouseenter="showRdap(\\'' + escAttr(bp.cidr) + '\\',this)">' + escHtml(bp.cidr) + '<span class="rdap-tip"></span></span></td>' +
+          '<td class="px-3 text-cf-gray">' + (bp.asn != null ? bp.asn : '—') + '</td>' +
+          '<td class="px-3">' + bgpStatusBadgeHtml(bp.on_demand ? bp.on_demand.advertised : undefined) + '</td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-3"></td>' +
+          '<td class="px-3 flex gap-1 items-center">' + toggleHtml + '<button onclick="event.stopPropagation();openLgModal(\\'' + escAttr(bp.cidr) + '\\',\\'' + accountArg + '\\')" class="text-cf-gray hover:text-cf-orange" title="Looking Glass"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg></button>' + bgpDelegateBtn + bgpDeleteBtn + '</td>' +
+        '</tr>';
+      }
+
+      function renderNode(node, depth, isLast) {
+        var connector = isLast ? '&#9492;&#9472;' : '&#9500;&#9472;';
+        var out;
+        if (node.kind === 'binding') out = bindingRowHtml(node.data, depth, connector);
+        else if (node.kind === 'delegation') out = delegationRowHtml(node.data, depth, connector);
+        else out = bgpRowHtml(node.data, depth, connector);
+        for (var k = 0; k < node.children.length; k++) {
+          out += renderNode(node.children[k], depth + 1, k === node.children.length - 1);
+        }
+        return out;
+      }
+
+      var roots = buildChildTree(parent, data);
+      if (roots.length === 0) {
+        return '<tr class="child-row border-b border-cf-border"><td colspan="' + (activeAccountId === 'all' ? '11' : '10') + '" class="px-3 pl-8 py-2 text-cf-gray italic">No BGP sub-prefixes, service bindings, or delegations</td></tr>';
+      }
+      var html = '';
+      for (var r = 0; r < roots.length; r++) {
+        html += renderNode(roots[r], 0, r === roots.length - 1);
       }
       return html;
     }
@@ -3762,21 +3853,21 @@ export function renderDashboard(userEmail: string): string {
 
     // ─── Child Prefix Modal ─────────────────────────────────────
 
-    // Auto-fill the child prefix IP field with the next available aligned IP
-    function autoFillChildPrefixIp() {
-      if (!childPrefixModalContext) return;
-      var parsed = parseCIDR(childPrefixModalContext.parentCidr);
-      if (!parsed) return;
+    // Maximum number of child prefixes a single "fill aggregate" action may
+    // create. Guards against runaway counts (e.g. an IPv6 /32 → /48 would be
+    // 65,536 blocks). Tunable.
+    var MAX_BULK_CHILD_CREATE = 256;
 
-      var maskLen = parseInt(document.getElementById('child-prefix-mask').value, 10);
-      if (isNaN(maskLen)) return;
-
+    // Compute every free aligned /maskLen block within the parent aggregate that
+    // does not overlap an existing child BGP prefix. Returns an ascending array
+    // of block network-start BigInts. The parent-level BGP prefix (cidr equal to
+    // the parent) is ignored, matching the single-create behavior.
+    function computeFreeChildBlocks(parsed, maskLen) {
       var totalBits = parsed.v6 ? 128 : 32;
       var blockSize = BigInt(1) << BigInt(totalBits - maskLen);
       var parentSize = BigInt(1) << BigInt(totalBits - parsed.maskLen);
       var parentEnd = parsed.network + parentSize;
 
-      // Collect existing child BGP prefixes (skip the parent-level prefix itself)
       var existingBgp = (childData[childPrefixModalContext.rowKey] && childData[childPrefixModalContext.rowKey].bgp_prefixes) || [];
       var children = [];
       for (var i = 0; i < existingBgp.length; i++) {
@@ -3786,24 +3877,47 @@ export function renderDashboard(userEmail: string): string {
       }
       children.sort(function(a, b) { return a.network < b.network ? -1 : a.network > b.network ? 1 : 0; });
 
+      var blocks = [];
       var candidate = parsed.network;
-      for (var c = 0; c < children.length; c++) {
-        if (candidate + blockSize > parentEnd) break;
-        var cEnd = children[c].network + (BigInt(1) << BigInt(totalBits - children[c].maskLen));
-        if (candidate + blockSize <= children[c].network) break;
-        if (candidate < cEnd) {
-          candidate = cEnd;
-          var remainder = candidate % blockSize;
-          if (remainder !== BigInt(0)) candidate = candidate + (blockSize - remainder);
+      while (candidate + blockSize <= parentEnd) {
+        // Advance the candidate past any existing child that overlaps it.
+        var overlapped = false;
+        for (var c = 0; c < children.length; c++) {
+          var cStart = children[c].network;
+          var cEnd = cStart + (BigInt(1) << BigInt(totalBits - children[c].maskLen));
+          if (candidate < cEnd && candidate + blockSize > cStart) {
+            // Jump to the next block boundary at or after the child's end.
+            candidate = cEnd;
+            var remainder = candidate % blockSize;
+            if (remainder !== BigInt(0)) candidate = candidate + (blockSize - remainder);
+            overlapped = true;
+            break;
+          }
         }
+        if (overlapped) continue;
+        blocks.push(candidate);
+        candidate = candidate + blockSize;
       }
+      return blocks;
+    }
+
+    // Auto-fill the child prefix IP field with the next available aligned IP
+    function autoFillChildPrefixIp() {
+      if (!childPrefixModalContext) return;
+      var parsed = parseCIDR(childPrefixModalContext.parentCidr);
+      if (!parsed) return;
+
+      var maskLen = parseInt(document.getElementById('child-prefix-mask').value, 10);
+      if (isNaN(maskLen)) return;
+
+      var blocks = computeFreeChildBlocks(parsed, maskLen);
 
       var ipInput = document.getElementById('child-prefix-ip');
       var errEl = document.getElementById('child-prefix-error');
       var submitBtn = document.getElementById('child-prefix-submit-btn');
 
-      if (candidate + blockSize <= parentEnd) {
-        ipInput.value = ipToString(candidate, parsed.v6);
+      if (blocks.length > 0) {
+        ipInput.value = ipToString(blocks[0], parsed.v6);
         errEl.classList.add('hidden');
         submitBtn.disabled = false;
       } else {
@@ -3811,6 +3925,64 @@ export function renderDashboard(userEmail: string): string {
         errEl.textContent = 'No space available for a /' + maskLen + ' child prefix';
         errEl.classList.remove('hidden');
         submitBtn.disabled = true;
+      }
+    }
+
+    // Mask dropdown change: refresh the single auto-fill IP and, when in
+    // fill-aggregate mode, the free-block count/button state.
+    function onChildPrefixMaskChange() {
+      if (document.getElementById('child-prefix-fill-max').checked) {
+        updateChildPrefixFillState();
+      } else {
+        autoFillChildPrefixIp();
+      }
+    }
+
+    // Toggle between single-create and fill-aggregate modes.
+    function onChildPrefixFillMaxToggle() {
+      var fillMax = document.getElementById('child-prefix-fill-max').checked;
+      var ipInput = document.getElementById('child-prefix-ip');
+      var countEl = document.getElementById('child-prefix-fill-count');
+      var submitBtn = document.getElementById('child-prefix-submit-btn');
+      if (fillMax) {
+        ipInput.disabled = true;
+        countEl.classList.remove('hidden');
+        updateChildPrefixFillState();
+      } else {
+        ipInput.disabled = false;
+        countEl.classList.add('hidden');
+        submitBtn.textContent = 'Create Child Prefix';
+        autoFillChildPrefixIp();
+      }
+    }
+
+    // Recompute the number of child prefixes that would be created in
+    // fill-aggregate mode and update the count preview + submit button.
+    function updateChildPrefixFillState() {
+      if (!childPrefixModalContext) return;
+      var parsed = parseCIDR(childPrefixModalContext.parentCidr);
+      if (!parsed) return;
+      var maskLen = parseInt(document.getElementById('child-prefix-mask').value, 10);
+      if (isNaN(maskLen)) return;
+
+      var count = computeFreeChildBlocks(parsed, maskLen).length;
+      var countEl = document.getElementById('child-prefix-fill-count');
+      var errEl = document.getElementById('child-prefix-error');
+      var submitBtn = document.getElementById('child-prefix-submit-btn');
+      errEl.classList.add('hidden');
+
+      if (count === 0) {
+        countEl.textContent = 'No free space available for /' + maskLen + ' prefixes';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Create Max';
+      } else if (count > MAX_BULK_CHILD_CREATE) {
+        countEl.textContent = 'Too many (' + count + ') /' + maskLen + ' prefixes — choose a larger mask (limit ' + MAX_BULK_CHILD_CREATE + ')';
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Create Max';
+      } else {
+        countEl.textContent = 'Will create ' + count + ' /' + maskLen + ' prefix' + (count === 1 ? '' : 'es') + ' in free space';
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Create ' + count + ' Prefix' + (count === 1 ? '' : 'es');
       }
     }
 
@@ -3838,6 +4010,11 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('child-prefix-error').classList.add('hidden');
       document.getElementById('child-prefix-submit-btn').disabled = false;
       document.getElementById('child-prefix-submit-btn').textContent = 'Create Child Prefix';
+
+      // Reset fill-aggregate mode to off and re-enable the IP input
+      document.getElementById('child-prefix-fill-max').checked = false;
+      document.getElementById('child-prefix-ip').disabled = false;
+      document.getElementById('child-prefix-fill-count').classList.add('hidden');
 
       // Auto-fill IP with next available address for the selected mask
       autoFillChildPrefixIp();
@@ -3887,6 +4064,10 @@ export function renderDashboard(userEmail: string): string {
     async function submitChildPrefix() {
       if (!childPrefixModalContext) return;
 
+      if (document.getElementById('child-prefix-fill-max').checked) {
+        return submitChildPrefixFillMax();
+      }
+
       var validationError = validateChildPrefix();
       if (validationError) {
         var errEl = document.getElementById('child-prefix-error');
@@ -3933,6 +4114,81 @@ export function renderDashboard(userEmail: string): string {
       } finally {
         btn.disabled = false;
         btn.textContent = 'Create Child Prefix';
+      }
+    }
+
+    // Fill the parent aggregate with the maximum number of /maskLen child
+    // prefixes in free space. The Cloudflare API has no bulk create endpoint,
+    // so each prefix is created sequentially; failures are collected and
+    // reported but do not abort the remaining creates.
+    async function submitChildPrefixFillMax() {
+      var parsed = parseCIDR(childPrefixModalContext.parentCidr);
+      if (!parsed) return;
+      var maskLen = parseInt(document.getElementById('child-prefix-mask').value, 10);
+      if (isNaN(maskLen)) return;
+
+      var errEl = document.getElementById('child-prefix-error');
+      var countEl = document.getElementById('child-prefix-fill-count');
+      var btn = document.getElementById('child-prefix-submit-btn');
+
+      var blocks = computeFreeChildBlocks(parsed, maskLen);
+      if (blocks.length === 0) {
+        errEl.textContent = 'No free space available for /' + maskLen + ' prefixes';
+        errEl.classList.remove('hidden');
+        return;
+      }
+      if (blocks.length > MAX_BULK_CHILD_CREATE) {
+        errEl.textContent = 'Too many (' + blocks.length + ') prefixes — choose a larger mask (limit ' + MAX_BULK_CHILD_CREATE + ')';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var cidrs = blocks.map(function(b) { return ipToString(b, parsed.v6) + '/' + maskLen; });
+      var prefixId = childPrefixModalContext.prefixId;
+      var accountId = childPrefixModalContext.accountId;
+
+      btn.disabled = true;
+      document.getElementById('child-prefix-fill-max').disabled = true;
+      errEl.classList.add('hidden');
+
+      var created = 0;
+      var failures = [];
+      for (var i = 0; i < cidrs.length; i++) {
+        btn.textContent = 'Creating ' + (i + 1) + ' of ' + cidrs.length + '...';
+        try {
+          var resp = await fetch('/api/prefixes/' + prefixId + '/bgp', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ cidr: cidrs[i], account_id: accountId })
+          });
+          var data = await resp.json();
+          if (data.ok) created++;
+          else failures.push({ cidr: cidrs[i], error: data.error || 'Failed' });
+        } catch (e) {
+          failures.push({ cidr: cidrs[i], error: String(e) });
+        }
+      }
+
+      document.getElementById('child-prefix-fill-max').disabled = false;
+      refreshActivityLog();
+
+      if (failures.length === 0) {
+        closeChildPrefixModal();
+        delete childData[childPrefixModalContext.rowKey];
+        var refreshKey = childPrefixModalContext.rowKey;
+        expandedRows[refreshKey] = false;
+        setTimeout(function() { toggleRow(refreshKey); }, 100);
+      } else {
+        // Keep the modal open and report what succeeded vs failed.
+        countEl.classList.add('hidden');
+        errEl.innerHTML = 'Created ' + created + ' of ' + cidrs.length + '. Failed: ' +
+          failures.map(function(f) { return escHtml(f.cidr) + ' (' + escHtml(f.error) + ')'; }).join(', ');
+        errEl.classList.remove('hidden');
+        // Refresh cached child data so a retry reflects the prefixes already made.
+        delete childData[childPrefixModalContext.rowKey];
+        await ensureChildData(childPrefixModalContext.rowKey);
+        btn.disabled = false;
+        updateChildPrefixFillState();
       }
     }
 
@@ -4677,6 +4933,10 @@ export function renderDashboard(userEmail: string): string {
       addPrefixRows = [{ cidr: '', asn: '13335' }];
 
       document.getElementById('add-prefix-description').value = '';
+      addPrefixTags = [];
+      var tagsInput = document.getElementById('add-prefix-tags-input');
+      if (tagsInput) tagsInput.value = '';
+      renderAddPrefixTags();
       var skipRirCb = document.getElementById('add-prefix-skip-rir');
       if (skipRirCb) skipRirCb.checked = false;
       var asnModeRadios = document.querySelectorAll('input[name="add-prefix-asn-mode"]');
@@ -4712,6 +4972,63 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('add-prefix-modal').classList.add('hidden');
       addPrefixLoaDocumentId = null;
       addPrefixValidationResult = null;
+      addPrefixTags = [];
+    }
+
+    // ─── Add Prefix tag chips ────────────────────────────────────
+    var addPrefixTags = [];
+
+    function renderAddPrefixTags() {
+      var container = document.getElementById('add-prefix-tags-chips');
+      if (!container) return;
+      var html = '';
+      for (var i = 0; i < addPrefixTags.length; i++) {
+        html += '<span class="badge-tag inline-flex items-center gap-1">#' + escHtml(addPrefixTags[i]) +
+          '<button type="button" onclick="event.stopPropagation();removeAddPrefixTag(' + i + ')" class="hover:text-red-400" title="Remove tag" aria-label="Remove tag">&times;</button></span>';
+      }
+      container.innerHTML = html;
+    }
+
+    function addAddPrefixTag(raw) {
+      if (!raw) return;
+      // Split on commas/whitespace so pasting multiple tags works; strip a
+      // leading '#' and keep only the chars the tag regex supports.
+      var parts = String(raw).split(/[\\s,]+/);
+      for (var i = 0; i < parts.length; i++) {
+        var tag = parts[i].replace(/^#/, '').replace(/[^a-zA-Z0-9_-]/g, '');
+        if (!tag) continue;
+        var exists = addPrefixTags.some(function(t) { return t.toLowerCase() === tag.toLowerCase(); });
+        if (!exists) addPrefixTags.push(tag);
+      }
+      renderAddPrefixTags();
+    }
+
+    function removeAddPrefixTag(index) {
+      addPrefixTags.splice(index, 1);
+      renderAddPrefixTags();
+    }
+
+    function handleAddPrefixTagKeydown(input, event) {
+      if (event.key === 'Enter' || event.key === ',') {
+        event.preventDefault();
+        addAddPrefixTag(input.value);
+        input.value = '';
+      } else if (event.key === 'Backspace' && input.value === '' && addPrefixTags.length > 0) {
+        removeAddPrefixTag(addPrefixTags.length - 1);
+      }
+    }
+
+    // Merge the tag chips into a description string as #tags, skipping any tag
+    // already present (case-insensitive) in the typed description.
+    function mergeTagsIntoDescription(description) {
+      var existing = extractTags(description);
+      var out = description || '';
+      for (var i = 0; i < addPrefixTags.length; i++) {
+        if (existing.indexOf(addPrefixTags[i].toLowerCase()) === -1) {
+          out = (out ? out + ' ' : '') + '#' + addPrefixTags[i];
+        }
+      }
+      return out.trim();
     }
 
     function renderAddPrefixRows() {
@@ -5502,7 +5819,10 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('add-prefix-error').classList.add('hidden');
       document.getElementById('add-prefix-batch-results').classList.add('hidden');
 
-      var description = document.getElementById('add-prefix-description').value.trim();
+      // Commit any tag still typed in the input, then fold the chips into the description as #tags.
+      var tagsInput = document.getElementById('add-prefix-tags-input');
+      if (tagsInput && tagsInput.value) { addAddPrefixTag(tagsInput.value); tagsInput.value = ''; }
+      var description = mergeTagsIntoDescription(document.getElementById('add-prefix-description').value.trim());
       var loaMode = document.querySelector('input[name="add-prefix-loa-mode"]:checked').value;
       var delegateLoaCreation = loaMode === 'delegate';
 
@@ -7729,14 +8049,14 @@ export function renderDashboard(userEmail: string): string {
 
     function extractTags(desc) {
       if (!desc) return [];
-      var matches = desc.match(/(?:^|\s)#([a-zA-Z0-9_-]+)/g);
+      var matches = desc.match(/(?:^|\\s)#([a-zA-Z0-9_-]+)/g);
       if (!matches) return [];
       return matches.map(function(m) { return m.trim().slice(1).toLowerCase(); });
     }
 
     function renderDescriptionWithTags(desc) {
       if (!desc) return escHtml('—');
-      return escHtml(desc).replace(/(^|\s)#([a-zA-Z0-9_-]+)/g, function(match, space, tag) {
+      return escHtml(desc).replace(/(^|\\s)#([a-zA-Z0-9_-]+)/g, function(match, space, tag) {
         return space + '<span class="badge-tag" onclick="event.stopPropagation();filterByTag(\\'' + escAttr(tag.toLowerCase()) + '\\')">#' + escHtml(tag) + '</span>';
       });
     }
