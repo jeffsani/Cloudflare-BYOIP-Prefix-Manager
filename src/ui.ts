@@ -476,7 +476,7 @@ export function renderDashboard(userEmail: string): string {
     <div id="prefix-msg" class="mb-3 empty:hidden"></div>
 
     <!-- Stats Row -->
-    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-7 gap-3 mb-4">
+    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
       <div class="panel p-3 text-center">
         <div id="stat-total" class="text-xl font-bold" style="color:var(--text-strong)">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Total Prefixes</div>
@@ -486,6 +486,11 @@ export function renderDashboard(userEmail: string): string {
         <div id="stat-advertised" class="text-xl font-bold text-green-400">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Advertised</div>
         <div id="stat-advertised-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
+      </div>
+      <div class="panel p-3 text-center">
+        <div id="stat-cap" class="text-xl font-bold text-green-400">0 / 0</div>
+        <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Advertised Cap</div>
+        <div id="stat-cap-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
       <div class="panel p-3 text-center">
         <div id="stat-withdrawn" class="text-xl font-bold text-red-400">0</div>
@@ -952,6 +957,36 @@ export function renderDashboard(userEmail: string): string {
         <div class="mb-3">
           <label class="block text-xs text-cf-gray mb-1">Description <span class="text-[10px]">(optional)</span></label>
           <input id="add-prefix-description" type="text" placeholder="e.g. Production network #us-east" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+        </div>
+
+        <!-- ASN validation status (BYO-ASN only): which registrar record(s) get the token -->
+        <div class="mb-3">
+          <label class="block text-xs text-cf-gray mb-1">ASN validation ${infoTip('Which registrar record(s) must carry the Cloudflare validation token. Applies to BYO-ASN onboarding only (not AS13335).')}</label>
+          <div class="flex flex-col gap-2">
+            <label class="flex items-start gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-asn-mode" value="validated" onchange="onAsnValidationModeChange()" class="mt-0.5" style="accent-color:#F6821F">
+              <span>
+                <span style="color:var(--text-primary)">This ASN is already validated with Cloudflare</span>
+                <span class="block text-[10px] text-cf-gray mt-0.5">Only the route/route6 object + ROA are required. The aut-num is left untouched. Use this for additional prefixes on an ASN whose aut-num was already validated.</span>
+              </span>
+            </label>
+            <label class="flex items-start gap-2 text-xs cursor-pointer">
+              <input type="radio" name="add-prefix-asn-mode" value="new" checked onchange="onAsnValidationModeChange()" class="mt-0.5" style="accent-color:#F6821F">
+              <span>
+                <span style="color:var(--text-primary)">New ASN — aut-num validation also required</span>
+                <span class="block text-[10px] text-cf-gray mt-0.5">The token is written to both the route/route6 object and the aut-num object. Required the first time a prefix is onboarded for this ASN.</span>
+              </span>
+            </label>
+            <div id="add-prefix-autnum-create-wrap" class="ml-5">
+              <label class="flex items-start gap-2 text-xs cursor-pointer">
+                <input id="add-prefix-autnum-create" type="checkbox" class="mt-0.5" checked style="accent-color:#F6821F">
+                <span>
+                  <span style="color:var(--text-primary)">Create the aut-num object if it doesn't exist</span>
+                  <span class="block text-[10px] text-cf-gray mt-0.5">Checks the registrar for the aut-num first; if it is missing it is created, then the validation token is added. Uncheck to leave a missing aut-num alone.</span>
+                </span>
+              </label>
+            </div>
+          </div>
         </div>
 
         <!-- Dev/test: skip RIR record creation -->
@@ -1473,6 +1508,25 @@ export function renderDashboard(userEmail: string): string {
                 '</div>' +
                 '<div id="acct-retention-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
               '</div>' +
+              // Prefix advertisement cap
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Prefix advertisement limit <span class="font-normal text-cf-gray">(max BGP prefixes advertised at once; default 100)</span>${infoTip('Cloudflare gates the number of prefixes an account may advertise concurrently. Advertisements over this limit will fail. Set this to match the entitlement for this account.')}</label>' +
+                '<div class="flex gap-2">' +
+                  '<input id="acct-caplimit-' + escAttr(aid) + '" type="number" min="1" value="' + (a.prefix_advertise_limit || 100) + '" class="w-40 px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+                  '<button onclick="updateAccountPrefixLimit(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
+                '</div>' +
+                '<div id="acct-caplimit-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
+              '</div>' +
+              // Advertised-cap alert threshold
+              '<div class="border-t border-cf-border pt-3 pb-3">' +
+                '<label class="block text-xs font-semibold mb-1" style="color:var(--text-strong)">Advertised-cap alert threshold <span class="font-normal text-cf-gray">(% of the limit at which an approaching-cap notification fires; default 80)</span></label>' +
+                '<div class="flex gap-2 items-center">' +
+                  '<input id="acct-capthresh-' + escAttr(aid) + '" type="number" min="1" max="100" value="' + (a.prefix_advertise_threshold_pct || 80) + '" class="w-40 px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' +
+                  '<span class="text-xs text-cf-gray">%</span>' +
+                  '<button onclick="updateAccountThreshold(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Save</button>' +
+                '</div>' +
+                '<div id="acct-capthresh-msg-' + escAttr(aid) + '" class="mt-1"></div>' +
+              '</div>' +
               // Notifications
               '<div class="border-t border-cf-border pt-3 pb-3">' +
                 '<label class="block text-xs font-semibold mb-2" style="color:var(--text-strong)">Notifications <span class="font-normal text-cf-gray">(channels &amp; per-event subscriptions for this account)</span></label>' +
@@ -1596,6 +1650,42 @@ export function renderDashboard(userEmail: string): string {
         reexpandAccount(accountId);
         showInlineMsg(msgId, 'Retention updated.', 'success');
       } else { showInlineMsg(msgId, 'Failed to update retention.', 'error'); }
+    }
+
+    async function updateAccountPrefixLimit(accountId) {
+      var msgId = 'acct-caplimit-msg-' + accountId;
+      var input = document.getElementById('acct-caplimit-' + accountId);
+      var val = input ? parseInt(input.value, 10) : 0;
+      if (!val || val < 1) { showInlineMsg(msgId, 'Enter a positive number.', 'error'); return; }
+      var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      var resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', prefix_advertise_limit: val })
+      });
+      if (resp.ok) {
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg(msgId, 'Advertisement limit updated.', 'success');
+      } else { showInlineMsg(msgId, 'Failed to update advertisement limit.', 'error'); }
+    }
+
+    async function updateAccountThreshold(accountId) {
+      var msgId = 'acct-capthresh-msg-' + accountId;
+      var input = document.getElementById('acct-capthresh-' + accountId);
+      var val = input ? parseInt(input.value, 10) : 0;
+      if (!val || val < 1 || val > 100) { showInlineMsg(msgId, 'Enter a percentage between 1 and 100.', 'error'); return; }
+      var acct = savedAccounts.find(function(a) { return a.account_id === accountId; });
+      var resp = await fetch('/api/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, account_label: acct ? acct.account_label : '', prefix_advertise_threshold_pct: val })
+      });
+      if (resp.ok) {
+        await loadAccounts();
+        reexpandAccount(accountId);
+        showInlineMsg(msgId, 'Alert threshold updated.', 'success');
+      } else { showInlineMsg(msgId, 'Failed to update alert threshold.', 'error'); }
     }
 
     function clearAccountLogs(accountId) {
@@ -2139,40 +2229,6 @@ export function renderDashboard(userEmail: string): string {
       if (f) f.classList.add('hidden');
     }
 
-    // Human-readable label for the token-record selection stored per registrar.
-    function rirTokenRecordLabel(v) {
-      if (v === 'route') return 'Route/route6 only';
-      if (v === 'autnum') return 'aut-num only';
-      if (v === 'both') return 'Route + aut-num';
-      return 'Not set';
-    }
-
-    // Resolve which registrar record(s) to use for a given RIR from the saved
-    // validate-new credentials list. Legacy rows with no stored value fall back
-    // to 'both' so onboarding never silently skips a record.
-    function rirRecordSelectionFor(savedValidationResult, rir) {
-      var creds = savedValidationResult && savedValidationResult.rir_credentials ? savedValidationResult.rir_credentials : [];
-      var target = (rir || '').toLowerCase();
-      for (var i = 0; i < creds.length; i++) {
-        if ((creds[i].rir || '').toLowerCase() === target) {
-          return creds[i].token_record || 'both';
-        }
-      }
-      return 'both';
-    }
-
-    // Build the "Validation record" <select>. When includePlaceholder is true a
-    // blank, required-looking option is shown first so the user must choose.
-    function rirRecordSelectHtml(id, selected, includePlaceholder) {
-      var opts = '';
-      if (includePlaceholder) opts += '<option value=""' + (selected ? '' : ' selected') + '>Select record…</option>';
-      var choices = [['route', 'Route/route6 only'], ['autnum', 'aut-num only'], ['both', 'Route + aut-num']];
-      choices.forEach(function(ch) {
-        opts += '<option value="' + ch[0] + '"' + (selected === ch[0] ? ' selected' : '') + '>' + ch[1] + '</option>';
-      });
-      return '<select id="' + id + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white">' + opts + '</select>';
-    }
-
     async function loadAccountRirCredentials(accountId) {
       var el = document.getElementById('acct-rir-' + accountId);
       if (!el) return;
@@ -2200,11 +2256,6 @@ export function renderDashboard(userEmail: string): string {
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
             html += '<span class="font-mono text-cf-gray">' + escHtml(c.api_key) + '</span>';
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
-            if (c.token_record) {
-              html += '<span class="badge-unknown" title="Registrar record(s) that receive the validation token">' + escHtml(rirTokenRecordLabel(c.token_record)) + '</span>';
-            } else {
-              html += '<span class="badge-invalid" title="Choose which registrar record(s) receive the validation token">Record not set</span>';
-            }
             html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>';
             html += '<button onclick="editRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>';
             html += '<button onclick="deleteRirCredential(' + c.id + ',\\'' + aid + '\\')" class="text-red-400 hover:text-red-300 text-xs ml-1">Delete</button>';
@@ -2216,7 +2267,6 @@ export function renderDashboard(userEmail: string): string {
             html += '<div><label class="block text-xs text-cf-gray mb-1">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
             html += '<div><label class="block text-xs text-cf-gray mb-1">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
             html += '<div><label class="block text-xs text-cf-gray mb-1">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-32" placeholder="e.g. DC-403"></div>';
-            html += '<div><label class="block text-xs text-cf-gray mb-1">Validation record</label>' + rirRecordSelectHtml('rir-edit-record-' + c.id, c.token_record || '', true) + '</div>';
             html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
             html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>';
             html += '<button onclick="cancelEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange">Cancel</button>';
@@ -2236,9 +2286,8 @@ export function renderDashboard(userEmail: string): string {
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">RIR</label><select id="acct-rir-sel-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">API Key</label><input id="acct-rir-key-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="API key"></div>';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Org ID</label><input id="acct-rir-mnt-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="e.g. DC-403"></div>';
-        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Validation record</label>' + rirRecordSelectHtml('acct-rir-record-' + aid, '', true) + '</div>';
         html += '</div>';
-        html += '<div class="text-[10px] text-cf-gray">Which registrar record(s) the Cloudflare validation token is written to and checked in during onboarding.</div>';
+        html += '<div class="text-[10px] text-cf-gray">Which registrar record(s) receive the Cloudflare validation token is chosen per prefix in the Add Prefix dialog during onboarding.</div>';
         html += '<div class="flex gap-2 items-center">';
         html += '<button onclick="validateRirCredentialInput(\\'' + aid + '\\')" class="px-3 py-1 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
         html += '<button onclick="saveAccountRirCredential(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save</button>';
@@ -2257,13 +2306,11 @@ export function renderDashboard(userEmail: string): string {
       var rir = document.getElementById('acct-rir-sel-' + accountId).value;
       var apiKey = document.getElementById('acct-rir-key-' + accountId).value.trim();
       var maintainer = document.getElementById('acct-rir-mnt-' + accountId).value.trim();
-      var tokenRecord = document.getElementById('acct-rir-record-' + accountId).value;
       if (!apiKey) { showInlineMsg('acct-rir-validate-result-' + accountId, 'API key is required.', 'error'); return; }
-      if (!tokenRecord) { showInlineMsg('acct-rir-validate-result-' + accountId, 'Choose which registrar record(s) receive the validation token.', 'error'); return; }
       var r = await fetch('/api/rir/credentials', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ account_id: accountId, rir: rir, api_key: apiKey, maintainer: maintainer, token_record: tokenRecord })
+        body: JSON.stringify({ account_id: accountId, rir: rir, api_key: apiKey, maintainer: maintainer })
       });
       var data = await r.json();
       if (data.ok) {
@@ -2299,9 +2346,7 @@ export function renderDashboard(userEmail: string): string {
     async function saveEditRirCredential(id, accountId, rir) {
       var apiKey = document.getElementById('rir-edit-key-' + id).value.trim();
       var maintainer = document.getElementById('rir-edit-mnt-' + id).value.trim();
-      var tokenRecord = document.getElementById('rir-edit-record-' + id).value;
-      if (!tokenRecord) { showInlineMsg('rir-edit-validate-result-' + id, 'Choose which registrar record(s) receive the validation token.', 'error'); return; }
-      var body = { maintainer: maintainer, token_record: tokenRecord };
+      var body = { maintainer: maintainer };
       if (apiKey) body.api_key = apiKey;
       var r = await fetch('/api/rir/credentials/' + id, {
         method: 'PATCH',
@@ -2604,8 +2649,10 @@ export function renderDashboard(userEmail: string): string {
       }
       var famSub = document.getElementById('stat-family-sub');
       if (famSub) famSub.textContent = 'IPv4 / IPv6';
+      var advertisedForCap = 0;
       if (prefixStats) {
         var s = prefixStats;
+        advertisedForCap = s.bgp.advertised;
         document.getElementById('stat-total').textContent = s.parent.total + s.bgp.total;
         var totalSub = s.parent.total + ' Parent / ' + s.bgp.total + ' Child';
         if (s.parent.pending > 0) totalSub += ' / ' + s.parent.pending + ' Pending';
@@ -2626,6 +2673,7 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (s.rpki.invalid > 0 ? 'text-yellow-400' : 'text-green-400');
       } else {
         var advertised = allPrefixes.filter(function(p) { return p._has_advertised_child === true; }).length;
+        advertisedForCap = advertised;
         var withdrawn = allPrefixes.filter(function(p) { return p._has_withdrawn_child === true && p._has_advertised_child !== true; }).length;
         var locked = allPrefixes.filter(function(p) { return p.on_demand_locked === true; }).length;
         var pendingCount = allPrefixes.filter(function(p) { return p.approved === 'P'; }).length;
@@ -2648,7 +2696,38 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-rpki-sub').textContent = rpkiValid + ' Valid / ' + rpkiInvalid + ' Issues';
         document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (rpkiInvalid > 0 ? 'text-yellow-400' : 'text-green-400');
       }
+      updateCapCard(advertisedForCap);
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
+    }
+
+    // Advertised-prefix cap card. The cap is per-account; in the aggregate view
+    // we sum the per-account limits (and their threshold counts) for the accounts
+    // currently in scope. Color: green (< threshold), yellow (>= threshold), red
+    // (>= cap). Advertisements over the cap fail at Cloudflare.
+    function updateCapCard(advertisedCount) {
+      var el = document.getElementById('stat-cap');
+      var sub = document.getElementById('stat-cap-sub');
+      if (!el) return;
+      var accountsInView = activeAccountId === 'all'
+        ? savedAccounts
+        : savedAccounts.filter(function(a) { return a.account_id === activeAccountId; });
+      var capTotal = 0;
+      var thresholdCount = 0;
+      accountsInView.forEach(function(a) {
+        var limit = (a.prefix_advertise_limit && a.prefix_advertise_limit > 0) ? a.prefix_advertise_limit : 100;
+        var pct = (a.prefix_advertise_threshold_pct && a.prefix_advertise_threshold_pct > 0) ? a.prefix_advertise_threshold_pct : 80;
+        capTotal += limit;
+        thresholdCount += Math.ceil((limit * pct) / 100);
+      });
+      el.textContent = advertisedCount + ' / ' + capTotal;
+      var color = 'text-green-400';
+      if (capTotal > 0 && advertisedCount >= capTotal) color = 'text-red-400';
+      else if (advertisedCount >= thresholdCount) color = 'text-yellow-400';
+      el.className = 'text-xl font-bold ' + color;
+      if (sub) {
+        var pctUsed = capTotal > 0 ? Math.round((advertisedCount / capTotal) * 100) : 0;
+        sub.textContent = pctUsed + '% of cap';
+      }
     }
 
     function extractTagsRaw(desc) {
@@ -2915,7 +2994,7 @@ export function renderDashboard(userEmail: string): string {
           '<button onclick="event.stopPropagation();openBindingModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Service Binding"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"/></svg></button>' +
           (!isChildPrefixSpaceFull(rowKey, p.cidr) && !p.on_demand_locked ? '<button onclick="event.stopPropagation();openChildPrefixModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Add Child Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h8m-8 6h16M14 12h2m2 0h2m-2-2v4"/></svg></button>' : '') +
           (!p.on_demand_locked ? '<button onclick="event.stopPropagation();openDelegationModal(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-cf-orange" title="Delegate Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg></button>' : '') +
-          '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix (unapproved prefixes only)"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' +
+          (p.approved !== 'V' ? '<button onclick="event.stopPropagation();confirmDeletePrefix(\\'' + keyAttr + '\\',\\'' + escAttr(p.cidr) + '\\')" class="text-cf-gray hover:text-red-400" title="Delete Prefix"><svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg></button>' : '') +
         '</td>' +
       '</tr>';
     }
@@ -4593,6 +4672,11 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('add-prefix-description').value = '';
       var skipRirCb = document.getElementById('add-prefix-skip-rir');
       if (skipRirCb) skipRirCb.checked = false;
+      var asnModeRadios = document.querySelectorAll('input[name="add-prefix-asn-mode"]');
+      asnModeRadios.forEach(function(r) { r.checked = r.value === 'new'; });
+      var autnumCreateCb = document.getElementById('add-prefix-autnum-create');
+      if (autnumCreateCb) autnumCreateCb.checked = true;
+      onAsnValidationModeChange();
       document.getElementById('add-prefix-error').classList.add('hidden');
       document.getElementById('add-prefix-validation-results').classList.add('hidden');
       document.getElementById('add-prefix-batch-results').classList.add('hidden');
@@ -4688,6 +4772,15 @@ export function renderDashboard(userEmail: string): string {
         addPrefixLoaDocumentId = null;
         document.getElementById('add-prefix-loa-status').innerHTML = '';
       }
+    }
+
+    // Show the "create aut-num if missing" sub-option only for the net-new ASN
+    // mode; an already-validated ASN never touches the aut-num.
+    function onAsnValidationModeChange() {
+      var modeEl = document.querySelector('input[name="add-prefix-asn-mode"]:checked');
+      var mode = modeEl ? modeEl.value : 'new';
+      var wrap = document.getElementById('add-prefix-autnum-create-wrap');
+      if (wrap) wrap.style.display = mode === 'new' ? '' : 'none';
     }
 
     async function onLoaFileSelected() {
@@ -5224,7 +5317,7 @@ export function renderDashboard(userEmail: string): string {
       if (isCustomAsn && summary.ready) {
         html += '<div style="padding:6px 0">';
         if (hasRirCreds) {
-          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR records will be auto-created at ' + result.rir_credentials.map(function(r) { return r.rir.toUpperCase() + (r.token_record ? ' (' + rirTokenRecordLabel(r.token_record) + ')' : ''); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
+          html += '<div style="color:#22c55e;margin-bottom:4px">&#10003; IRR records will be auto-created at ' + result.rir_credentials.map(function(r) { return r.rir.toUpperCase(); }).join(' / ') + ' after prefix creation using your saved API keys.</div>';
         } else {
           html += '<div style="color:var(--muted);margin-bottom:4px">Add RIR API keys in Account Settings to enable automatic IRR route and aut-num creation after prefix onboarding.</div>';
         }
@@ -5475,6 +5568,13 @@ export function renderDashboard(userEmail: string): string {
       btn.disabled = true;
       var skipRirCb = document.getElementById('add-prefix-skip-rir');
       var skipRir = !!(skipRirCb && skipRirCb.checked);
+      // Read the BYO-ASN validation choice before the modal is reset/closed.
+      var asnModeEl = document.querySelector('input[name="add-prefix-asn-mode"]:checked');
+      var asnMode = asnModeEl ? asnModeEl.value : 'new';
+      // 'validated' ASN → only the route/route6 object; 'new' ASN → route + aut-num.
+      var recordSelection = asnMode === 'validated' ? 'route' : 'both';
+      var autnumCreateCb = document.getElementById('add-prefix-autnum-create');
+      var createAutnumIfMissing = !autnumCreateCb || autnumCreateCb.checked;
 
       if (prefixes.length === 1) {
         // Single prefix: use existing endpoint for backward compatibility
@@ -5515,10 +5615,10 @@ export function renderDashboard(userEmail: string): string {
             } else if (isByoAsn && hasRirCreds) {
               // Auto-create flow: detect RIR, ensure route + aut-num, trigger validation
               var irrAlreadyExists = savedValidationResult && savedValidationResult.irr && savedValidationResult.irr.exact_match;
-              showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId);
+              showPostCreationGuideAutoCreate(prefixes[0].cidr, prefixes[0].asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId, recordSelection, createAutnumIfMissing);
             } else if (isByoAsn && token) {
               // Manual flow: show token and instructions
-              showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token, accountId);
+              showPostCreationGuide(prefixes[0].cidr, prefixes[0].asn, token, accountId, recordSelection);
             }
           } else {
             var errEl = document.getElementById('add-prefix-error');
@@ -5633,8 +5733,10 @@ export function renderDashboard(userEmail: string): string {
       loadPrefixes();
     }
 
-    // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation
-    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId) {
+    // Automated BYO-ASN flow: auto-create route, aut-num, then trigger validation.
+    // recordSelection ('route' | 'both') and createAutnumIfMissing come from the
+    // ASN-validation choice in the Add Prefix modal.
+    async function showPostCreationGuideAutoCreate(cidr, asn, token, prefixId, irrAlreadyExists, savedValidationResult, accountId, recordSelection, createAutnumIfMissing) {
       // If token is missing, try to fetch it from the prefix details
       if (!token && prefixId) {
         try {
@@ -5652,9 +5754,13 @@ export function renderDashboard(userEmail: string): string {
       if (!token) {
         // Cannot proceed without a token - fall back to manual guide
         console.warn('[auto-create] No validation token available, falling back to manual guide');
-        showPostCreationGuide(cidr, asn, '(token unavailable - check prefix details)', accountId);
+        showPostCreationGuide(cidr, asn, '(token unavailable - check prefix details)', accountId, recordSelection);
         return;
       }
+
+      // Normalize the per-onboarding selection (default to 'both' for safety).
+      recordSelection = recordSelection === 'route' ? 'route' : 'both';
+      createAutnumIfMissing = createAutnumIfMissing !== false;
 
       postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false, accountId: accountId };
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
@@ -5725,10 +5831,9 @@ export function renderDashboard(userEmail: string): string {
         }
       }
 
-      // Determine which registrar record(s) to update for the detected RIR.
-      var tokenRecord = rirRecordSelectionFor(savedValidationResult, detectedRir);
-      var doRoute = tokenRecord !== 'autnum';
-      var doAutnum = tokenRecord !== 'route';
+      // Which registrar record(s) to update, per the onboarding ASN-validation choice.
+      var doRoute = recordSelection !== 'autnum';
+      var doAutnum = recordSelection !== 'route';
       // Hide the steps that this registrar's selection skips.
       if (!doRoute) {
         var skipRouteEl = document.getElementById('auto-step-route');
@@ -5782,13 +5887,17 @@ export function renderDashboard(userEmail: string): string {
               asn: asn,
               validation_token: token,
               rir: detectedRir,
-              prefix: cidr
+              prefix: cidr,
+              create_autnum_if_missing: createAutnumIfMissing
             })
           });
           var d = await r.json();
           if (d.ok) {
             var autnumVerb = d.action === 'created' ? 'Created' : d.action === 'already_present' ? 'Token already in' : 'Updated';
             document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-valid" style="min-width:14px;text-align:center">&#10003;</span> <span class="text-xs">' + autnumVerb + ' aut-num (AS' + asn + ') at ' + detectedRir.toUpperCase() + '</span>';
+          } else if (d.action === 'skipped') {
+            // aut-num missing and not created (or unreadable) — not a hard failure.
+            document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-unknown" style="min-width:14px;text-align:center">&#8213;</span> <span class="text-xs">aut-num skipped: ' + escHtml(d.error || 'not created') + '</span>';
           } else {
             document.getElementById('auto-step-autnum').innerHTML = '<span class="badge-invalid" style="min-width:14px;text-align:center">&#10007;</span> <span class="text-xs">aut-num failed: ' + escHtml(d.error || 'Unknown error') + '</span>';
             anyFailed = true;
@@ -5839,8 +5948,8 @@ export function renderDashboard(userEmail: string): string {
       loadPrefixes();
     }
 
-    function showPostCreationGuide(cidr, asn, token, accountId) {
-      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false, accountId: accountId };
+    function showPostCreationGuide(cidr, asn, token, accountId, recordSelection) {
+      postCreationState = { cidr: cidr, asn: asn, token: token, rir: '', rirSupported: false, accountId: accountId, recordSelection: recordSelection === 'route' ? 'route' : 'both' };
       var isCustomAsn = asn !== 13335;
       var routeType = cidr.indexOf(':') !== -1 ? 'route6' : 'route';
 
@@ -5945,30 +6054,12 @@ export function renderDashboard(userEmail: string): string {
         detectEl.innerHTML = '<span class="text-cf-gray">RIR detection failed</span>';
       }
 
-      // Honor the per-registrar validation-record selection: hide the step for a
-      // record this registrar isn't configured to use. Falls back to showing both
-      // when no matching saved credential/selection exists.
-      try {
-        var tokenRecord = '';
-        if (postCreationState.rir && postCreationState.accountId) {
-          var cr = await fetch('/api/rir/credentials?account_id=' + encodeURIComponent(postCreationState.accountId));
-          var cd = await cr.json();
-          var creds = cd.credentials || [];
-          for (var i = 0; i < creds.length; i++) {
-            if ((creds[i].rir || '').toLowerCase() === postCreationState.rir.toLowerCase()) {
-              tokenRecord = creds[i].token_record || '';
-              break;
-            }
-          }
-        }
-        if (tokenRecord === 'route') {
-          var hideAutnum = document.getElementById('pcg-step-autnum');
-          if (hideAutnum) hideAutnum.style.display = 'none';
-        } else if (tokenRecord === 'autnum') {
-          var hideRoute = document.getElementById('pcg-step-route');
-          if (hideRoute) hideRoute.style.display = 'none';
-        }
-      } catch (e) { /* default to showing both records */ }
+      // Honor the per-onboarding validation-record selection: an already-validated
+      // ASN ('route') only needs the route/route6 object, so hide the aut-num step.
+      if (postCreationState.recordSelection === 'route') {
+        var hideAutnum = document.getElementById('pcg-step-autnum');
+        if (hideAutnum) hideAutnum.style.display = 'none';
+      }
 
       renderRirActionButtons(cidr, asn, token);
     }

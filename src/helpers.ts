@@ -13,6 +13,37 @@ export async function getToken(db: D1Database, email: string, accountId: string)
   return row.api_token;
 }
 
+// Self-heal for databases whose `activity_log` predates the account-scoped
+// migration (migrate-account-aggregation.sql). Without the `account_id` column
+// every logActivity INSERT throws "no such column: account_id" and is dropped,
+// so local activity goes unrecorded. The ALTER is idempotent (duplicate column
+// is swallowed) and guarded so it runs at most once per isolate.
+let activityLogSchemaEnsured: Promise<void> | null = null;
+
+function ensureActivityLogSchema(db: D1Database): Promise<void> {
+  if (!activityLogSchemaEnsured) {
+    activityLogSchemaEnsured = (async () => {
+      try {
+        await db.prepare('ALTER TABLE activity_log ADD COLUMN account_id TEXT').run();
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        // Column already present on an up-to-date DB — nothing to do.
+        if (!/duplicate column name/i.test(message)) throw e;
+      }
+      await db
+        .prepare(
+          'CREATE INDEX IF NOT EXISTS idx_activity_log_user_account_created ON activity_log(user_email, account_id, created_at)',
+        )
+        .run();
+    })().catch((e) => {
+      // Reset so a later call can retry if this attempt failed for a transient reason.
+      activityLogSchemaEnsured = null;
+      throw e;
+    });
+  }
+  return activityLogSchemaEnsured;
+}
+
 // Helper: log activity
 export async function logActivity(
   db: D1Database,
@@ -21,15 +52,31 @@ export async function logActivity(
   action: string,
   details: string,
 ) {
-  try {
-    await db
+  const insert = () =>
+    db
       .prepare('INSERT INTO activity_log (user_email, account_id, action, details) VALUES (?, ?, ?, ?)')
       .bind(email, accountId, action, details)
       .run();
+
+  try {
+    await insert();
     // Retention is enforced by the scheduled purge (see purgeExpiredLogs), which
     // honors each account's configurable activity_retention_days.
   } catch (e) {
-    console.error('Failed to log activity:', e);
+    const message = e instanceof Error ? e.message : String(e);
+    // A DB that never got the account-aggregation migration is missing the
+    // account_id column; add it on the fly and retry once so the entry isn't lost.
+    if (/no such column: account_id/i.test(message)) {
+      try {
+        await ensureActivityLogSchema(db);
+        await insert();
+        return;
+      } catch (retryErr) {
+        console.error(`Activity entry dropped (${action}) after schema self-heal failed:`, retryErr);
+        return;
+      }
+    }
+    console.error(`Activity entry dropped (${action}):`, e);
   }
 }
 

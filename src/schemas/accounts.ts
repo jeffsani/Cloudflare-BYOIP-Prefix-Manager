@@ -8,6 +8,8 @@ export const AccountSchema = z.object({
   is_default: z.number(),
   api_rate_limit_5min: z.number().int().positive().describe('Editable Cloudflare API budget (requests / 5 min)'),
   activity_retention_days: z.number().int().min(1).describe('Days of local log history to retain before auto-purge'),
+  prefix_advertise_limit: z.number().int().positive().describe('Max BGP sub-prefixes that may be advertised at once (concurrent advertisement cap)'),
+  prefix_advertise_threshold_pct: z.number().int().min(1).max(100).describe('Percentage of the cap at which an approaching-cap alert fires'),
   updated_at: z.string(),
 });
 
@@ -28,6 +30,8 @@ export const CreateAccountRequestSchema = z.object({
   // updates (e.g. editing only the token) don't reset the stored value.
   api_rate_limit_5min: z.number().int().positive().optional(),
   activity_retention_days: z.number().int().min(1).optional(),
+  prefix_advertise_limit: z.number().int().positive().optional(),
+  prefix_advertise_threshold_pct: z.number().int().min(1).max(100).optional(),
 });
 
 export const TokenTestRequestSchema = z.object({

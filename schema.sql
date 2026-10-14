@@ -14,6 +14,14 @@ CREATE TABLE IF NOT EXISTS user_accounts (
   -- audit_log_events, notification_log, webhook_events) are auto-purged past this
   -- window by the scheduled cron. Defaults to 180 days.
   activity_retention_days INTEGER NOT NULL DEFAULT 180,
+  -- Concurrent prefix advertisement gating. `prefix_advertise_limit` caps the
+  -- number of BGP sub-prefixes that may be advertised at once (advertisements
+  -- over the limit fail at Cloudflare). `prefix_advertise_threshold_pct` is the
+  -- percentage of the limit at which an "approaching cap" alert fires.
+  -- `cap_alert_level` is the edge-trigger de-dup state (none|threshold|limit).
+  prefix_advertise_limit         INTEGER NOT NULL DEFAULT 100,
+  prefix_advertise_threshold_pct INTEGER NOT NULL DEFAULT 80,
+  cap_alert_level                TEXT NOT NULL DEFAULT 'none',
   updated_at          TEXT NOT NULL DEFAULT (datetime('now')),
   UNIQUE(user_email, account_id)
 );
@@ -21,6 +29,9 @@ CREATE TABLE IF NOT EXISTS user_accounts (
 -- Migration for existing databases (safe to run repeatedly; ignore "duplicate column" error):
 -- ALTER TABLE user_accounts ADD COLUMN api_rate_limit_5min INTEGER NOT NULL DEFAULT 1200;
 -- ALTER TABLE user_accounts ADD COLUMN activity_retention_days INTEGER NOT NULL DEFAULT 180;
+-- ALTER TABLE user_accounts ADD COLUMN prefix_advertise_limit INTEGER NOT NULL DEFAULT 100;
+-- ALTER TABLE user_accounts ADD COLUMN prefix_advertise_threshold_pct INTEGER NOT NULL DEFAULT 80;
+-- ALTER TABLE user_accounts ADD COLUMN cap_alert_level TEXT NOT NULL DEFAULT 'none';
 
 -- Per-user display preferences
 CREATE TABLE IF NOT EXISTS user_preferences (

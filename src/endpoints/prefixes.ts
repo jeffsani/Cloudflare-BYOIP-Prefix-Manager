@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
 import { enqueueNotification } from '../queue';
+import { checkAdvertisementCap } from '../cap';
 import {
   listPrefixes,
   listBgpPrefixes,
@@ -772,6 +773,14 @@ export class BulkToggle extends OpenAPIRoute {
         user_email: email, account_id: acct.account_id, event_type: action,
         title: `${totalToggled} prefix(es)`, details: bulkDetails,
       });
+
+      // After a bulk advertise, re-evaluate the advertised-prefix cap and fire
+      // threshold/limit alerts. Run off the response path to avoid latency.
+      if (body.advertised && totalToggled > 0) {
+        const capCheck = checkAdvertisementCap(c.env, email, acct, token);
+        if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(capCheck);
+        else void capCheck;
+      }
 
       return c.json({ ok: true, results });
     } catch (e) {

@@ -1499,16 +1499,29 @@ export async function ensureArinRouteObject(
   }
 }
 
+/** Detect an ARIN "object already exists / duplicate" signal in a response body. */
+function arinBodyIndicatesExists(body: string): boolean {
+  return /already\s+exists|duplicate|is\s+already\s+registered/i.test(body);
+}
+
 /**
  * Ensure an aut-num object exists at ARIN IRR with the validation token.
- * 1. GET the object — if it exists, add/update the cf-validation descr line via PUT.
- * 2. If it does not exist (404), create it via POST with all required ARIN fields.
+ *
+ * Existence handling is deliberately conservative so an aut-num that already
+ * exists is never mistaken for a missing one (which previously caused a confusing
+ * "create" that ARIN rejected with a 400):
+ *   - 200          → add/update the cf-validation descr line via PUT.
+ *   - 404          → definitively missing; create only when createIfMissing.
+ *   - 400/406/etc. → inconclusive; never blind-create. If createIfMissing we may
+ *                    attempt a create, but an "already exists" response is reported
+ *                    as "exists, verify manually" rather than a raw error.
  */
 export async function ensureArinAutnum(
   asn: number,
   validationToken: string,
   apiKey: string,
   orgId: string,
+  createIfMissing: boolean = true,
 ): Promise<RirApiResult> {
   try {
     const url = `${ARIN_IRR_API}/aut-num/AS${asn}`;
@@ -1529,11 +1542,29 @@ export async function ensureArinAutnum(
       return { ok: false, error: `ARIN PUT aut-num returned ${putResp.status}`, details: await putResp.text() };
     }
 
-    // 400/404/406 = object not found → fall through to create.
-    // (ARIN returns 404/406 for missing objects; some deployments behind
-    // Cloudflare surface a 400 for the same "does not exist" condition.)
-    if (getResp.status !== 400 && getResp.status !== 404 && getResp.status !== 406) {
-      return { ok: false, error: `ARIN GET aut-num returned ${getResp.status}`, details: await getResp.text() };
+    const getStatus = getResp.status;
+    const definitelyMissing = getStatus === 404;
+    // 400/406 (after the RPSL→XML fallback in arinGet) are inconclusive: the
+    // object may well exist but be unreadable behind Cloudflare. Anything other
+    // than 404/400/406 is a genuine error.
+    const inconclusive = getStatus === 400 || getStatus === 406;
+    if (!definitelyMissing && !inconclusive) {
+      return { ok: false, error: `ARIN GET aut-num returned ${getStatus}`, details: await getResp.text() };
+    }
+
+    if (!createIfMissing) {
+      if (definitelyMissing) {
+        return {
+          ok: false,
+          action: 'skipped',
+          error: `aut-num AS${asn} not found at ARIN. Enable "Create aut-num if missing" during onboarding or create it manually, then re-validate.`,
+        };
+      }
+      return {
+        ok: false,
+        action: 'skipped',
+        error: `Could not read the aut-num AS${asn} object from ARIN (HTTP ${getStatus}). It may already exist — verify in ARIN and re-validate, or enable "Create aut-num if missing".`,
+      };
     }
 
     // Step 2: Create via POST WITH a payload.
@@ -1569,6 +1600,17 @@ export async function ensureArinAutnum(
     const postResp = await arinWriteBody(url, 'POST', apiKey, rpslBody, xmlBody, format);
     if (postResp.ok) return { ok: true, action: 'created', details: 'Created new aut-num object with validation token.' };
     const postBody = await postResp.text();
+    // The GET was inconclusive and the create was rejected because the object
+    // already exists — report that clearly instead of the raw 400 that made the
+    // original failure so confusing.
+    if (arinBodyIndicatesExists(postBody)) {
+      return {
+        ok: false,
+        action: 'skipped',
+        error: `aut-num AS${asn} already exists at ARIN but the validation token could not be added automatically. Add "${tokenText}" to its description manually and re-validate.`,
+        details: postBody,
+      };
+    }
     return { ok: false, error: `ARIN POST aut-num returned ${postResp.status}`, details: postBody };
   } catch (e: unknown) {
     return { ok: false, error: `ARIN aut-num operation failed: ${(e as Error).message}` };

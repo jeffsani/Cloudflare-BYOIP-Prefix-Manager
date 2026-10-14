@@ -257,7 +257,11 @@ For specific migrations, apply the dedicated migration files required by the rel
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-query-api.sql
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-account-aggregation.sql
 npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-radar-debounce.sql
+npx wrangler d1 execute prefix-mgr-db --remote --file=migrate-prefix-advertise-cap.sql
 ```
+
+The prefix-advertise-cap migration adds the per-account concurrent-advertisement limit, alert
+threshold percentage, and edge-trigger state used for the Advertised Cap card and cap notifications.
 
 The account-aggregation migration adds the per-user dashboard preference and structured account ownership for new activity-log entries. Historical activity remains available in the all-accounts view but cannot be reliably assigned to an individual account.
 
@@ -317,7 +321,11 @@ The route/route6 object proves control of the prefix. The aut-num object proves 
 
 > **In the dashboard:** If RIR API keys are saved (ARIN or RIPE), the tool creates/updates these objects automatically via the RIR Reg-RWS / DB APIs. Otherwise it shows a manual copy-paste guide.
 >
-> Each saved registrar (RIR credential) has a **Validation record** setting that controls which record(s) receive the validation token during onboarding: **Route/route6 only**, **aut-num only**, or **Both**. The automated flow and the manual guide only act on the selected record(s). A record must be chosen when saving a registrar in **Account Settings**.
+> When adding a prefix you choose the ASN's validation status, which controls the record(s) the token is written to:
+> - **This ASN is already validated with Cloudflare** — only the route/route6 object + ROA are required; the aut-num is left untouched. Use this for additional prefixes on an ASN whose aut-num was already validated.
+> - **New ASN — aut-num validation also required** — the token is written to both the route/route6 object and the aut-num object. This is required the first time a prefix is onboarded for the ASN. A **Create the aut-num object if it doesn't exist** option (enabled by default) checks the registrar for the aut-num first and creates it only if it is missing, then adds the token.
+>
+> aut-num ownership normally only needs to be proven once per account and ASN, so later prefixes can use the already-validated option and skip touching the aut-num.
 
 ### Step 3: Request validation
 
@@ -418,8 +426,9 @@ Webhook and PagerDuty channels need no server-side secrets.
 
 In **Settings → (expand an account)** you can:
 - Set the **API rate limit (req / 5 min)** — used to pace the Radar poller within your account's limit.
+- Set the **Prefix advertisement limit** (default 100) — the concurrent-advertisement cap for the account, and the **alert threshold %** (default 80) at which an approaching-cap notification fires. See [Advertised-prefix cap tracking](#advertised-prefix-cap-tracking).
 - Add **notification channels** (email / webhook / PagerDuty) and test them.
-- Choose, per event, which channels fire (**event subscriptions**).
+- Choose, per event, which channels fire (**event subscriptions**) — including the `prefix_cap_threshold` and `prefix_cap_reached` events.
 
 ### How external detection works
 
@@ -432,6 +441,22 @@ refreshed roughly every 15 minutes to conserve API budget.
 > **Rate limits:** all Cloudflare Client API calls (including Radar) share a **global 1,200 req / 5 min
 > per-user limit**. The per-account rate-limit field lets the poller size its work to stay within your
 > (possibly raised) limit while leaving headroom for interactive use.
+
+## Advertised-prefix cap tracking
+
+Cloudflare's concurrent prefix advertisement gating entitlement limits how many prefixes an account
+may advertise at once; **advertisements over the limit fail**. Prefix Manager tracks this per account:
+
+- **Configurable limit & threshold** — each account has a **Prefix advertisement limit** (default 100)
+  and an **alert threshold %** (default 80), both set in **Settings → (expand an account)**.
+- **Dashboard card** — the stats row includes an **Advertised Cap** card showing the count of BGP
+  sub-prefixes in an advertised state against the limit, colored green / yellow (≥ threshold) /
+  red (≥ limit). In the aggregate ("All accounts") view the per-account limits are summed.
+- **Notifications** — two subscribable events fire through your configured channels:
+  `prefix_cap_threshold` (approaching the cap) and `prefix_cap_reached` (at the hard limit). Alerts are
+  **edge-triggered** — they fire once when the advertised count crosses up into a new severity and reset
+  when it drops back down, so you aren't spammed while hovering at the cap. The count is re-evaluated
+  after advertise/bulk-advertise actions and by the Radar poller when an external advertise is detected.
 
 ## Prefix State Query API (for external tooling)
 

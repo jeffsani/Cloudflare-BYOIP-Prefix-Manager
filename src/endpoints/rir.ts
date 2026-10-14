@@ -136,8 +136,11 @@ export class SaveRirCredentials extends OpenAPIRoute {
       return c.json({ error: 'rir must be "arin" or "ripe"' }, 400);
     }
 
-    const tokenRecord = body.token_record;
-    if (!TOKEN_RECORD_VALUES.includes(tokenRecord)) {
+    // token_record is legacy/optional — the record selection is now made
+    // per-onboarding in the Add Prefix modal. Accept it if present, otherwise
+    // store an empty string.
+    const tokenRecord = body.token_record ?? '';
+    if (tokenRecord && !(TOKEN_RECORD_VALUES as readonly string[]).includes(tokenRecord)) {
       return c.json({ error: 'token_record must be one of "route", "autnum", or "both"' }, 400);
     }
 
@@ -400,12 +403,16 @@ export class EnsureAutnum extends OpenAPIRoute {
       return c.json({ error: `No ${rir.toUpperCase()} credentials found. Save credentials in Settings first.` }, 400);
     }
 
+    // Whether to create a missing aut-num before injecting the token. Defaults to
+    // true for backward compatibility when the flag is omitted.
+    const createIfMissing = body.create_autnum_if_missing ?? true;
+
     let result;
     if (rir === 'arin') {
       if (!creds.maintainer) {
         return c.json({ error: 'ARIN requires an Org ID. Save your ARIN Org ID (e.g., DC-403) in Settings.' }, 400);
       }
-      result = await ensureArinAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
+      result = await ensureArinAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer, createIfMissing);
     } else {
       if (!creds.maintainer) {
         return c.json({ error: 'RIPE requires a maintainer (mnt-by). Save it in Settings.' }, 400);
@@ -413,7 +420,15 @@ export class EnsureAutnum extends OpenAPIRoute {
       // For RIPE: try update first, fall back to create if the aut-num doesn't exist
       result = await updateRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
       if (!result.ok && result.error?.includes('not found')) {
-        result = await createRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
+        if (createIfMissing) {
+          result = await createRipeAutnum(body.asn, body.validation_token, creds.apiKey, creds.maintainer);
+        } else {
+          result = {
+            ok: false,
+            action: 'skipped',
+            error: `aut-num AS${body.asn} not found at RIPE. Enable "Create aut-num if missing" during onboarding or create it manually, then re-validate.`,
+          };
+        }
       }
     }
 

@@ -45,6 +45,8 @@ export class ListAccounts extends OpenAPIRoute {
       is_default: r.is_default,
       api_rate_limit_5min: r.api_rate_limit_5min ?? 1200,
       activity_retention_days: r.activity_retention_days ?? 180,
+      prefix_advertise_limit: r.prefix_advertise_limit ?? 100,
+      prefix_advertise_threshold_pct: r.prefix_advertise_threshold_pct ?? 80,
       updated_at: r.updated_at,
     }));
     let aggregateAccounts = false;
@@ -125,10 +127,10 @@ export class CreateAccount extends OpenAPIRoute {
 
     // Upsert
     const existing = await c.env.DB.prepare(
-      'SELECT id, api_rate_limit_5min, activity_retention_days FROM user_accounts WHERE user_email = ? AND account_id = ?',
+      'SELECT id, api_rate_limit_5min, activity_retention_days, prefix_advertise_limit, prefix_advertise_threshold_pct FROM user_accounts WHERE user_email = ? AND account_id = ?',
     )
       .bind(email, body.account_id)
-      .first<{ id: number; api_rate_limit_5min: number | null; activity_retention_days: number | null }>();
+      .first<{ id: number; api_rate_limit_5min: number | null; activity_retention_days: number | null; prefix_advertise_limit: number | null; prefix_advertise_threshold_pct: number | null }>();
 
     // Fields left undefined by the caller preserve the stored value (or default
     // for a brand-new account) so partial edits never reset a sibling setting.
@@ -138,6 +140,12 @@ export class CreateAccount extends OpenAPIRoute {
     const retentionDays = body.activity_retention_days && body.activity_retention_days > 0
       ? body.activity_retention_days
       : (existing?.activity_retention_days ?? 180);
+    const advertiseLimit = body.prefix_advertise_limit && body.prefix_advertise_limit > 0
+      ? body.prefix_advertise_limit
+      : (existing?.prefix_advertise_limit ?? 100);
+    const thresholdPct = body.prefix_advertise_threshold_pct && body.prefix_advertise_threshold_pct > 0
+      ? body.prefix_advertise_threshold_pct
+      : (existing?.prefix_advertise_threshold_pct ?? 80);
 
     // The UI shows a masked token (maskToken) and echoes it back unchanged when
     // the user doesn't edit it. Treat a masked placeholder as "no change" so we
@@ -147,17 +155,17 @@ export class CreateAccount extends OpenAPIRoute {
     if (existing) {
       if (tokenProvided) {
         await c.env.DB.prepare(
-          `UPDATE user_accounts SET account_label = ?, api_token = ?, api_rate_limit_5min = ?, activity_retention_days = ?, updated_at = datetime('now')
+          `UPDATE user_accounts SET account_label = ?, api_token = ?, api_rate_limit_5min = ?, activity_retention_days = ?, prefix_advertise_limit = ?, prefix_advertise_threshold_pct = ?, updated_at = datetime('now')
            WHERE id = ? AND user_email = ?`,
         )
-          .bind(body.account_label || '', body.api_token, rateLimit, retentionDays, existing.id, email)
+          .bind(body.account_label || '', body.api_token, rateLimit, retentionDays, advertiseLimit, thresholdPct, existing.id, email)
           .run();
       } else {
         await c.env.DB.prepare(
-          `UPDATE user_accounts SET account_label = ?, api_rate_limit_5min = ?, activity_retention_days = ?, updated_at = datetime('now')
+          `UPDATE user_accounts SET account_label = ?, api_rate_limit_5min = ?, activity_retention_days = ?, prefix_advertise_limit = ?, prefix_advertise_threshold_pct = ?, updated_at = datetime('now')
            WHERE id = ? AND user_email = ?`,
         )
-          .bind(body.account_label || '', rateLimit, retentionDays, existing.id, email)
+          .bind(body.account_label || '', rateLimit, retentionDays, advertiseLimit, thresholdPct, existing.id, email)
           .run();
       }
     } else {
@@ -170,10 +178,10 @@ export class CreateAccount extends OpenAPIRoute {
       const isDefault = (count?.cnt || 0) === 0 ? 1 : 0;
 
       await c.env.DB.prepare(
-        `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default, api_rate_limit_5min, activity_retention_days)
-         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO user_accounts (user_email, account_label, account_id, api_token, is_default, api_rate_limit_5min, activity_retention_days, prefix_advertise_limit, prefix_advertise_threshold_pct)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
-        .bind(email, body.account_label || '', body.account_id, tokenProvided ? body.api_token : '', isDefault, rateLimit, retentionDays)
+        .bind(email, body.account_label || '', body.account_id, tokenProvided ? body.api_token : '', isDefault, rateLimit, retentionDays, advertiseLimit, thresholdPct)
         .run();
     }
 

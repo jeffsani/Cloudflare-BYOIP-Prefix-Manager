@@ -14,7 +14,9 @@ export const SaveRirCredentialRequestSchema = z.object({
   rir: z.string().min(1, 'rir is required'),
   api_key: z.string().min(1, 'api_key is required'),
   maintainer: z.string().optional(),
-  token_record: z.enum(['route', 'autnum', 'both']),
+  // Which registrar record(s) receive the validation token. Optional/legacy:
+  // the record selection is now made per-onboarding in the Add Prefix modal.
+  token_record: z.enum(['route', 'autnum', 'both']).optional(),
 });
 
 export const PatchRirCredentialRequestSchema = z.object({
@@ -57,11 +59,14 @@ export const EnsureAutnumRequestSchema = z.object({
   prefix: z.string().optional(),
   api_key: z.string().optional(),
   maintainer: z.string().optional(),
+  // When true (default), create the aut-num if it does not already exist before
+  // injecting the validation token. When false, a missing aut-num is left alone.
+  create_autnum_if_missing: z.boolean().optional(),
 });
 
 export const RirApiResultSchema = z.object({
   ok: z.boolean(),
-  action: z.enum(['created', 'updated', 'already_present']).optional(),
+  action: z.enum(['created', 'updated', 'already_present', 'skipped']).optional(),
   error: z.string().optional(),
   details: z.string().optional(),
 });

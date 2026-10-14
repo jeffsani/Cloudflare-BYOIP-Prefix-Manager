@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, logActivity, resolveAccount } from '../helpers';
 import { enqueueNotification } from '../queue';
+import { checkAdvertisementCap } from '../cap';
 import {
   listBgpPrefixes,
   createBgpPrefix,
@@ -245,6 +246,14 @@ export class ToggleBgpAdvertisement extends OpenAPIRoute {
         user_email: email, account_id: acct.account_id, event_type: toggleAction,
         title: toggleCidr, details: toggleDetails,
       });
+
+      // After an advertise, re-evaluate the account's advertised-prefix cap and
+      // fire threshold/limit alerts. Run off the response path to avoid latency.
+      if (body.advertised) {
+        const capCheck = checkAdvertisementCap(c.env, email, acct, token);
+        if (c.executionCtx?.waitUntil) c.executionCtx.waitUntil(capCheck);
+        else void capCheck;
+      }
 
       return c.json({ ok: true, bgp_prefix: result.result });
     } catch (e) {

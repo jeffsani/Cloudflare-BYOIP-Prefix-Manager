@@ -3,6 +3,7 @@ import { listPrefixes, listBgpPrefixes, lookupBgpRoutes } from './api';
 import { enqueueNotification } from './queue';
 import { logActivity } from './helpers';
 import { safeParse } from './notifications-db';
+import { checkAdvertisementCap } from './cap';
 
 const CACHE_TTL_MS = 15 * 60 * 1000; // Refresh the monitored-CIDR list every 15 min.
 const SUPPRESS_WINDOW_MIN = 10;       // Skip external alerts within N min of a tool-driven toggle.
@@ -15,6 +16,9 @@ interface AccountRow {
   account_id: string;
   api_token: string;
   api_rate_limit_5min: number;
+  prefix_advertise_limit: number;
+  prefix_advertise_threshold_pct: number;
+  cap_alert_level: string;
 }
 
 interface RadarState {
@@ -33,7 +37,7 @@ export async function pollAdvertisementChanges(env: Env): Promise<{ checked: num
   let checked = 0;
 
   const accounts = await env.DB.prepare(
-    'SELECT user_email, account_id, api_token, api_rate_limit_5min FROM user_accounts'
+    'SELECT user_email, account_id, api_token, api_rate_limit_5min, prefix_advertise_limit, prefix_advertise_threshold_pct, cap_alert_level FROM user_accounts'
   ).all<AccountRow>();
 
   const nowMinute = Math.floor(Date.now() / 60000);
@@ -51,14 +55,21 @@ export async function pollAdvertisementChanges(env: Env): Promise<{ checked: num
       const sliceIndex = nowMinute % numSlices;
       const slice = cidrs.slice(sliceIndex * perTickCap, sliceIndex * perTickCap + perTickCap);
 
+      let advertiseEmitted = false;
       for (const cidr of slice) {
         try {
           const observed = await observeRadarState(cidr, acct.api_token);
           checked++;
-          await reconcile(env, acct, cidr, observed);
+          if (await reconcile(env, acct, cidr, observed)) advertiseEmitted = true;
         } catch (err) {
           errors.push(`${acct.account_id} ${cidr}: ${err instanceof Error ? err.message : String(err)}`);
         }
+      }
+
+      // A confirmed external advertise may have pushed the account toward its cap;
+      // re-evaluate once per account per tick (only when an advertise was emitted).
+      if (advertiseEmitted) {
+        await checkAdvertisementCap(env, acct.user_email, acct, acct.api_token);
       }
     } catch (err) {
       errors.push(`${acct.account_id}: ${err instanceof Error ? err.message : String(err)}`);
@@ -208,8 +219,12 @@ export function decideTransition(
   return { committedAnnounced: prevAnnounced, pendingAnnounced: observedAnnounced, pendingCount: nextCount, changed: false, emit: false };
 }
 
-/** Compare observed state to the stored snapshot and emit events on confirmed transitions. */
-async function reconcile(env: Env, acct: AccountRow, cidr: string, observed: RadarState): Promise<void> {
+/**
+ * Compare observed state to the stored snapshot and emit events on confirmed
+ * transitions. Returns true when a confirmed external *advertise* event was
+ * emitted (so the caller can re-evaluate the advertisement cap).
+ */
+async function reconcile(env: Env, acct: AccountRow, cidr: string, observed: RadarState): Promise<boolean> {
   const prev = await env.DB.prepare(
     'SELECT announced, origin_asn, pending_announced, pending_count FROM prefix_radar_state WHERE account_id = ? AND cidr = ?'
   ).bind(acct.account_id, cidr).first<{
@@ -217,7 +232,7 @@ async function reconcile(env: Env, acct: AccountRow, cidr: string, observed: Rad
   }>();
 
   // First observation: seed silently.
-  if (!prev) { await seedState(env, acct.account_id, cidr, observed); return; }
+  if (!prev) { await seedState(env, acct.account_id, cidr, observed); return false; }
 
   const prevAnnounced = !!prev.announced;
   const prevPending = prev.pending_announced == null ? null : !!prev.pending_announced;
@@ -236,12 +251,17 @@ async function reconcile(env: Env, acct: AccountRow, cidr: string, observed: Rad
   if (decision.emit) {
     const verb = observed.announced ? 'advertised' : 'withdrawn';
     const eventType = observed.announced ? 'external_advertise' : 'external_withdraw';
-    await maybeEmit(env, acct, cidr, eventType, `Prefix ${cidr} is now ${verb} in the global BGP table (via Radar)`);
+    const emitted = await maybeEmit(env, acct, cidr, eventType, `Prefix ${cidr} is now ${verb} in the global BGP table (via Radar)`);
+    return emitted && observed.announced;
   }
+  return false;
 }
 
-/** Emit unless a matching tool-driven toggle happened recently (suppression). */
-async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: string, details: string): Promise<void> {
+/**
+ * Emit unless a matching tool-driven toggle happened recently (suppression).
+ * Returns true when the event was actually emitted (not suppressed).
+ */
+async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: string, details: string): Promise<boolean> {
   if (eventType !== 'external_origin_change') {
     const recent = await env.DB.prepare(
       `SELECT 1 FROM activity_log
@@ -254,7 +274,7 @@ async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: st
          )
        LIMIT 1`
     ).bind(acct.user_email, acct.account_id, `-${SUPPRESS_WINDOW_MIN} minutes`, `%${cidr}%`).first();
-    if (recent) return; // Tool-driven change already surfaced inline.
+    if (recent) return false; // Tool-driven change already surfaced inline.
   }
 
   await logActivity(env.DB, acct.user_email, acct.account_id, eventType, details);
@@ -265,6 +285,7 @@ async function maybeEmit(env: Env, acct: AccountRow, cidr: string, eventType: st
     title: cidr,
     details,
   });
+  return true;
 }
 
 /** Seed a brand-new state row from the first observation (no event emitted). */

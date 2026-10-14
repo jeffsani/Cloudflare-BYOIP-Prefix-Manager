@@ -19,6 +19,9 @@ export interface UserAccount {
   is_default: number;
   api_rate_limit_5min: number;
   activity_retention_days: number;
+  prefix_advertise_limit: number;
+  prefix_advertise_threshold_pct: number;
+  cap_alert_level: string;
   updated_at: string;
 }
 
@@ -170,6 +173,8 @@ export const NOTIFICATION_EVENTS: Record<string, string> = {
   delete_delegation: 'Delegation deleted',
   update_description: 'Description updated',
   validate: 'Prefix validated',
+  prefix_cap_threshold: 'Advertised prefixes near cap (threshold %)',
+  prefix_cap_reached: 'Advertised prefixes at cap (hard limit)',
   external_advertise: 'External: prefix advertised (Radar)',
   external_withdraw: 'External: prefix withdrawn (Radar)',
   external_origin_change: 'External: origin ASN changed (Radar)',
@@ -441,7 +446,7 @@ export interface RirCredential {
 
 export interface RirApiResult {
   ok: boolean;
-  action?: 'created' | 'updated' | 'already_present';
+  action?: 'created' | 'updated' | 'already_present' | 'skipped';
   error?: string;
   details?: string;
 }
