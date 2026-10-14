@@ -323,6 +323,45 @@ export class ClearAccountToken extends OpenAPIRoute {
   }
 }
 
+// GET /api/settings/:id/token/reveal
+export class RevealAccountToken extends OpenAPIRoute {
+  schema = {
+    tags: ['Account Settings'],
+    summary: 'Reveal account API token',
+    description: 'Return the full (unmasked) Cloudflare API token for an account owned by the authenticated user. Used by the UI press-and-hold reveal control.',
+    request: {
+      params: z.object({
+        id: z.string().describe('Account row ID'),
+      }),
+    },
+    responses: {
+      '200': {
+        description: 'Full API token',
+        ...contentJson(z.object({ api_token: z.string() })),
+      },
+      '404': {
+        description: 'Account not found',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail');
+    const data = await this.getValidatedData<typeof this.schema>();
+    const id = parseInt(data.params.id, 10);
+
+    const row = await c.env.DB.prepare(
+      'SELECT api_token FROM user_accounts WHERE id = ? AND user_email = ?',
+    )
+      .bind(id, email)
+      .first<{ api_token: string }>();
+    if (!row) return c.json({ error: 'Not found' }, 404);
+
+    return c.json({ api_token: row.api_token || '' });
+  }
+}
+
 // PUT /api/settings/:id/default
 export class SetDefaultAccount extends OpenAPIRoute {
   schema = {

@@ -8,16 +8,16 @@ import { getToken, resolveAccount, purgeExpiredLogs } from './helpers';
 
 // ─── Endpoint Imports ───────────────────────────────────────────────
 
-import { ListAccounts, UpdateAccountPreferences, CreateAccount, DeleteAccount, ClearAccountToken, SetDefaultAccount, TestToken } from './endpoints/settings';
+import { ListAccounts, UpdateAccountPreferences, CreateAccount, DeleteAccount, ClearAccountToken, RevealAccountToken, SetDefaultAccount, TestToken } from './endpoints/settings';
 import { ListPrefixes, CreatePrefix, BatchCreatePrefix, DeletePrefix, GetPrefixStats, ValidateNewPrefix, UpdatePrefixDescription, ValidateExistingPrefix, BulkToggle } from './endpoints/prefixes';
 import { ListBgpPrefixes, CreateBgpPrefix, DeleteBgpPrefix, ToggleBgpAdvertisement } from './endpoints/bgp';
 import { ListBindings, CreateBinding, DeleteBinding } from './endpoints/bindings';
 import { ListDelegations, CreateDelegationEndpoint, DeleteDelegationEndpoint, UpdateDelegationDescription } from './endpoints/delegations';
 import { ListServicesEndpoint } from './endpoints/services';
-import { ListRirCredentials, SaveRirCredentials, PatchRirCredentials, DeleteRirCredentials, ValidateRirCredentialsEndpoint, EnsureRoute, EnsureAutnum, DetectRir } from './endpoints/rir';
+import { ListRirCredentials, RevealRirCredential, SaveRirCredentials, PatchRirCredentials, DeleteRirCredentials, ValidateRirCredentialsEndpoint, EnsureRoute, EnsureAutnum, DetectRir } from './endpoints/rir';
 import { LookingGlass, RdapLookup, RpkiLookup, RipestatVisibility, GetActivity, ClearActivity } from './endpoints/lookups';
 import {
-  listChannels, createChannel, updateChannel, deleteChannel, testChannel,
+  listChannels, createChannel, updateChannel, deleteChannel, testChannel, revealChannelSecret,
   getSubscriptions, updateSubscription, listLog, retryLog,
 } from './endpoints/notifications';
 import { handleQueueBatch } from './queue';
@@ -134,6 +134,7 @@ openapi.put('/api/settings/preferences', UpdateAccountPreferences);
 openapi.post('/api/settings', CreateAccount);
 openapi.delete('/api/settings/:id', DeleteAccount);
 openapi.delete('/api/settings/:id/token', ClearAccountToken);
+openapi.get('/api/settings/:id/token/reveal', RevealAccountToken);
 openapi.put('/api/settings/:id/default', SetDefaultAccount);
 openapi.post('/api/test-token', TestToken);
 
@@ -170,6 +171,7 @@ openapi.get('/api/services', ListServicesEndpoint);
 
 // RIR Credentials
 openapi.get('/api/rir/credentials', ListRirCredentials);
+openapi.get('/api/rir/credentials/:id/reveal', RevealRirCredential);
 openapi.post('/api/rir/credentials', SaveRirCredentials);
 openapi.patch('/api/rir/credentials/:id', PatchRirCredentials);
 openapi.delete('/api/rir/credentials/:id', DeleteRirCredentials);
@@ -217,6 +219,11 @@ app.post('/api/notifications/channels/:id/test', async (c) => {
   const email = c.get('userEmail');
   const res = await testChannel(c.env, email, parseInt(c.req.param('id'), 10));
   return c.json(res, res.ok ? 200 : 400);
+});
+app.get('/api/notifications/channels/:id/reveal', async (c) => {
+  const email = c.get('userEmail');
+  const res = await revealChannelSecret(c.env, email, parseInt(c.req.param('id'), 10));
+  return c.json(res, res.ok ? 200 : 404);
 });
 
 // Subscriptions (event → channels, per account)

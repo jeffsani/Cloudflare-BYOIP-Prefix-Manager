@@ -105,6 +105,45 @@ export class ListRirCredentials extends OpenAPIRoute {
   }
 }
 
+// GET /api/rir/credentials/:id/reveal
+export class RevealRirCredential extends OpenAPIRoute {
+  schema = {
+    tags: ['RIR Credentials'],
+    summary: 'Reveal RIR API key',
+    description: 'Return the full (unmasked) RIR API key for a credential owned by the authenticated user. Used by the UI press-and-hold reveal control.',
+    request: {
+      params: z.object({ id: z.string().describe('Credential row ID') }),
+    },
+    responses: {
+      '200': {
+        description: 'Full API key',
+        ...contentJson(z.object({ api_key: z.string() })),
+      },
+      '404': {
+        description: 'Credential not found',
+        ...contentJson(ErrorResponseSchema),
+      },
+    },
+  };
+
+  async handle(c: AppContext) {
+    const email = c.get('userEmail') as string;
+    const data = await this.getValidatedData<typeof this.schema>();
+    const id = parseInt(data.params.id, 10);
+
+    await ensureRirCredentialsTable(c.env.DB);
+
+    const row = await c.env.DB.prepare(
+      'SELECT api_key FROM rir_credentials WHERE id = ? AND user_email = ?',
+    )
+      .bind(id, email)
+      .first<{ api_key: string }>();
+    if (!row) return c.json({ error: 'Not found' }, 404);
+
+    return c.json({ api_key: row.api_key || '' });
+  }
+}
+
 // POST /api/rir/credentials
 export class SaveRirCredentials extends OpenAPIRoute {
   schema = {

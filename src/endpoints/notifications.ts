@@ -62,6 +62,21 @@ export async function updateChannel(
   return { ok: true };
 }
 
+/** Return the full (unmasked) secret for a channel, scoped to the owner. */
+export async function revealChannelSecret(
+  env: Env, email: string, id: number,
+): Promise<{ ok: boolean; secret?: string; error?: string }> {
+  const row = await env.DB.prepare(
+    'SELECT * FROM notification_channels WHERE id = ? AND user_email = ?'
+  ).bind(id, email).first<Record<string, unknown>>();
+  if (!row) return { ok: false, error: 'Not found' };
+  const channel = mapChannel(row);
+  const secret = channel.type === 'pagerduty'
+    ? (channel.config.integration_key || '')
+    : (channel.config.token || '');
+  return { ok: true, secret };
+}
+
 export async function deleteChannel(env: Env, email: string, id: number): Promise<{ ok: boolean }> {
   await env.DB.prepare('DELETE FROM notification_channels WHERE id = ? AND user_email = ?').bind(id, email).run();
   return { ok: true };

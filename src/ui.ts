@@ -2,6 +2,15 @@ function infoTip(text: string): string {
   return `<span class="info-tip" tabindex="0" role="button" aria-label="More info"><span class="info-ico">i</span><span class="info-bubble">${text}</span></span>`;
 }
 
+const SECRET_EYE_ICONS =
+  '<span class="secret-eye-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></span>' +
+  '<span class="secret-eye-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>';
+
+// Server-rendered press-and-hold eye button (JS equivalent: secretEyeHtml).
+function secretEyeBtn(extraAttrs = ''): string {
+  return `<button type="button" class="secret-eye" tabindex="0" aria-label="Show secret (press and hold)" title="Press and hold to reveal"${extraAttrs ? ' ' + extraAttrs : ''}>${SECRET_EYE_ICONS}</button>`;
+}
+
 export function renderDashboard(userEmail: string): string {
   return `<!DOCTYPE html>
 <html lang="en" data-theme="dark">
@@ -207,6 +216,18 @@ export function renderDashboard(userEmail: string): string {
     .arch-lane-title { font-size: 10px; font-weight: 700; color: var(--text-strong); margin-bottom: 4px; }
     .arch-lane-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
     .arch-lane-step { border: 1px solid var(--border); border-radius: 4px; background: var(--surface); padding: 1px 5px; color: var(--text-primary); white-space: nowrap; }
+    /* ── Secret reveal (press-and-hold eye on token/password/API-key fields) ── */
+    .secret-wrap { position: relative; display: block; }
+    .secret-wrap > input { padding-right: 34px; }
+    .secret-eye { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: none; background: transparent; color: var(--muted); cursor: pointer; border-radius: 4px; outline: none; -webkit-user-select: none; user-select: none; touch-action: none; -webkit-tap-highlight-color: transparent; }
+    .secret-eye:hover, .secret-eye:focus-visible { color: var(--accent); }
+    .secret-eye svg { width: 16px; height: 16px; display: block; pointer-events: none; }
+    .secret-eye .secret-eye-off { display: none; }
+    .secret-eye.revealed .secret-eye-on { display: none; }
+    .secret-eye.revealed .secret-eye-off { display: block; }
+    /* Inline eye used next to read-only masked display values */
+    .secret-display { display: inline-flex; align-items: center; gap: 6px; }
+    .secret-display .secret-eye { position: static; transform: none; width: 20px; height: 20px; }
   </style>
 </head>
 <body class="font-sans min-h-screen">
@@ -403,7 +424,7 @@ export function renderDashboard(userEmail: string): string {
           </div>
           <div>
             <label class="block text-xs font-medium text-cf-gray mb-1">API Token <a href="#" onclick="window.open(getTokenGeneratorUrl(),'_blank');return false" class="text-cf-orange hover:underline font-normal ml-1">Generate token &#8599;</a></label>
-            <input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
+            <div class="secret-wrap"><input id="set-api-token" type="password" placeholder="Cloudflare API Token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">${secretEyeBtn()}</div>
           </div>
           <div>
             <label class="block text-xs font-medium text-cf-gray mb-1">API rate limit (req / 5 min)${infoTip('The default Cloudflare API rate limit is <strong>1200 requests / 5 min</strong>. If you need to increase this limit, reach out to your Cloudflare account team.')}</label>
@@ -1495,7 +1516,7 @@ export function renderDashboard(userEmail: string): string {
                 // Display row
                 '<div id="acct-token-display-' + escAttr(aid) + '" class="flex items-center gap-3 p-2.5 rounded-lg border border-cf-border text-xs">' +
                   '<span class="font-semibold" style="color:var(--text-strong)">Cloudflare</span>' +
-                  (a.api_token ? '<span class="font-mono text-cf-gray">' + escHtml(a.api_token) + '</span>' : '<span class="badge-invalid">No token set</span>') +
+                  (a.api_token ? secretDisplayHtml(a.api_token, '/api/settings/' + a.id + '/token/reveal', 'api_token', 'text-cf-gray') : '<span class="badge-invalid">No token set</span>') +
                   '<button onclick="testSavedAccountToken(\\'' + escAttr(aid) + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>' +
                   '<button onclick="editAccountToken(\\'' + escAttr(aid) + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>' +
                   '<button onclick="deleteAccountToken(' + a.id + ',\\'' + escAttr(aid) + '\\')" class="text-red-400 hover:text-red-300 text-xs ml-1">Delete</button>' +
@@ -1505,7 +1526,7 @@ export function renderDashboard(userEmail: string): string {
                 // Edit row (hidden)
                 '<div id="acct-token-edit-' + escAttr(aid) + '" class="hidden p-3 rounded-lg border border-cf-orange mt-2" style="background:var(--input-bg)">' +
                   '<div class="flex gap-2 items-end flex-wrap">' +
-                    '<div class="flex-1"><label class="block text-xs text-cf-gray mb-1">New API Token</label><input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none"></div>' +
+                    '<div class="flex-1"><label class="block text-xs text-cf-gray mb-1">New API Token</label><div class="secret-wrap"><input id="acct-token-' + escAttr(aid) + '" type="password" placeholder="Enter new token" class="w-full px-3 py-2 rounded-lg border border-cf-border bg-cf-dark text-sm text-white font-mono focus:border-cf-orange focus:outline-none">' + secretEyeHtml('') + '</div></div>' +
                     '<button onclick="updateAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>' +
                     '<button onclick="cancelEditAccountToken(\\'' + escAttr(aid) + '\\')" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange">Cancel</button>' +
                   '</div>' +
@@ -2040,10 +2061,10 @@ export function renderDashboard(userEmail: string): string {
             editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Webhook URL</label>' +
               '<input id="ch-edit-f1-' + ch.id + '" type="text" value="' + escAttr(cfg.url || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="https://…"></div>';
             editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Token (optional)</label>' +
-              '<input id="ch-edit-f2-' + ch.id + '" type="password" value="' + escAttr(cfg.token || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token"></div>';
+              '<div class="secret-wrap"><input id="ch-edit-f2-' + ch.id + '" type="password" value="' + escAttr(cfg.token || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token">' + secretEyeHtml('data-reveal-url="/api/notifications/channels/' + ch.id + '/reveal"') + '</div></div>';
           } else {
             editFields += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Integration key</label>' +
-              '<input id="ch-edit-f1-' + ch.id + '" type="password" value="' + escAttr(cfg.integration_key || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="PagerDuty integration key"></div>';
+              '<div class="secret-wrap"><input id="ch-edit-f1-' + ch.id + '" type="password" value="' + escAttr(cfg.integration_key || '') + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="PagerDuty integration key">' + secretEyeHtml('data-reveal-url="/api/notifications/channels/' + ch.id + '/reveal"') + '</div></div>';
           }
           html += '<div id="ch-edit-' + ch.id + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">' +
             '<div class="grid grid-cols-1 md:grid-cols-3 gap-2">' + editFields + '</div>' +
@@ -2066,7 +2087,7 @@ export function renderDashboard(userEmail: string): string {
       html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Name</label><input id="notif-name-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Label"></div>';
       html += '<div id="notif-f1-wrap-' + aid + '"><label class="block text-xs font-medium text-cf-gray mb-1" id="notif-f1-label-' + aid + '">Email address</label><input id="notif-f1-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="alerts@example.com"></div>';
       html += '</div>';
-      html += '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-xs font-medium text-cf-gray mb-1">Token (optional)</label><input id="notif-f2-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token"></div>';
+      html += '<div id="notif-f2-wrap-' + aid + '" class="hidden"><label class="block text-xs font-medium text-cf-gray mb-1">Token (optional)</label><div class="secret-wrap"><input id="notif-f2-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="Bearer token">' + secretEyeHtml('') + '</div></div>';
       html += '<div class="flex gap-2 items-center">' +
         '<button onclick="addNotifChannel(\\'' + aid + '\\')" class="px-3 py-1 bg-cf-orange text-white text-xs font-semibold rounded-lg hover:opacity-90">Save Channel</button>' +
         '<button onclick="hideNotifChannelForm(\\'' + aid + '\\')" class="px-3 py-1 text-xs text-cf-gray hover:text-white">Cancel</button>' +
@@ -2276,7 +2297,7 @@ export function renderDashboard(userEmail: string): string {
             // Display row
             html += '<div id="' + credRowId + '-display" class="flex items-center gap-3 px-3 py-2 rounded-lg border border-cf-border text-xs">';
             html += '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(c.rir.toUpperCase()) + '</span>';
-            html += '<span class="font-mono text-cf-gray">' + escHtml(c.api_key) + '</span>';
+            html += (c.api_key ? secretDisplayHtml(c.api_key, '/api/rir/credentials/' + c.id + '/reveal', 'api_key', 'text-cf-gray') : '<span class="font-mono text-cf-gray"></span>');
             if (c.maintainer) html += '<span class="text-cf-gray">' + escHtml(c.maintainer) + '</span>';
             html += '<button onclick="validateSavedRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="ml-auto text-blue-400 hover:text-blue-300 text-xs">Validate</button>';
             html += '<button onclick="editRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\',\\'' + escAttr(c.maintainer || '') + '\\')" class="text-blue-400 hover:text-blue-300 text-xs ml-1">Edit</button>';
@@ -2287,7 +2308,7 @@ export function renderDashboard(userEmail: string): string {
             html += '<div id="' + credRowId + '-edit" class="hidden p-3 rounded-lg border border-cf-orange mt-1" style="background:var(--input-bg)">';
             html += '<div class="flex gap-2 items-end flex-wrap">';
             html += '<div><label class="block text-xs text-cf-gray mb-1">' + escHtml(c.rir.toUpperCase()) + '</label></div>';
-            html += '<div><label class="block text-xs text-cf-gray mb-1">API Key</label><input id="rir-edit-key-' + c.id + '" type="password" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-40" placeholder="New API key (leave blank to keep)"></div>';
+            html += '<div><label class="block text-xs text-cf-gray mb-1">API Key</label><div class="secret-wrap"><input id="rir-edit-key-' + c.id + '" type="password" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-40" placeholder="New API key (leave blank to keep)">' + secretEyeHtml('') + '</div></div>';
             html += '<div><label class="block text-xs text-cf-gray mb-1">Org ID</label><input id="rir-edit-mnt-' + c.id + '" type="text" value="' + escAttr(c.maintainer || '') + '" class="px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white w-32" placeholder="e.g. DC-403"></div>';
             html += '<button id="rir-edit-validate-' + c.id + '" data-rir="' + escAttr(c.rir) + '" onclick="validateEditRirCredential(' + c.id + ')" class="px-3 py-1.5 border border-blue-500 text-blue-400 text-xs font-medium rounded-lg hover:bg-blue-500 hover:text-white transition">Validate</button>';
             html += '<button onclick="saveEditRirCredential(' + c.id + ',\\'' + aid + '\\',\\'' + escAttr(c.rir) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600">Save</button>';
@@ -2306,7 +2327,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<div id="rir-form-' + aid + '" class="hidden border border-cf-border rounded-lg p-3 space-y-2">';
         html += '<div class="grid grid-cols-1 md:grid-cols-2 gap-2">';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">RIR</label><select id="acct-rir-sel-' + aid + '" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white"><option value="arin">ARIN</option><option value="ripe">RIPE</option></select></div>';
-        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">API Key</label><input id="acct-rir-key-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="API key"></div>';
+        html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">API Key</label><div class="secret-wrap"><input id="acct-rir-key-' + aid + '" type="password" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="API key">' + secretEyeHtml('') + '</div></div>';
         html += '<div><label class="block text-xs font-medium text-cf-gray mb-1">Org ID</label><input id="acct-rir-mnt-' + aid + '" type="text" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white" placeholder="e.g. DC-403"></div>';
         html += '</div>';
         html += '<div class="text-[10px] text-cf-gray">Which registrar record(s) receive the Cloudflare validation token is chosen per prefix in the Add Prefix dialog during onboarding.</div>';
@@ -6470,7 +6491,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
         html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
         html += '</select></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-route-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><div class="secret-wrap"><input id="pcg-route-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key">' + secretEyeHtml('') + '</div></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-route-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
         html += '<button onclick="pcgCreateRouteInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Submit</button>';
         html += '</div></details></div>';
@@ -6493,7 +6514,7 @@ export function renderDashboard(userEmail: string): string {
         html += '<option value="arin"' + (rir === 'arin' ? ' selected' : '') + '>ARIN</option>';
         html += '<option value="ripe"' + (rir === 'ripe' ? ' selected' : '') + '>RIPE</option>';
         html += '</select></div>';
-        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><input id="pcg-autnum-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key"></div>';
+        html += '<div><label class="block text-[10px] text-cf-gray">API Key</label><div class="secret-wrap"><input id="pcg-autnum-apikey" type="password" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-40" placeholder="API key">' + secretEyeHtml('') + '</div></div>';
         html += '<div><label class="block text-[10px] text-cf-gray">Org ID</label><input id="pcg-autnum-mnt" type="text" class="px-2 py-1 rounded border border-cf-border bg-cf-dark text-[11px] text-white w-28" placeholder="e.g. DC-403"></div>';
         html += '<button onclick="pcgUpdateAutnumInline()" class="px-2 py-1 bg-cf-orange text-white text-[10px] font-medium rounded hover:bg-orange-600">Submit</button>';
         html += '</div></details></div>';
@@ -8135,6 +8156,155 @@ export function renderDashboard(userEmail: string): string {
     function escAttr(s) {
       return escHtml(s).replace(/'/g, '&#39;');
     }
+
+    // ─── Secret reveal (press-and-hold eye on token/password/API-key fields) ──
+    // Mirrors server-side maskToken so values re-mask consistently on release.
+    function maskSecret(v) {
+      if (!v) return '';
+      if (v.length < 8) return '••••••••';
+      return v.slice(0, 4) + '••••' + v.slice(-4);
+    }
+
+    var _secretEyeIcons =
+      '<span class="secret-eye-on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></span>' +
+      '<span class="secret-eye-off"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg></span>';
+
+    // Build an eye button. extraAttrs is a string of pre-escaped HTML attributes.
+    function secretEyeHtml(extraAttrs) {
+      return '<button type="button" class="secret-eye" tabindex="0" aria-label="Show secret (press and hold)" title="Press and hold to reveal"' +
+        (extraAttrs ? ' ' + extraAttrs : '') + '>' + _secretEyeIcons + '</button>';
+    }
+
+    // Read-only masked value + eye. mask is already-masked text; url returns the
+    // full secret ({ <field>: ... } or { secret: ... }) for the owner on demand.
+    function secretDisplayHtml(mask, url, field, valueClass) {
+      var cls = 'secret-value font-mono' + (valueClass ? ' ' + valueClass : '');
+      return '<span class="secret-display">' +
+        '<span class="' + cls + '" data-mask="' + escAttr(mask) + '">' + escHtml(mask) + '</span>' +
+        secretEyeHtml('data-secret-target="display" data-reveal-url="' + escAttr(url) + '" data-reveal-field="' + escAttr(field || '') + '"') +
+        '</span>';
+    }
+
+    (function initSecretReveal() {
+      var active = null;
+
+      function findInput(btn) {
+        var wrap = btn.closest ? btn.closest('.secret-wrap') : null;
+        if (wrap) { var inp = wrap.querySelector('input'); if (inp) return inp; }
+        var id = btn.getAttribute('data-secret-input');
+        return id ? document.getElementById(id) : null;
+      }
+
+      function valueEl(btn) {
+        var host = btn.parentElement;
+        return host ? host.querySelector('.secret-value') : null;
+      }
+
+      function revealDisplay(btn) {
+        var el = valueEl(btn);
+        if (!el) return;
+        var cached = el.getAttribute('data-full');
+        if (cached !== null) { if (active === btn) el.textContent = cached; return; }
+        var url = btn.getAttribute('data-reveal-url');
+        if (!url) return;
+        var field = btn.getAttribute('data-reveal-field') || '';
+        el.textContent = '…';
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(d) {
+            var full = '';
+            if (d) full = (field && d[field] != null) ? d[field] : (d.secret != null ? d.secret : '');
+            full = full || '';
+            el.setAttribute('data-full', full);
+            if (active === btn) el.textContent = full || (el.getAttribute('data-mask') || '');
+          })
+          .catch(function() { if (active === btn) el.textContent = el.getAttribute('data-mask') || ''; });
+      }
+
+      function revealInputSecret(btn, inp) {
+        // Prefilled edit fields hold a masked placeholder; fetch the real secret.
+        var url = btn.getAttribute('data-reveal-url');
+        var val = inp.value || '';
+        if (!url || val.indexOf('•') === -1) return;
+        var field = btn.getAttribute('data-reveal-field') || '';
+        fetch(url, { headers: { 'Accept': 'application/json' } })
+          .then(function(r) { return r.ok ? r.json() : null; })
+          .then(function(d) {
+            var full = '';
+            if (d) full = (field && d[field] != null) ? d[field] : (d.secret != null ? d.secret : '');
+            if (active === btn && full) { inp.setAttribute('data-revealed-tmp', '1'); inp.value = full; }
+          })
+          .catch(function() {});
+      }
+
+      function reveal(btn) {
+        if (!btn || btn === active) return;
+        hide();
+        active = btn;
+        btn.classList.add('revealed');
+        if (btn.getAttribute('data-secret-target') === 'display') {
+          revealDisplay(btn);
+        } else {
+          var inp = findInput(btn);
+          if (inp) {
+            inp.setAttribute('data-prev-type', inp.getAttribute('type') || 'password');
+            inp.setAttribute('data-prev-value', inp.value || '');
+            inp.type = 'text';
+            revealInputSecret(btn, inp);
+          }
+        }
+      }
+
+      function hide() {
+        if (!active) return;
+        var btn = active; active = null;
+        btn.classList.remove('revealed');
+        if (btn.getAttribute('data-secret-target') === 'display') {
+          var el = valueEl(btn);
+          if (el) el.textContent = el.getAttribute('data-mask') || '';
+        } else {
+          var inp = findInput(btn);
+          if (inp) {
+            inp.type = inp.getAttribute('data-prev-type') || 'password';
+            // Restore the masked placeholder we temporarily swapped in on reveal.
+            if (inp.getAttribute('data-revealed-tmp')) {
+              inp.value = inp.getAttribute('data-prev-value') || '';
+              inp.removeAttribute('data-revealed-tmp');
+            }
+          }
+        }
+      }
+
+      function eyeAt(target) { return target && target.closest ? target.closest('.secret-eye') : null; }
+
+      document.addEventListener('pointerdown', function(e) {
+        var btn = eyeAt(e.target);
+        if (btn) { e.preventDefault(); reveal(btn); }
+      });
+      document.addEventListener('pointerup', function() { hide(); });
+      document.addEventListener('pointercancel', function() { hide(); });
+      document.addEventListener('pointerleave', function(e) {
+        var btn = eyeAt(e.target);
+        if (btn && btn === active) hide();
+      }, true);
+      document.addEventListener('contextmenu', function(e) {
+        if (eyeAt(e.target)) e.preventDefault();
+      });
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== ' ' && e.key !== 'Enter' && e.key !== 'Spacebar') return;
+        var el = document.activeElement;
+        if (el && el.classList && el.classList.contains('secret-eye')) { e.preventDefault(); reveal(el); }
+      });
+      document.addEventListener('keyup', function(e) {
+        if (e.key !== ' ' && e.key !== 'Enter' && e.key !== 'Spacebar') return;
+        hide();
+      });
+      document.addEventListener('blur', function(e) {
+        var btn = eyeAt(e.target);
+        if (btn && btn === active) hide();
+      }, true);
+      window.addEventListener('blur', function() { hide(); });
+    })();
 
     // ─── Copy to clipboard helpers ──────────────────────────────
     var _copySvg = '<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" stroke-width="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" stroke-width="2"/></svg>';
