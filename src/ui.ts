@@ -184,7 +184,7 @@ export function renderDashboard(userEmail: string): string {
     .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
     .al-row { border-bottom: 1px solid var(--border); }
     .al-row:last-child { border-bottom: none; }
-    .sel-copy-btn { position: fixed; bottom: 20px; right: 20px; z-index: 10000; display: none; align-items: center; gap: 6px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transition: opacity 0.15s, border-color 0.15s, color 0.15s; }
+    .sel-copy-btn { position: fixed; top: 0; left: 0; z-index: 10000; display: none; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transform: translate(-50%, calc(-100% - 8px)); transition: opacity 0.12s; }
     .sel-copy-btn.visible { display: inline-flex; opacity: 1; }
     .sel-copy-btn:hover { border-color: #F6821F; color: #F6821F; }
     .sel-copy-btn.copied { border-color: #22c55e; color: #22c55e; }
@@ -7801,8 +7801,23 @@ export function renderDashboard(userEmail: string): string {
       var sel = window.getSelection();
       var text = sel ? String(sel.toString()).trim() : '';
       if (text && btn.contains(sel && sel.anchorNode)) return;
-      if (text) {
+      if (text && sel.rangeCount > 0) {
         _selCopyText = text;
+        var rect = sel.getRangeAt(0).getBoundingClientRect();
+        if (!rect || (rect.width === 0 && rect.height === 0)) {
+          btn.classList.remove('visible');
+          return;
+        }
+        var left = Math.min(Math.max(rect.left + rect.width / 2, 60), window.innerWidth - 60);
+        var top = rect.top;
+        if (top < 44) {
+          btn.style.transform = 'translate(-50%, 8px)';
+          top = rect.bottom;
+        } else {
+          btn.style.transform = 'translate(-50%, calc(-100% - 8px))';
+        }
+        btn.style.left = left + 'px';
+        btn.style.top = top + 'px';
         btn.classList.add('visible');
       } else {
         _selCopyText = '';
@@ -7827,6 +7842,25 @@ export function renderDashboard(userEmail: string): string {
     }
 
     document.addEventListener('selectionchange', _updateSelCopyBtn);
+
+    // Suppress the click that ends a drag-selection so row toggles / re-renders
+    // don't fire and wipe out the text the user just highlighted.
+    var _selMouseDown = null;
+    document.addEventListener('mousedown', function(e) {
+      if (e.target.closest('#sel-copy-btn')) return;
+      _selMouseDown = { x: e.clientX, y: e.clientY };
+    }, true);
+    document.addEventListener('click', function(e) {
+      if (e.target.closest('#sel-copy-btn')) return;
+      var sel = window.getSelection();
+      var hasSel = sel && String(sel.toString()).trim().length > 0;
+      var moved = _selMouseDown && (Math.abs(e.clientX - _selMouseDown.x) > 4 || Math.abs(e.clientY - _selMouseDown.y) > 4);
+      _selMouseDown = null;
+      if (hasSel && moved) {
+        e.stopImmediatePropagation();
+        e.preventDefault();
+      }
+    }, true);
 
     // ─── Inline messages & confirm modal ──────────────────────────
     function showInlineMsg(targetId, message, type) {
