@@ -16,6 +16,7 @@ import {
   removeAddressMapZone,
   listPrefixes,
   listServiceBindings,
+  listBgpPrefixes,
   listZones,
   getAccountEntitlements,
 } from '../api';
@@ -162,6 +163,35 @@ function expandCidr(cidr: string, limit: number): { ips: string[]; truncated: bo
   return { ips, truncated: total > limit };
 }
 
+// A [start, end) IP range (end exclusive) used to test advertisement coverage.
+interface IpRange { start: bigint; end: bigint; v6: boolean; }
+
+// Build an IP range from a CIDR string.
+function cidrToRange(cidr: string): IpRange | null {
+  const [addr, maskStr] = cidr.split('/');
+  const v6 = addr.includes(':');
+  const totalBits = v6 ? 128 : 32;
+  const base = ipToBigInt(addr);
+  if (base === null) return null;
+  const maskLen = maskStr === undefined ? totalBits : Number(maskStr);
+  if (!Number.isInteger(maskLen) || maskLen < 0 || maskLen > totalBits) return null;
+  const hostBits = totalBits - maskLen;
+  const size = BigInt(1) << BigInt(hostBits);
+  const network = base & ~(size - BigInt(1)) & ((BigInt(1) << BigInt(totalBits)) - BigInt(1));
+  return { start: network, end: network + size, v6 };
+}
+
+function ipInRanges(ip: string, ranges: IpRange[]): boolean {
+  const v6 = ip.includes(':');
+  const v = ipToBigInt(ip);
+  if (v === null) return false;
+  for (const r of ranges) {
+    if (r.v6 !== v6) continue;
+    if (v >= r.start && v < r.end) return true;
+  }
+  return false;
+}
+
 // ── Shared binding scan ─────────────────────────────────────────────
 
 interface BindingScan {
@@ -170,6 +200,9 @@ interface BindingScan {
   // Eligible host IPs with provenance, deduped by normalized IP.
   ips: Array<{ ip: string; prefix_cidr: string; service_name: string }>;
   truncated: boolean;
+  // True when some binding IPs were excluded because their BGP prefix is not
+  // advertised (Cloudflare rejects mapping non-advertised IPs: is_not_advertised).
+  skippedNotAdvertised: boolean;
 }
 
 // Walk all onboarded prefixes and their CDN/Spectrum bindings. When
@@ -180,7 +213,7 @@ async function scanBindings(
   token: string,
   enumerate: boolean,
 ): Promise<BindingScan> {
-  const scan: BindingScan = { hasCdn: false, hasSpectrum: false, ips: [], truncated: false };
+  const scan: BindingScan = { hasCdn: false, hasSpectrum: false, ips: [], truncated: false, skippedNotAdvertised: false };
   const prefixesResp = await listPrefixes(accountId, token);
   if (!prefixesResp.success || !Array.isArray(prefixesResp.result)) return scan;
 
@@ -194,6 +227,30 @@ async function scanBindings(
       continue;
     }
     if (!bindingsResp.success || !Array.isArray(bindingsResp.result)) continue;
+
+    // Determine which CIDRs under this prefix are currently advertised. An IP
+    // can only be added to an address map if a BGP prefix covering it is
+    // advertised, otherwise Cloudflare returns `is_not_advertised`.
+    let advertisedRanges: IpRange[] | null = null;
+    const ensureAdvertisedRanges = async (): Promise<IpRange[]> => {
+      if (advertisedRanges) return advertisedRanges;
+      advertisedRanges = [];
+      try {
+        const bgpResp = await listBgpPrefixes(accountId, prefix.id, token);
+        if (bgpResp.success && Array.isArray(bgpResp.result)) {
+          for (const bgp of bgpResp.result) {
+            if (bgp.on_demand && bgp.on_demand.advertised === true) {
+              const r = cidrToRange(bgp.cidr);
+              if (r) advertisedRanges.push(r);
+            }
+          }
+        }
+      } catch {
+        // Leave advertisedRanges empty on failure (treated as "none advertised").
+      }
+      return advertisedRanges;
+    };
+
     for (const b of bindingsResp.result) {
       const kind = classifyService(b.service_name);
       if (!kind) continue;
@@ -201,11 +258,13 @@ async function scanBindings(
       if (kind === 'spectrum') scan.hasSpectrum = true;
       if (!enumerate) continue;
       if (scan.ips.length >= MAX_TOTAL_IPS) { scan.truncated = true; continue; }
+      const ranges = await ensureAdvertisedRanges();
       const { ips, truncated } = expandCidr(b.cidr, MAX_IPS_PER_BINDING);
       if (truncated) scan.truncated = true;
       for (const ip of ips) {
         const norm = normalizeIp(ip) || ip;
         if (seen.has(norm)) continue;
+        if (!ipInRanges(norm, ranges)) { scan.skippedNotAdvertised = true; continue; }
         if (scan.ips.length >= MAX_TOTAL_IPS) { scan.truncated = true; break; }
         seen.add(norm);
         scan.ips.push({ ip: norm, prefix_cidr: prefix.cidr, service_name: b.service_name });
