@@ -172,6 +172,9 @@ export const NOTIFICATION_EVENTS: Record<string, string> = {
   create_delegation: 'Delegation created',
   delete_delegation: 'Delegation deleted',
   update_description: 'Description updated',
+  create_address_map: 'Address map created',
+  update_address_map: 'Address map updated',
+  delete_address_map: 'Address map deleted',
   validate: 'Prefix validated',
   prefix_cap_threshold: 'Advertised prefixes near cap (threshold %)',
   prefix_cap_reached: 'Advertised prefixes at cap (hard limit)',
@@ -273,6 +276,68 @@ export interface CfDelegation {
   delegated_account_id: string;
   modified_at: string;
   parent_prefix_id: string;
+}
+
+// --- Address Maps ---
+
+export type AddressMapMembershipKind = 'zone' | 'account';
+
+export interface CfAddressMapMembership {
+  identifier?: string;
+  kind?: AddressMapMembershipKind;
+  can_delete?: boolean;
+  created_at?: string;
+}
+
+export interface CfAddressMapIp {
+  ip: string;
+  created_at?: string;
+}
+
+// Summary shape returned by the list endpoint (no ips/memberships).
+export interface CfAddressMap {
+  id: string;
+  description?: string;
+  enabled?: boolean;
+  can_delete?: boolean;
+  can_modify_ips?: boolean;
+  default_sni?: string | null;
+  created_at?: string;
+  modified_at?: string;
+}
+
+// Detail shape returned by GET /address_maps/{id}.
+export interface CfAddressMapDetail extends CfAddressMap {
+  ips?: CfAddressMapIp[];
+  memberships?: CfAddressMapMembership[];
+}
+
+// A Cloudflare zone (trimmed to the fields we read for the domain picker).
+export interface CfZone {
+  id: string;
+  name: string;
+}
+
+/**
+ * Normalized address map returned to the UI: `name` is the Cloudflare
+ * `description` field, memberships are split into a scope kind plus resolved
+ * domain names (zone-scoped) or member account ids (account-scoped).
+ */
+export interface AddressMapView {
+  id: string;
+  name: string;
+  enabled: boolean;
+  can_delete: boolean;
+  can_modify_ips: boolean;
+  default_sni: string | null;
+  scope: 'account' | 'zone' | 'empty';
+  ips: string[];
+  domains: Array<{ zone_id: string; name: string; can_delete: boolean }>;
+  account_members: Array<{ account_id: string; can_delete: boolean }>;
+  created_at: string;
+  modified_at: string;
+  account_id: string;
+  account_label?: string;
 }
 
 export interface CfApiResponse<T> {

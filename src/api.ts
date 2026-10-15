@@ -7,6 +7,9 @@ import type {
   CfSubscription,
   AccountEntitlements,
   CfDelegation,
+  CfAddressMap,
+  CfAddressMapDetail,
+  CfZone,
   CfLoaDocument,
   LgResult,
   RdapResult,
@@ -474,6 +477,187 @@ export async function deleteDelegation(
   return r.json();
 }
 
+// --- Address Maps ---
+
+export async function listAddressMaps(
+  accountId: string,
+  token: string,
+): Promise<CfApiResponse<CfAddressMap[]>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps`,
+    { headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function getAddressMap(
+  accountId: string,
+  mapId: string,
+  token: string,
+): Promise<CfApiResponse<CfAddressMapDetail>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
+    { headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function createAddressMap(
+  accountId: string,
+  body: {
+    description?: string;
+    enabled?: boolean;
+    ips?: string[];
+    memberships?: Array<{ identifier: string; kind: 'zone' | 'account' }>;
+  },
+  token: string,
+): Promise<CfApiResponse<CfAddressMapDetail>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps`,
+    {
+      method: 'POST',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    },
+  );
+  return r.json();
+}
+
+export async function updateAddressMap(
+  accountId: string,
+  mapId: string,
+  body: { description?: string; enabled?: boolean; default_sni?: string | null },
+  token: string,
+): Promise<CfApiResponse<CfAddressMapDetail>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
+    {
+      method: 'PATCH',
+      headers: authHeaders(token),
+      body: JSON.stringify(body),
+    },
+  );
+  return r.json();
+}
+
+export async function deleteAddressMap(
+  accountId: string,
+  mapId: string,
+  token: string,
+): Promise<CfApiResponse<{ id: string }>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function addAddressMapIp(
+  accountId: string,
+  mapId: string,
+  ip: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/ips/${encodeURIComponent(ip)}`,
+    { method: 'PUT', headers: authHeaders(token), body: '{}' },
+  );
+  return r.json();
+}
+
+export async function removeAddressMapIp(
+  accountId: string,
+  mapId: string,
+  ip: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/ips/${encodeURIComponent(ip)}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function addAddressMapZone(
+  accountId: string,
+  mapId: string,
+  zoneId: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/zones/${zoneId}`,
+    { method: 'PUT', headers: authHeaders(token), body: '{}' },
+  );
+  return r.json();
+}
+
+export async function removeAddressMapZone(
+  accountId: string,
+  mapId: string,
+  zoneId: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/zones/${zoneId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+export async function addAddressMapAccount(
+  accountId: string,
+  mapId: string,
+  memberAccountId: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/accounts/${memberAccountId}`,
+    { method: 'PUT', headers: authHeaders(token), body: '{}' },
+  );
+  return r.json();
+}
+
+export async function removeAddressMapAccount(
+  accountId: string,
+  mapId: string,
+  memberAccountId: string,
+  token: string,
+): Promise<CfApiResponse<unknown>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/accounts/${memberAccountId}`,
+    { method: 'DELETE', headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+// --- Zones (for the Address Map domain picker; needs Zone: Read) ---
+
+export async function listZones(
+  accountId: string,
+  token: string,
+): Promise<CfApiResponse<CfZone[]>> {
+  // Paginate through all zones for the account (50/page is the API max).
+  const all: CfZone[] = [];
+  let page = 1;
+  let totalPages = 1;
+  let last: CfApiResponse<CfZone[]> | null = null;
+  do {
+    const r = await fetchWithRetry(
+      `${CF_API}/zones?account.id=${accountId}&per_page=50&page=${page}`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json()) as CfApiResponse<CfZone[]> & {
+      result_info?: { total_pages?: number };
+    };
+    last = data;
+    if (!data.success) return data;
+    for (const z of data.result || []) all.push({ id: z.id, name: z.name });
+    totalPages = data.result_info?.total_pages ?? 1;
+    page += 1;
+  } while (page <= totalPages && page <= 40);
+  return { ...(last as CfApiResponse<CfZone[]>), result: all };
+}
+
 // --- BGP Advertisement Toggle ---
 
 export async function toggleBgpAdvertisement(
@@ -619,6 +803,40 @@ export async function verifyTokenPermissions(
     });
   } catch (e) {
     results.push({ permission: 'Billing: Read (account subscriptions)', status: 'fail', detail: String(e) });
+  }
+
+  // Test 7: Address Maps Read — required to list and manage address maps.
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/addressing/address_maps`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
+    results.push({
+      permission: 'Address Maps: Read',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+    });
+  } catch (e) {
+    results.push({ permission: 'Address Maps: Read', status: 'fail', detail: String(e) });
+  }
+
+  // Test 8: Zone Read — required to resolve/select domains for zone-scoped maps.
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/zones?account.id=${accountId}&per_page=1`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
+    results.push({
+      permission: 'Zone: Read (address map domains)',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+    });
+  } catch (e) {
+    results.push({ permission: 'Zone: Read (address map domains)', status: 'fail', detail: String(e) });
   }
 
   return results;

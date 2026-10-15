@@ -191,6 +191,13 @@ export function renderDashboard(userEmail: string): string {
     .al-badge-blue { background: rgba(59,130,246,0.15); color: #3b82f6; border: 1px solid rgba(59,130,246,0.3); }
     .al-badge-yellow { background: rgba(234,179,8,0.15); color: #eab308; border: 1px solid rgba(234,179,8,0.3); }
     .al-badge-gray { background: rgba(107,114,128,0.15); color: #6b7280; border: 1px solid rgba(107,114,128,0.3); }
+    .al-badge-teal { background: rgba(20,184,166,0.15); color: #14b8a6; border: 1px solid rgba(20,184,166,0.3); }
+    .am-link { color: #3b82f6; cursor: pointer; background: none; border: none; padding: 0; font-size: 0.6875rem; }
+    .am-link:hover { text-decoration: underline; }
+    .am-link:disabled { color: var(--border); cursor: default; text-decoration: none; }
+    .am-link-danger { color: #ef4444; }
+    .am-chip-x { color: var(--text-secondary); cursor: pointer; background: none; border: none; padding: 0 0 0 2px; }
+    .am-chip-x:hover { color: #ef4444; }
     .al-row { border-bottom: 1px solid var(--border); }
     .al-row:last-child { border-bottom: none; }
     .sel-copy-btn { position: fixed; top: 0; left: 0; z-index: 10000; display: none; align-items: center; gap: 5px; padding: 5px 9px; border-radius: 7px; border: 1px solid var(--border); background: var(--surface); color: var(--text-primary); font-size: 12px; font-weight: 500; box-shadow: 0 4px 16px rgba(0,0,0,0.35); cursor: pointer; opacity: 0; transform: translate(-50%, calc(-100% - 8px)); transition: opacity 0.12s; }
@@ -574,7 +581,7 @@ export function renderDashboard(userEmail: string): string {
               <th class="px-3 py-2.5 text-cf-gray font-medium">IRR</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">RPKI</th>
               <th class="px-3 py-2.5 text-cf-gray font-medium">Description / Tags</th>
-              <th class="px-3 py-2.5 text-cf-gray font-medium text-right"><div class="inline-flex items-center gap-1.5"><button onclick="loadPrefixes()" title="Refresh prefixes" class="px-2.5 py-1 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh</button><button onclick="openAddPrefixModal()" title="Add a new prefix" class="px-2.5 py-1 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>Add Prefix</button></div></th>
+              <th class="px-3 py-2.5 text-cf-gray font-medium text-right"><div class="inline-flex items-center gap-1.5"><button onclick="loadPrefixes()" title="Refresh prefixes" class="px-2.5 py-1 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>Refresh</button><button id="address-maps-btn" onclick="openAddressMapsModal()" title="Create / manage Address Maps" class="hidden px-2.5 py-1 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"/></svg>Address Maps</button><button onclick="openAddPrefixModal()" title="Add a new prefix" class="px-2.5 py-1 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition inline-flex items-center gap-1"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>Add Prefix</button></div></th>
             </tr>
           </thead>
           <tbody id="prefix-table-body">
@@ -1076,6 +1083,36 @@ export function renderDashboard(userEmail: string): string {
             <button id="add-prefix-submit-btn" onclick="submitNewPrefix()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add Prefix</button>
           </div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Address Maps Modal -->
+  <div id="address-maps-modal" class="hidden modal-overlay" onclick="if(event.target===this)closeAddressMapsModal()">
+    <div class="modal-content" style="max-width:820px">
+      <div class="p-4 border-b border-cf-border flex items-center justify-between gap-2">
+        <div>
+          <h3 class="text-sm font-semibold" style="color:var(--text-strong)">Address Maps</h3>
+          <p class="text-xs text-cf-gray mt-0.5">Map account BYOIP addresses to zones or your whole account</p>
+        </div>
+        <button onclick="closeAddressMapsModal()" class="text-cf-gray hover:text-cf-orange transition" title="Close">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>
+      </div>
+      <div class="p-4" style="max-height:78vh;overflow-y:auto">
+        <div id="address-maps-msg" class="hidden mb-3"></div>
+        <!-- List view -->
+        <div id="address-maps-list-view">
+          <div class="flex items-center justify-between mb-3">
+            <div id="address-maps-count" class="text-xs text-cf-gray"></div>
+            <button onclick="startAddressMapWizard()" class="px-2.5 py-1 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition inline-flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>Add Address Map
+            </button>
+          </div>
+          <div id="address-maps-list"><div class="py-8 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading address maps...</span></div></div>
+        </div>
+        <!-- Wizard view -->
+        <div id="address-maps-wizard-view" class="hidden"></div>
       </div>
     </div>
   </div>
@@ -2694,6 +2731,7 @@ export function renderDashboard(userEmail: string): string {
       updateStats();
       updateTagFilter();
       applyFilters();
+      refreshAddressMapEligibility();
     }
 
     function updateStats() {
@@ -3921,6 +3959,652 @@ export function renderDashboard(userEmail: string): string {
       } catch (e) {
         return { services: [], entitlements: emptyEntitlements() };
       }
+    }
+
+    // ─── Address Maps ───────────────────────────────────────────
+
+    var addressMapsData = { maps: [], zonesUnavailable: false };
+    var addressMapWizard = null;
+    var amIpSel = null; // shared IP-selector state for wizard + edit flows
+
+    var AM_SPINNER = '<div class="py-8 text-center text-cf-gray"><div class="spinner"></div><span class="ml-2">Loading...</span></div>';
+    var AM_IP_PAGE_SIZE = 60;
+
+    // Resolve the account the Address Maps UI operates on. In the aggregate
+    // ("all") view the icon is global; eligibility/list span all accounts but
+    // single-account actions need a concrete account chosen in the wizard.
+    function amActiveAccount() {
+      if (activeAccountId && activeAccountId !== 'all') return activeAccountId;
+      return null;
+    }
+
+    async function refreshAddressMapEligibility() {
+      var btn = document.getElementById('address-maps-btn');
+      if (!btn) return;
+      if (!activeAccountId || savedAccounts.length === 0) { btn.classList.add('hidden'); return; }
+      try {
+        var resp = await fetch('/api/address-maps/eligibility?account_id=' + encodeURIComponent(activeAccountId));
+        var data = await resp.json();
+        if (resp.ok && data && data.show) btn.classList.remove('hidden');
+        else btn.classList.add('hidden');
+      } catch (e) {
+        btn.classList.add('hidden');
+      }
+    }
+
+    function openAddressMapsModal() {
+      document.getElementById('address-maps-modal').classList.remove('hidden');
+      addressMapWizard = null;
+      showAddressMapsListView();
+      loadAddressMaps();
+    }
+    function closeAddressMapsModal() {
+      document.getElementById('address-maps-modal').classList.add('hidden');
+      addressMapWizard = null;
+      amIpSel = null;
+    }
+    function showAddressMapsListView() {
+      document.getElementById('address-maps-list-view').classList.remove('hidden');
+      document.getElementById('address-maps-wizard-view').classList.add('hidden');
+    }
+    function showAddressMapsWizardView() {
+      document.getElementById('address-maps-list-view').classList.add('hidden');
+      document.getElementById('address-maps-wizard-view').classList.remove('hidden');
+    }
+
+    function amMsg(message, type) {
+      var el = document.getElementById('address-maps-msg');
+      if (!el) return;
+      if (!message) { el.classList.add('hidden'); el.innerHTML = ''; return; }
+      var color = type === 'error' ? 'text-red-400 border-red-500' : (type === 'success' ? 'text-green-400 border-green-500' : 'text-cf-gray border-cf-border');
+      el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border ' + color;
+      el.innerHTML = escHtml(message);
+      el.classList.remove('hidden');
+    }
+
+    async function loadAddressMaps() {
+      var listEl = document.getElementById('address-maps-list');
+      listEl.innerHTML = AM_SPINNER;
+      amMsg('');
+      try {
+        var resp = await fetch('/api/address-maps?account_id=' + encodeURIComponent(activeAccountId));
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load address maps');
+        addressMapsData = { maps: data.maps || [], zonesUnavailable: !!data.zones_unavailable };
+        renderAddressMapsList();
+      } catch (e) {
+        listEl.innerHTML = '<div class="py-6 text-center text-red-400 text-xs">' + escHtml(String(e && e.message || e)) + '</div>';
+      }
+    }
+
+    function renderAddressMapsList() {
+      var maps = addressMapsData.maps;
+      var countEl = document.getElementById('address-maps-count');
+      countEl.textContent = maps.length + ' address map' + (maps.length === 1 ? '' : 's');
+      var listEl = document.getElementById('address-maps-list');
+      if (maps.length === 0) {
+        listEl.innerHTML = '<div class="py-8 text-center text-cf-gray text-xs">No address maps yet. Click "Add Address Map" to create one.</div>';
+        return;
+      }
+      var warn = addressMapsData.zonesUnavailable
+        ? '<div class="mb-3 text-[11px] text-yellow-400 border border-yellow-600/40 rounded-lg px-3 py-2">Some domain names could not be resolved (token may be missing Zone: Read). Zone IDs are shown instead.</div>'
+        : '';
+      var aggregate = activeAccountId === 'all';
+      listEl.innerHTML = warn + maps.map(function(m) { return amMapCard(m, aggregate); }).join('');
+    }
+
+    function amMapCard(m, aggregate) {
+      var scopeBadge = m.scope === 'account'
+        ? '<span class="al-badge al-badge-blue">Account</span>'
+        : (m.scope === 'zone' ? '<span class="al-badge al-badge-teal">Zone</span>' : '<span class="al-badge">Unscoped</span>');
+      var enabledBadge = m.enabled
+        ? '<span class="al-badge al-badge-green">Enabled</span>'
+        : '<span class="al-badge al-badge-gray">Disabled</span>';
+      var nameHtml = m.name
+        ? '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(m.name) + '</span>'
+        : '<span class="italic text-cf-gray">Unnamed</span>';
+      var acctHtml = aggregate ? ' ' + accountBadge(m.account_id, m.account_label) : '';
+
+      var domainsHtml = '';
+      if (m.scope === 'zone') {
+        var doms = (m.domains || []).map(function(d) { return '<span class="al-badge">' + escHtml(d.name) + '</span>'; }).join(' ');
+        domainsHtml = '<div class="mt-1.5 text-[11px] text-cf-gray">Domains: ' + (doms || '<span class="italic">none</span>') + '</div>';
+      } else if (m.scope === 'account') {
+        domainsHtml = '<div class="mt-1.5 text-[11px] text-cf-gray">Applies to all zones in the account</div>';
+      }
+
+      var ips = m.ips || [];
+      var ipPreview = ips.slice(0, 12).map(function(ip) { return '<span class="al-badge" style="font-family:monospace">' + escHtml(ip) + '</span>'; }).join(' ');
+      var ipMore = ips.length > 12 ? ' <span class="text-[10px] text-cf-gray">+' + (ips.length - 12) + ' more</span>' : '';
+      var ipsHtml = '<div class="mt-1.5 text-[11px] text-cf-gray">IPs (' + ips.length + '): ' + (ipPreview || '<span class="italic">none</span>') + ipMore + '</div>';
+
+      var mapRef = "'" + escAttr(m.id) + "','" + escAttr(m.account_id) + "'";
+      var actions = [];
+      if (!m.name) actions.push('<button onclick="amPromptName(' + mapRef + ')" class="am-link">Add name</button>');
+      else actions.push('<button onclick="amPromptName(' + mapRef + ')" class="am-link">Rename</button>');
+      if (m.can_modify_ips) actions.push('<button onclick="amEditIps(' + mapRef + ')" class="am-link">Add IPs</button>');
+      if (m.scope === 'zone') actions.push('<button onclick="amEditDomains(' + mapRef + ')" class="am-link">Add domains</button>');
+      actions.push('<button onclick="amToggleEnabled(' + mapRef + ',' + (m.enabled ? 'false' : 'true') + ')" class="am-link">' + (m.enabled ? 'Disable' : 'Enable') + '</button>');
+      if (m.can_delete) actions.push('<button onclick="amDeleteMap(' + mapRef + ')" class="am-link am-link-danger">Delete</button>');
+
+      return '<div class="rounded-lg border border-cf-border p-3 mb-2">' +
+        '<div class="flex items-center justify-between gap-2 flex-wrap">' +
+          '<div class="flex items-center gap-2 flex-wrap">' + nameHtml + scopeBadge + enabledBadge + acctHtml + '</div>' +
+          '<div class="flex items-center gap-2 flex-wrap text-[11px]">' + actions.join('<span class="text-cf-border">|</span>') + '</div>' +
+        '</div>' + domainsHtml + ipsHtml + '</div>';
+    }
+
+    async function amPromptName(mapId, accountId) {
+      var map = addressMapsData.maps.find(function(m) { return m.id === mapId && m.account_id === accountId; });
+      var current = map ? map.name : '';
+      var name = window.prompt('Address map name', current || '');
+      if (name === null) return;
+      name = name.trim();
+      if (!name) { amMsg('Name cannot be empty.', 'error'); return; }
+      try {
+        var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: name, account_id: accountId })
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to update');
+        amMsg('Name updated.', 'success');
+        loadAddressMaps();
+      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+    }
+
+    async function amToggleEnabled(mapId, accountId, enabled) {
+      try {
+        var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled: enabled, account_id: accountId })
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to update');
+        loadAddressMaps();
+      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+    }
+
+    function amDeleteMap(mapId, accountId) {
+      showConfirm({
+        title: 'Delete address map',
+        message: 'Delete this address map? This cannot be undone.',
+        confirmLabel: 'Delete',
+        danger: true,
+        onConfirm: async function() {
+          try {
+            var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId) + '?account_id=' + encodeURIComponent(accountId), { method: 'DELETE' });
+            var data = await resp.json();
+            if (!resp.ok || data.error) throw new Error(data.error || 'Failed to delete');
+            amMsg('Address map deleted.', 'success');
+            loadAddressMaps();
+          } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+        }
+      });
+    }
+
+    // ─── Address Map wizard ─────────────────────────────────────
+
+    function startAddressMapWizard() {
+      var needAccount = activeAccountId === 'all';
+      addressMapWizard = {
+        needAccount: needAccount,
+        accountId: needAccount ? (savedAccounts[0] ? savedAccounts[0].account_id : null) : activeAccountId,
+        step: 0,
+        name: '',
+        scope: 'account',
+        zones: null,
+        zonesError: '',
+        zoneIds: {},
+        zoneFilter: '',
+        selectedIps: {},
+        availableIps: null,
+        ipsError: '',
+        ipTruncated: false,
+        ipPage: 1,
+        ipFilter: ''
+      };
+      showAddressMapsWizardView();
+      renderWizard();
+    }
+
+    function amWizardSteps() {
+      var steps = [];
+      if (addressMapWizard.needAccount) steps.push('account');
+      steps.push('name');
+      steps.push('scope');
+      steps.push('ips');
+      steps.push('review');
+      return steps;
+    }
+    var AM_STEP_LABELS = { account: 'Account', name: 'Name', scope: 'Scope & Domains', ips: 'IP Addresses', review: 'Review' };
+
+    function renderWizard() {
+      var w = addressMapWizard;
+      var steps = amWizardSteps();
+      var crumbs = steps.map(function(s, i) {
+        var active = i === w.step;
+        var cls = active ? 'text-cf-orange font-semibold' : (i < w.step ? 'text-cf-gray' : 'text-cf-border');
+        return '<span class="' + cls + '">' + escHtml(AM_STEP_LABELS[s]) + '</span>';
+      }).join('<span class="text-cf-border mx-1.5">&rsaquo;</span>');
+
+      var body = '';
+      var key = steps[w.step];
+      if (key === 'account') body = amStepAccount();
+      else if (key === 'name') body = amStepName();
+      else if (key === 'scope') body = amStepScope();
+      else if (key === 'ips') body = amStepIps();
+      else if (key === 'review') body = amStepReview();
+
+      var isFirst = w.step === 0;
+      var isLast = w.step === steps.length - 1;
+      var backBtn = '<button onclick="amWizardBack()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">' + (isFirst ? 'Back to Address Maps' : 'Previous') + '</button>';
+      var nextBtn = isLast
+        ? '<button id="am-create-btn" onclick="amWizardSubmit()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Create Address Map</button>'
+        : '<button onclick="amWizardNext()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Next</button>';
+
+      document.getElementById('address-maps-wizard-view').innerHTML =
+        '<div class="mb-3"><button onclick="amWizardBack()" class="text-xs text-cf-orange hover:underline">&larr; Back to Address Maps</button></div>' +
+        '<div class="text-[11px] mb-3">' + crumbs + '</div>' +
+        '<div id="am-wizard-body">' + body + '</div>' +
+        '<div id="am-wizard-error" class="text-[11px] text-red-400 mt-3 hidden"></div>' +
+        '<div class="flex justify-between gap-2 mt-4 pt-3 border-t border-cf-border">' + backBtn + nextBtn + '</div>';
+
+      if (key === 'ips') amAfterIpStepRender();
+      if (key === 'scope' && w.scope === 'zone') amEnsureZonesLoaded();
+    }
+
+    function amWizardErr(msg) {
+      var el = document.getElementById('am-wizard-error');
+      if (!el) return;
+      if (!msg) { el.classList.add('hidden'); el.textContent = ''; return; }
+      el.textContent = msg; el.classList.remove('hidden');
+    }
+
+    function amStepAccount() {
+      var opts = savedAccounts.map(function(a) {
+        var sel = a.account_id === addressMapWizard.accountId ? ' selected' : '';
+        return '<option value="' + escAttr(a.account_id) + '"' + sel + '>' + escHtml(a.account_label || a.account_id) + '</option>';
+      }).join('');
+      return '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Choose account</h4>' +
+        '<p class="text-xs text-cf-gray mb-3">The address map will be created under this account. Available IPs and domains are scoped to it.</p>' +
+        '<select onchange="amSetWizardAccount(this.value)" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">' + opts + '</select>';
+    }
+    function amSetWizardAccount(v) {
+      addressMapWizard.accountId = v;
+      // Reset account-scoped data so later steps reload.
+      addressMapWizard.zones = null;
+      addressMapWizard.availableIps = null;
+      addressMapWizard.zoneIds = {};
+      addressMapWizard.selectedIps = {};
+    }
+
+    function amStepName() {
+      return '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Name</h4>' +
+        '<p class="text-xs text-cf-gray mb-3">Give the address map a name. (Stored as the map\\'s description in Cloudflare.)</p>' +
+        '<input id="am-name-input" type="text" value="' + escAttr(addressMapWizard.name) + '" oninput="addressMapWizard.name=this.value" placeholder="e.g. Production CDN map" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">';
+    }
+
+    function amStepScope() {
+      var w = addressMapWizard;
+      var accChecked = w.scope === 'account' ? ' checked' : '';
+      var zoneChecked = w.scope === 'zone' ? ' checked' : '';
+      var domainsBlock = '';
+      if (w.scope === 'zone') {
+        domainsBlock = '<div class="mt-3"><label class="block text-xs text-cf-gray mb-1">Add domains to map (required)</label>' + amZonePickerHtml() + '</div>';
+      }
+      return '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Scope</h4>' +
+        '<p class="text-xs text-cf-gray mb-3">Choose how this map applies.</p>' +
+        '<label class="flex items-start gap-2 text-xs cursor-pointer mb-2"><input type="radio" name="am-scope" value="zone"' + zoneChecked + ' onchange="amSetScope(\\'zone\\')" class="mt-0.5" style="accent-color:#F6821F"><span><span style="color:var(--text-primary)">Zone level</span><span class="block text-[10px] text-cf-gray mt-0.5">Map only applies to the zones/domains specified below.</span></span></label>' +
+        '<label class="flex items-start gap-2 text-xs cursor-pointer"><input type="radio" name="am-scope" value="account"' + accChecked + ' onchange="amSetScope(\\'account\\')" class="mt-0.5" style="accent-color:#F6821F"><span><span style="color:var(--text-primary)">Account level</span><span class="block text-[10px] text-cf-gray mt-0.5">Map applies to all zones/domains in this account.</span></span></label>' +
+        domainsBlock;
+    }
+    function amSetScope(scope) {
+      addressMapWizard.scope = scope;
+      renderWizard();
+    }
+
+    function amZonePickerHtml() {
+      var w = addressMapWizard;
+      if (w.zones === null) {
+        return '<div class="text-[11px] text-cf-gray py-2">' + (w.zonesError ? escHtml(w.zonesError) : 'Loading domains...') + '</div>';
+      }
+      if (w.zones.length === 0) {
+        return '<div class="text-[11px] text-yellow-400 py-2">No zones found for this account (or token lacks Zone: Read).</div>';
+      }
+      var filter = (w.zoneFilter || '').toLowerCase();
+      var selectedChips = Object.keys(w.zoneIds).filter(function(id) { return w.zoneIds[id]; }).map(function(id) {
+        var z = w.zones.find(function(x) { return x.id === id; });
+        var nm = z ? z.name : id;
+        return '<span class="al-badge">' + escHtml(nm) + ' <button onclick="amToggleZone(\\'' + escAttr(id) + '\\')" class="am-chip-x">&times;</button></span>';
+      }).join(' ');
+      var rows = w.zones.filter(function(z) { return !filter || z.name.toLowerCase().indexOf(filter) !== -1; }).slice(0, 200).map(function(z) {
+        var checked = w.zoneIds[z.id] ? ' checked' : '';
+        return '<label class="flex items-center gap-2 text-xs py-1 px-2 hover:bg-cf-border/20 cursor-pointer"><input type="checkbox"' + checked + ' onchange="amToggleZone(\\'' + escAttr(z.id) + '\\')" style="accent-color:#F6821F"><span>' + escHtml(z.name) + '</span></label>';
+      }).join('');
+      return '<div class="rounded-lg border border-cf-border bg-cf-dark p-2">' +
+        '<div class="flex flex-wrap gap-1 mb-2">' + (selectedChips || '<span class="text-[10px] text-cf-gray">No domains selected</span>') + '</div>' +
+        '<input type="text" value="' + escAttr(w.zoneFilter || '') + '" oninput="addressMapWizard.zoneFilter=this.value; amRefreshZonePicker()" placeholder="Filter domains..." class="w-full px-2 py-1 mb-1 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none">' +
+        '<div style="max-height:200px;overflow-y:auto">' + rows + '</div></div>';
+    }
+    function amRefreshZonePicker() {
+      var holder = document.getElementById('am-wizard-body');
+      if (holder) renderWizard();
+    }
+    function amToggleZone(id) {
+      var w = addressMapWizard;
+      w.zoneIds[id] = !w.zoneIds[id];
+      renderWizard();
+    }
+    async function amEnsureZonesLoaded() {
+      var w = addressMapWizard;
+      if (w.zones !== null) return;
+      try {
+        var resp = await fetch('/api/zones?account_id=' + encodeURIComponent(w.accountId));
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load domains');
+        w.zones = data.zones || [];
+        w.zonesError = '';
+      } catch (e) {
+        w.zones = [];
+        w.zonesError = String(e && e.message || e);
+      }
+      if (amWizardSteps()[w.step] === 'scope' && w.scope === 'zone') renderWizard();
+    }
+
+    // ─── IP selector (shared by wizard + edit) ──────────────────
+
+    function amStepIps() {
+      return '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Manage IP Addresses</h4>' +
+        '<p class="text-xs text-cf-gray mb-1">Add IP addresses to map (required)</p>' +
+        '<p class="text-[11px] text-cf-gray mb-3">Select the IPv4/IPv6 records to associate with this map. These are the individual addresses available from CDN/Spectrum bindings on your onboarded prefixes.</p>' +
+        '<div id="am-ip-selector">' + AM_SPINNER + '</div>';
+    }
+
+    function amAfterIpStepRender() {
+      var w = addressMapWizard;
+      if (w.availableIps !== null) { amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard'); return; }
+      amLoadWizardIps();
+    }
+    async function amLoadWizardIps() {
+      var w = addressMapWizard;
+      try {
+        var resp = await fetch('/api/address-maps/available-ips?account_id=' + encodeURIComponent(w.accountId));
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load available IPs');
+        w.availableIps = data.ips || [];
+        w.ipTruncated = !!data.truncated;
+      } catch (e) {
+        w.availableIps = [];
+        w.ipsError = String(e && e.message || e);
+      }
+      if (amWizardSteps()[w.step] === 'ips') amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard');
+    }
+
+    // mode: 'wizard' | 'edit'
+    function amInitIpSelector(ips, selectedRef, truncated, mode) {
+      amIpSel = { ips: ips, selected: selectedRef, page: 1, filter: '', truncated: truncated, mode: mode };
+      amRenderIpSelector();
+    }
+
+    function amRenderIpSelector() {
+      var el = document.getElementById('am-ip-selector');
+      if (!el || !amIpSel) return;
+      var s = amIpSel;
+      if (s.ips.length === 0) {
+        el.innerHTML = '<div class="rounded-lg border border-cf-border p-3 text-[11px] text-cf-gray">No available IPs. All CDN/Spectrum binding IPs may already be bound to another address map, or there are no CDN/Spectrum bindings on your prefixes.</div>';
+        return;
+      }
+      var filter = (s.filter || '').toLowerCase();
+      var filtered = s.ips.filter(function(x) { return !filter || x.ip.toLowerCase().indexOf(filter) !== -1 || (x.prefix_cidr || '').toLowerCase().indexOf(filter) !== -1; });
+      var totalPages = Math.max(1, Math.ceil(filtered.length / AM_IP_PAGE_SIZE));
+      if (s.page > totalPages) s.page = totalPages;
+      var start = (s.page - 1) * AM_IP_PAGE_SIZE;
+      var pageItems = filtered.slice(start, start + AM_IP_PAGE_SIZE);
+      var selectedCount = Object.keys(s.selected).filter(function(k) { return s.selected[k]; }).length;
+
+      var rows = pageItems.map(function(x) {
+        var checked = s.selected[x.ip] ? ' checked' : '';
+        return '<label class="flex items-center justify-between gap-2 text-xs py-1 px-2 hover:bg-cf-border/20 cursor-pointer border-b border-cf-border/40">' +
+          '<span class="flex items-center gap-2"><input type="checkbox"' + checked + ' onchange="amToggleIp(\\'' + escAttr(x.ip) + '\\')" style="accent-color:#F6821F"><span style="font-family:monospace">' + escHtml(x.ip) + '</span></span>' +
+          '<span class="text-[10px] text-cf-gray">' + escHtml(x.prefix_cidr || '') + ' &middot; ' + escHtml(x.service_name || '') + '</span></label>';
+      }).join('');
+
+      var pager = '<div class="flex items-center justify-between mt-2 text-[11px] text-cf-gray">' +
+        '<span>' + selectedCount + ' selected &middot; ' + filtered.length + ' available</span>' +
+        '<span class="flex items-center gap-2">' +
+          '<button onclick="amIpSelectAllPage()" class="am-link">Select page</button>' +
+          '<button onclick="amIpClearAll()" class="am-link">Clear all</button>' +
+          '<button onclick="amIpPage(-1)" class="am-link"' + (s.page <= 1 ? ' disabled' : '') + '>&larr;</button>' +
+          '<span>Page ' + s.page + '/' + totalPages + '</span>' +
+          '<button onclick="amIpPage(1)" class="am-link"' + (s.page >= totalPages ? ' disabled' : '') + '>&rarr;</button>' +
+        '</span></div>';
+
+      var truncNote = s.truncated ? '<div class="mt-2 text-[10px] text-yellow-400">Some large bindings were not fully enumerated. Manage those addresses via the Cloudflare API.</div>' : '';
+
+      el.innerHTML =
+        '<input type="text" value="' + escAttr(s.filter || '') + '" oninput="amIpFilter(this.value)" placeholder="Filter by IP or prefix..." class="w-full px-2 py-1 mb-2 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none">' +
+        '<div class="rounded-lg border border-cf-border bg-cf-dark" style="max-height:260px;overflow-y:auto">' + rows + '</div>' + pager + truncNote;
+    }
+    function amToggleIp(ip) { amIpSel.selected[ip] = !amIpSel.selected[ip]; amRenderIpSelector(); }
+    function amIpFilter(v) { amIpSel.filter = v; amIpSel.page = 1; amRenderIpSelector(); }
+    function amIpPage(delta) { amIpSel.page += delta; amRenderIpSelector(); }
+    function amIpSelectAllPage() {
+      var s = amIpSel;
+      var filter = (s.filter || '').toLowerCase();
+      var filtered = s.ips.filter(function(x) { return !filter || x.ip.toLowerCase().indexOf(filter) !== -1 || (x.prefix_cidr || '').toLowerCase().indexOf(filter) !== -1; });
+      var start = (s.page - 1) * AM_IP_PAGE_SIZE;
+      filtered.slice(start, start + AM_IP_PAGE_SIZE).forEach(function(x) { s.selected[x.ip] = true; });
+      amRenderIpSelector();
+    }
+    function amIpClearAll() { amIpSel.selected = {}; if (amIpSel.mode === 'wizard' && addressMapWizard) addressMapWizard.selectedIps = amIpSel.selected; amRenderIpSelector(); }
+
+    function amStepReview() {
+      var w = addressMapWizard;
+      var acctName = accountLabel(w.accountId);
+      var selectedIps = Object.keys(w.selectedIps).filter(function(k) { return w.selectedIps[k]; });
+      var domains = w.scope === 'zone'
+        ? Object.keys(w.zoneIds).filter(function(id) { return w.zoneIds[id]; }).map(function(id) { var z = (w.zones || []).find(function(x) { return x.id === id; }); return z ? z.name : id; })
+        : [];
+      var rows = '';
+      rows += amReviewRow('Account', escHtml(acctName));
+      rows += amReviewRow('Name', escHtml(w.name || '—'));
+      rows += amReviewRow('Scope', w.scope === 'zone' ? 'Zone level' : 'Account level');
+      if (w.scope === 'zone') rows += amReviewRow('Domains', domains.length ? domains.map(function(d) { return escHtml(d); }).join(', ') : '—');
+      rows += amReviewRow('IP addresses', selectedIps.length + ' selected');
+      return '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Review</h4>' +
+        '<p class="text-xs text-cf-gray mb-3">Confirm the details below, then create the map.</p>' +
+        '<div class="rounded-lg border border-cf-border divide-y divide-cf-border">' + rows + '</div>';
+    }
+    function amReviewRow(label, value) {
+      return '<div class="flex justify-between gap-4 px-3 py-2 text-xs"><span class="text-cf-gray">' + label + '</span><span style="color:var(--text-primary)">' + value + '</span></div>';
+    }
+
+    function amWizardBack() {
+      if (addressMapWizard.step === 0) {
+        showAddressMapsListView();
+        addressMapWizard = null;
+        amIpSel = null;
+        return;
+      }
+      addressMapWizard.step -= 1;
+      renderWizard();
+    }
+    function amWizardNext() {
+      var w = addressMapWizard;
+      var key = amWizardSteps()[w.step];
+      amWizardErr('');
+      if (key === 'account' && !w.accountId) { amWizardErr('Choose an account.'); return; }
+      if (key === 'name' && !(w.name || '').trim()) { amWizardErr('A name is required.'); return; }
+      if (key === 'scope') {
+        if (w.scope === 'zone') {
+          var sel = Object.keys(w.zoneIds).filter(function(id) { return w.zoneIds[id]; });
+          if (sel.length === 0) { amWizardErr('Select at least one domain for a zone-scoped map.'); return; }
+        }
+      }
+      if (key === 'ips') {
+        // sync selection reference (amIpSel.selected is the same object as w.selectedIps)
+        var ipCount = Object.keys(w.selectedIps).filter(function(k) { return w.selectedIps[k]; }).length;
+        if (ipCount === 0) { amWizardErr('Select at least one IP address.'); return; }
+      }
+      w.step += 1;
+      renderWizard();
+    }
+
+    async function amWizardSubmit() {
+      var w = addressMapWizard;
+      var btn = document.getElementById('am-create-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Creating...'; }
+      amWizardErr('');
+      var selectedIps = Object.keys(w.selectedIps).filter(function(k) { return w.selectedIps[k]; });
+      var zoneIds = w.scope === 'zone' ? Object.keys(w.zoneIds).filter(function(id) { return w.zoneIds[id]; }) : [];
+      try {
+        var resp = await fetch('/api/address-maps', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: (w.name || '').trim(), scope: w.scope, zone_ids: zoneIds,
+            ips: selectedIps, enabled: true, account_id: w.accountId
+          })
+        });
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to create address map');
+        addressMapWizard = null;
+        amIpSel = null;
+        showAddressMapsListView();
+        amMsg('Address map created.', 'success');
+        loadAddressMaps();
+      } catch (e) {
+        amWizardErr(String(e && e.message || e));
+        if (btn) { btn.disabled = false; btn.textContent = 'Create Address Map'; }
+      }
+    }
+
+    // ─── Edit existing maps: add IPs / add domains ──────────────
+
+    function amEditIps(mapId, accountId) {
+      var map = addressMapsData.maps.find(function(m) { return m.id === mapId && m.account_id === accountId; });
+      var selected = {};
+      showAddressMapsWizardView();
+      document.getElementById('address-maps-wizard-view').innerHTML =
+        '<div class="mb-3"><button onclick="amCancelEdit()" class="text-xs text-cf-orange hover:underline">&larr; Back to Address Maps</button></div>' +
+        '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Add IPs to ' + escHtml(map ? (map.name || 'address map') : 'address map') + '</h4>' +
+        '<p class="text-[11px] text-cf-gray mb-3">Select additional addresses to add to this map.</p>' +
+        '<div id="am-ip-selector">' + AM_SPINNER + '</div>' +
+        '<div id="am-wizard-error" class="text-[11px] text-red-400 mt-3 hidden"></div>' +
+        '<div class="flex justify-between gap-2 mt-4 pt-3 border-t border-cf-border">' +
+          '<button onclick="amCancelEdit()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>' +
+          '<button id="am-edit-ips-btn" onclick="amSubmitEditIps(\\'' + escAttr(mapId) + '\\',\\'' + escAttr(accountId) + '\\')" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add selected IPs</button>' +
+        '</div>';
+      amEditIpSelected = selected;
+      amLoadEditIps(accountId, selected);
+    }
+    var amEditIpSelected = {};
+    async function amLoadEditIps(accountId, selected) {
+      try {
+        var resp = await fetch('/api/address-maps/available-ips?account_id=' + encodeURIComponent(accountId));
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load available IPs');
+        amInitIpSelector(data.ips || [], selected, !!data.truncated, 'edit');
+      } catch (e) {
+        var el = document.getElementById('am-ip-selector');
+        if (el) el.innerHTML = '<div class="text-[11px] text-red-400">' + escHtml(String(e && e.message || e)) + '</div>';
+      }
+    }
+    async function amSubmitEditIps(mapId, accountId) {
+      var selected = Object.keys(amEditIpSelected).filter(function(k) { return amEditIpSelected[k]; });
+      if (selected.length === 0) { amWizardErr('Select at least one IP.'); return; }
+      var btn = document.getElementById('am-edit-ips-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+      var errors = [];
+      for (var i = 0; i < selected.length; i++) {
+        try {
+          var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId) + '/ips', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ip: selected[i], account_id: accountId })
+          });
+          var data = await resp.json();
+          if (!resp.ok || data.error) throw new Error(data.error || 'Failed');
+        } catch (e) { errors.push(selected[i] + ': ' + String(e && e.message || e)); }
+      }
+      amCancelEdit();
+      if (errors.length) amMsg('Added with ' + errors.length + ' error(s): ' + errors[0], 'error');
+      else amMsg(selected.length + ' IP(s) added.', 'success');
+      loadAddressMaps();
+    }
+
+    function amEditDomains(mapId, accountId) {
+      var map = addressMapsData.maps.find(function(m) { return m.id === mapId && m.account_id === accountId; });
+      amEditDomainState = { mapId: mapId, accountId: accountId, zones: null, zonesError: '', zoneIds: {}, filter: '', existing: {} };
+      if (map) (map.domains || []).forEach(function(d) { amEditDomainState.existing[d.zone_id] = true; });
+      showAddressMapsWizardView();
+      amRenderEditDomains();
+      amLoadEditDomainZones();
+    }
+    var amEditDomainState = null;
+    async function amLoadEditDomainZones() {
+      var st = amEditDomainState;
+      try {
+        var resp = await fetch('/api/zones?account_id=' + encodeURIComponent(st.accountId));
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load domains');
+        st.zones = data.zones || [];
+      } catch (e) { st.zones = []; st.zonesError = String(e && e.message || e); }
+      amRenderEditDomains();
+    }
+    function amRenderEditDomains() {
+      var st = amEditDomainState;
+      var picker;
+      if (st.zones === null) picker = '<div class="text-[11px] text-cf-gray py-2">' + (st.zonesError ? escHtml(st.zonesError) : 'Loading domains...') + '</div>';
+      else if (st.zones.length === 0) picker = '<div class="text-[11px] text-yellow-400 py-2">No zones found (or token lacks Zone: Read).</div>';
+      else {
+        var filter = (st.filter || '').toLowerCase();
+        var rows = st.zones.filter(function(z) { return !filter || z.name.toLowerCase().indexOf(filter) !== -1; }).slice(0, 200).map(function(z) {
+          var already = st.existing[z.id];
+          var checked = st.zoneIds[z.id] ? ' checked' : '';
+          var dis = already ? ' disabled' : '';
+          var tag = already ? ' <span class="text-[10px] text-cf-gray">(already added)</span>' : '';
+          return '<label class="flex items-center gap-2 text-xs py-1 px-2 hover:bg-cf-border/20 cursor-pointer"><input type="checkbox"' + checked + dis + ' onchange="amEditDomainToggle(\\'' + escAttr(z.id) + '\\')" style="accent-color:#F6821F"><span>' + escHtml(z.name) + tag + '</span></label>';
+        }).join('');
+        picker = '<input type="text" value="' + escAttr(st.filter || '') + '" oninput="amEditDomainState.filter=this.value; amRenderEditDomains()" placeholder="Filter domains..." class="w-full px-2 py-1 mb-1 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none"><div class="rounded-lg border border-cf-border bg-cf-dark" style="max-height:240px;overflow-y:auto">' + rows + '</div>';
+      }
+      document.getElementById('address-maps-wizard-view').innerHTML =
+        '<div class="mb-3"><button onclick="amCancelEdit()" class="text-xs text-cf-orange hover:underline">&larr; Back to Address Maps</button></div>' +
+        '<h4 class="text-base font-semibold mb-1" style="color:var(--text-strong)">Add domains</h4>' +
+        '<p class="text-[11px] text-cf-gray mb-3">Select domains (zones) to add to this map.</p>' + picker +
+        '<div id="am-wizard-error" class="text-[11px] text-red-400 mt-3 hidden"></div>' +
+        '<div class="flex justify-between gap-2 mt-4 pt-3 border-t border-cf-border">' +
+          '<button onclick="amCancelEdit()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>' +
+          '<button id="am-edit-dom-btn" onclick="amSubmitEditDomains()" class="px-3 py-1.5 bg-cf-orange text-white text-xs font-medium rounded-lg hover:bg-orange-600 transition">Add selected domains</button>' +
+        '</div>';
+    }
+    function amEditDomainToggle(id) { amEditDomainState.zoneIds[id] = !amEditDomainState.zoneIds[id]; amRenderEditDomains(); }
+    async function amSubmitEditDomains() {
+      var st = amEditDomainState;
+      var selected = Object.keys(st.zoneIds).filter(function(id) { return st.zoneIds[id]; });
+      if (selected.length === 0) { amWizardErr('Select at least one domain.'); return; }
+      var btn = document.getElementById('am-edit-dom-btn');
+      if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; }
+      var errors = [];
+      for (var i = 0; i < selected.length; i++) {
+        try {
+          var resp = await fetch('/api/address-maps/' + encodeURIComponent(st.mapId) + '/zones', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ zone_id: selected[i], account_id: st.accountId })
+          });
+          var data = await resp.json();
+          if (!resp.ok || data.error) throw new Error(data.error || 'Failed');
+        } catch (e) { errors.push(String(e && e.message || e)); }
+      }
+      amCancelEdit();
+      if (errors.length) amMsg('Added with ' + errors.length + ' error(s): ' + errors[0], 'error');
+      else amMsg(selected.length + ' domain(s) added.', 'success');
+      loadAddressMaps();
+    }
+
+    function amCancelEdit() {
+      amIpSel = null;
+      amEditDomainState = null;
+      showAddressMapsListView();
     }
 
     // ─── Child Prefix Modal ─────────────────────────────────────

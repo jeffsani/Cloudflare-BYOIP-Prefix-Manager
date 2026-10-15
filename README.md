@@ -25,6 +25,13 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 ![Delegate Prefix](src/delegate-prefix.png)
 
+### Address Maps
+- **Entitlement-Aware Entry Point** — An **Address Maps** button appears next to **Add Prefix** only when the account has a CDN or Spectrum binding on one of its onboarded prefixes (CDN/Spectrum maps are the useful cases; Spectrum maps are mainly for SNI applications).
+- **List & Inspect** — Open the modal to enumerate every address map via the API, showing each map's name, scope (Account or Zone), domains (for zone-scoped maps, resolved to names via Zone: Read), and the IPs bound to the map. In the aggregate (all-accounts) view, maps across every configured account are listed and labeled by account.
+- **Step-by-Step Create Wizard** — A guided flow prompts logically for input: pick the target account (aggregate view only) → **Name** (required in the UI; stored as the map's `description`, which the Cloudflare API treats as optional) → **Scope** (Account level, or Zone level with a required searchable domain multi-select) → **IP Addresses** → **Review**.
+- **IP Selection from Bindings** — The IP step enumerates individual IPs from the CDN/Spectrum bindings on your onboarded prefixes. Prefix bindings are broken out into individual `/32`s or `/128`s, and IPs already bound to another address map are excluded. The selector is a paginated, filterable checkbox list (large bindings are capped and flagged — manage those via the API).
+- **Edit Existing Maps** — Add IPs to any map, add domains to zone-scoped maps, name maps that were created without a name, enable/disable, and delete.
+
 ### Looking Glass
 - **BGP Route Visualization** — Click the search icon on any prefix or sub-prefix to open the looking glass modal
 - **AS-Path Graph** — SVG-rendered graph showing BGP routing paths from origin to collectors, with RPKI validation coloring and ASN metadata (org name, country flag)
@@ -46,7 +53,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **Aggregate Account View** — Enable aggregation in Settings to open prefixes and stats, activity, and notification history across all configured accounts. Each panel has an independent account filter, while its existing search and status filters continue to apply across the combined data.
 - **Account-Aware Actions** — Rows retain their source account, Add Prefix prompts for a target account in the combined view, and bulk advertisement changes are safely partitioned by account.
 - **Multi-Token Load Balancing** — Add multiple API tokens per account to distribute API requests via round-robin and avoid the Cloudflare API rate limit (1200 requests per endpoint per 5-minute window per token). Write operations (advertisement toggle) always use the first token for consistency.
-- **Token Testing** — Test any token's permissions before saving, with inline badge feedback for IP Prefixes Read and Addressing Services Read
+- **Token Testing** — Test any token's permissions before saving, with inline badge feedback for IP Prefixes Read, Addressing Services Read, Address Maps Read, and Zone Read
 
 ### UI
 - **Dark/Light Theme** — Toggle between dark and light mode (persisted in localStorage)
@@ -601,6 +608,8 @@ Each user creates their own Cloudflare API tokens in the Settings panel. Tokens 
 | **IP Prefixes: BGP On Demand** | Read | Account | Viewing BGP sub-prefixes |
 | **IP Prefixes: BGP On Demand** | Edit | Account | Toggling advertisement state |
 | **Billing** | Read | Account | Reading account subscriptions to detect service entitlements (Magic Transit / Spectrum / CDN) |
+| **Address Maps** | Read/Edit | Account | Listing, creating, and managing BYOIP address maps |
+| **Zone** | Read | Account | Resolving/selecting domain names for zone-scoped address maps |
 
 ### Rate Limit & Multi-Token Strategy
 

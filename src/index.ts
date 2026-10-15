@@ -14,6 +14,11 @@ import { ListBgpPrefixes, CreateBgpPrefix, DeleteBgpPrefix, ToggleBgpAdvertiseme
 import { ListBindings, CreateBinding, DeleteBinding } from './endpoints/bindings';
 import { ListDelegations, CreateDelegationEndpoint, DeleteDelegationEndpoint, UpdateDelegationDescription } from './endpoints/delegations';
 import { ListServicesEndpoint } from './endpoints/services';
+import {
+  ListAddressMapsEndpoint, AddressMapEligibilityEndpoint, AvailableIpsEndpoint, ListZonesEndpoint,
+  CreateAddressMapEndpoint, UpdateAddressMapEndpoint, DeleteAddressMapEndpoint,
+  AddAddressMapIpEndpoint, RemoveAddressMapIpEndpoint, AddAddressMapZoneEndpoint, RemoveAddressMapZoneEndpoint,
+} from './endpoints/address-maps';
 import { ListRirCredentials, RevealRirCredential, SaveRirCredentials, PatchRirCredentials, DeleteRirCredentials, ValidateRirCredentialsEndpoint, EnsureRoute, EnsureAutnum, DetectRir } from './endpoints/rir';
 import { LookingGlass, RdapLookup, RpkiLookup, RipestatVisibility, GetActivity, ClearActivity } from './endpoints/lookups';
 import {
@@ -168,6 +173,19 @@ openapi.put('/api/delegations/:delegationId/description', UpdateDelegationDescri
 
 // Services
 openapi.get('/api/services', ListServicesEndpoint);
+
+// Address Maps (register static sub-paths before the :mapId param routes)
+openapi.get('/api/address-maps/eligibility', AddressMapEligibilityEndpoint);
+openapi.get('/api/address-maps/available-ips', AvailableIpsEndpoint);
+openapi.get('/api/zones', ListZonesEndpoint);
+openapi.get('/api/address-maps', ListAddressMapsEndpoint);
+openapi.post('/api/address-maps', CreateAddressMapEndpoint);
+openapi.patch('/api/address-maps/:mapId', UpdateAddressMapEndpoint);
+openapi.delete('/api/address-maps/:mapId', DeleteAddressMapEndpoint);
+openapi.post('/api/address-maps/:mapId/ips', AddAddressMapIpEndpoint);
+openapi.delete('/api/address-maps/:mapId/ips/:ip', RemoveAddressMapIpEndpoint);
+openapi.post('/api/address-maps/:mapId/zones', AddAddressMapZoneEndpoint);
+openapi.delete('/api/address-maps/:mapId/zones/:zoneId', RemoveAddressMapZoneEndpoint);
 
 // RIR Credentials
 openapi.get('/api/rir/credentials', ListRirCredentials);
