@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env, UserAccount } from '../types';
 import { maskToken, isRealSecret } from '../helpers';
-import { verifyTokenPermissions } from '../api';
+import { verifyTokenPermissions, getAccountEntitlements } from '../api';
 import {
   AccountPreferencesSchema,
   CreateAccountRequestSchema,
@@ -441,6 +441,7 @@ export class TestToken extends OpenAPIRoute {
     }
 
     const results = await verifyTokenPermissions(body.account_id, token);
-    return c.json({ results });
+    const entitlements = await getAccountEntitlements(body.account_id, token);
+    return c.json({ results, entitlements });
   }
 }

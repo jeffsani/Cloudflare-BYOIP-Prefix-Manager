@@ -4,6 +4,8 @@ import type {
   CfBgpPrefix,
   CfServiceBinding,
   CfService,
+  CfSubscription,
+  AccountEntitlements,
   CfDelegation,
   CfLoaDocument,
   LgResult,
@@ -311,6 +313,81 @@ export async function listServices(
   return r.json();
 }
 
+// --- Account Subscriptions / Service Entitlements ---
+
+export async function listSubscriptions(
+  accountId: string,
+  token: string,
+): Promise<CfApiResponse<CfSubscription[]>> {
+  const r = await fetchWithRetry(
+    `${CF_API}/accounts/${accountId}/subscriptions`,
+    { headers: authHeaders(token) },
+  );
+  return r.json();
+}
+
+// Known subscription rate-plan identifiers → bindable service. Enterprise
+// add-ons surface these product-style ids in `rate_plan.id`; we also scan
+// `rate_plan.public_name` and `component_values[].name` defensively since the
+// exact shape varies. Extend these lists as new identifiers are confirmed.
+const ENTITLEMENT_RATE_PLANS: Record<keyof Omit<AccountEntitlements, 'matched' | 'available'>, string[]> = {
+  magic_transit: ['ddos_protection_magic_transit_ent'],
+  spectrum: ['ddos_protection_spectrum_ent'],
+  cdn: ['core_base'],
+};
+
+/**
+ * Resolve which bindable services the account is entitled to from its
+ * subscriptions. Best-effort: any failure (e.g. missing Billing: Read) yields
+ * `available: false` with all flags false so callers can treat the signal as
+ * unknown rather than a hard "not entitled".
+ */
+export async function getAccountEntitlements(
+  accountId: string,
+  token: string,
+): Promise<AccountEntitlements> {
+  const result: AccountEntitlements = {
+    magic_transit: false,
+    spectrum: false,
+    cdn: false,
+    matched: [],
+    available: false,
+  };
+
+  let resp: CfApiResponse<CfSubscription[]>;
+  try {
+    resp = await listSubscriptions(accountId, token);
+  } catch {
+    return result;
+  }
+  if (!resp.success || !Array.isArray(resp.result)) return result;
+
+  result.available = true;
+
+  // Collect every candidate identifier string across all subscriptions.
+  const haystack: string[] = [];
+  for (const sub of resp.result) {
+    if (sub.rate_plan?.id) haystack.push(sub.rate_plan.id);
+    if (sub.rate_plan?.public_name) haystack.push(sub.rate_plan.public_name);
+    for (const comp of sub.component_values || []) {
+      if (comp.name) haystack.push(comp.name);
+    }
+  }
+  const lowered = haystack.map((h) => h.toLowerCase());
+
+  (Object.keys(ENTITLEMENT_RATE_PLANS) as Array<keyof typeof ENTITLEMENT_RATE_PLANS>).forEach((key) => {
+    for (const id of ENTITLEMENT_RATE_PLANS[key]) {
+      if (lowered.includes(id.toLowerCase())) {
+        result[key] = true;
+        result.matched.push(id);
+        break;
+      }
+    }
+  });
+
+  return result;
+}
+
 // --- Create Service Binding ---
 
 export async function createServiceBinding(
@@ -523,6 +600,25 @@ export async function verifyTokenPermissions(
     });
   } catch (e) {
     results.push({ permission: 'Logs: Read/Edit (Logpush audit streaming)', status: 'fail', detail: String(e) });
+  }
+
+  // Test 6: Billing Read — required to read account subscriptions/plan via the
+  // /accounts/{id}/subscriptions endpoint. Without it that call fails with a 9106
+  // authentication error even though the token is otherwise valid.
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/subscriptions`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
+    results.push({
+      permission: 'Billing: Read (account subscriptions)',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+    });
+  } catch (e) {
+    results.push({ permission: 'Billing: Read (account subscriptions)', status: 'fail', detail: String(e) });
   }
 
   return results;

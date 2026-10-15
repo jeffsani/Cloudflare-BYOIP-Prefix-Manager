@@ -53,6 +53,14 @@ export const CfServiceSchema = z.object({
   name: z.string(),
 });
 
+export const EntitlementsSchema = z.object({
+  magic_transit: z.boolean(),
+  spectrum: z.boolean(),
+  cdn: z.boolean(),
+  matched: z.array(z.string()),
+  available: z.boolean(),
+});
+
 export const CfDelegationSchema = z.object({
   id: z.string(),
   cidr: z.string(),

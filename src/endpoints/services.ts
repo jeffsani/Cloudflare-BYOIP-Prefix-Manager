@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, resolveAccount } from '../helpers';
-import { listServices } from '../api';
-import { CfServiceSchema } from '../schemas/prefixes';
+import { listServices, getAccountEntitlements } from '../api';
+import { CfServiceSchema, EntitlementsSchema } from '../schemas/prefixes';
 import { ErrorResponseSchema, AccountIdQuerySchema } from '../schemas/common';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
@@ -21,7 +21,7 @@ export class ListServicesEndpoint extends OpenAPIRoute {
     responses: {
       '200': {
         description: 'List of services',
-        ...contentJson(z.object({ services: z.array(CfServiceSchema) })),
+        ...contentJson(z.object({ services: z.array(CfServiceSchema), entitlements: EntitlementsSchema })),
       },
       '400': {
         description: 'No account configured',
@@ -46,7 +46,9 @@ export class ListServicesEndpoint extends OpenAPIRoute {
       if (!result.success) {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
-      return c.json({ services: result.result || [] });
+      // Best-effort entitlement lookup; never fail the services call over it.
+      const entitlements = await getAccountEntitlements(acct.account_id, token);
+      return c.json({ services: result.result || [], entitlements });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
     }

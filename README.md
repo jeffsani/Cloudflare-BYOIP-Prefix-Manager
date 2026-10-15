@@ -12,6 +12,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **Add Prefix** — Onboard new BYOIP prefixes with CIDR input, ASN selection (Cloudflare 13335 or custom), LOA upload/auto-generation, pre-submission IRR/ROA validation (via RIPEstat + IRR Explorer + Cloudflare Radar), and ownership validation guidance with automated IRR route/route6 object creation and aut-num updates at ARIN and RIPE (auto-detected via RDAP)
 - **Prefix Table** — View all BYOIP prefixes with CIDR, ASN, advertisement status, IRR/RPKI validation state, lock status, and description
 - **Expandable Rows** — Click any prefix to drill into its BGP sub-prefixes and service bindings in a tree view
+- **Entitlement-Aware Service Bindings** — The Add Service Binding dialog reads the account's subscriptions to detect which services (Magic Transit / Spectrum / CDN) are entitled. The first (parent) binding defaults to Magic Transit when available, since Magic Transit as the parent binding is required to later add Layered Service Bindings (more-specific CDN/Spectrum bindings under the same prefix). Token validation lists the detected entitled services.
 - **Filters** — Filter the table by advertisement status (advertised/withdrawn), lock state, ASN, and tags
 - **Tag-Based Filtering** — Add `#tags` to prefix descriptions (e.g. `My prefix #production #us-east`) to organize prefixes. Tags appear as clickable badges in the description column and auto-populate a Tag filter dropdown. Click any tag badge to instantly filter by that tag
 - **Advertisement Toggle** — Advertise or withdraw individual BGP sub-prefixes with a toggle switch and confirmation dialog; all changes are logged to an activity feed
@@ -599,6 +600,7 @@ Each user creates their own Cloudflare API tokens in the Settings panel. Tokens 
 | **IP Prefixes** | Edit | Account | (future: prefix management) |
 | **IP Prefixes: BGP On Demand** | Read | Account | Viewing BGP sub-prefixes |
 | **IP Prefixes: BGP On Demand** | Edit | Account | Toggling advertisement state |
+| **Billing** | Read | Account | Reading account subscriptions to detect service entitlements (Magic Transit / Spectrum / CDN) |
 
 ### Rate Limit & Multi-Token Strategy
 

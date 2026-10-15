@@ -374,7 +374,7 @@ export function renderDashboard(userEmail: string): string {
       </div>
 
       <p class="text-xs text-cf-gray leading-relaxed mt-3">
-        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read) + Account Settings (Read, for audit logs) + Logs (Read/Edit, for audit-log streaming).
+        <strong>Required API Token Permissions:</strong> Account &rarr; IP Prefixes (Read/Edit) + IP Prefixes: BGP On Demand (Read/Edit) + Radar (Read) + Account Settings (Read, for audit logs) + Logs (Read/Edit, for audit-log streaming) + Billing (Read, for account subscriptions/plan).
       </p>
       <p class="text-xs leading-relaxed mt-3">
         <a href="/api/docs" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none;font-weight:500">View interactive API docs (/api/docs) &#8599;</a>
@@ -398,8 +398,8 @@ export function renderDashboard(userEmail: string): string {
 
       <div id="aggregate-accounts-setting" class="hidden rounded-lg border border-cf-border p-3 flex items-center justify-between gap-4">
         <div>
-          <div class="text-xs font-semibold" style="color:var(--text-strong)">Aggregate accounts</div>
-          <div class="text-[10px] text-cf-gray mt-0.5">Default Prefixes, Activity, and Notifications to All accounts.</div>
+          <div class="text-xs font-semibold" style="color:var(--text-strong)">Aggregate configured accounts</div>
+          <div class="text-[10px] text-cf-gray mt-0.5">Display Prefixes, Activity, and Notifications for all configured accounts</div>
         </div>
         <label class="flex items-center gap-2 text-xs text-cf-gray cursor-pointer">
           <input id="aggregate-accounts-toggle" type="checkbox" onchange="saveAggregatePreference(this.checked)" style="accent-color:#F6821F">
@@ -804,6 +804,7 @@ export function renderDashboard(userEmail: string): string {
           <select id="binding-service" class="w-full px-2.5 py-1.5 rounded-lg border border-cf-border bg-cf-dark text-sm text-white focus:border-cf-orange focus:outline-none">
             <option value="">Loading services...</option>
           </select>
+          <div id="binding-mt-tip" class="hidden text-[10px] text-cf-gray mt-1.5 leading-relaxed p-2 rounded-lg border border-cf-border" style="background:var(--input-bg)"></div>
         </div>
         <div class="mb-3">
           <label class="block text-xs text-cf-gray mb-1">CIDR</label>
@@ -1298,7 +1299,8 @@ export function renderDashboard(userEmail: string): string {
         {key:'ip_prefix_bgp_on_demand',type:'edit'},
         {key:'account_settings',type:'read'},
         {key:'logs',type:'edit'},
-        {key:'radar',type:'read'}
+        {key:'radar',type:'read'},
+        {key:'billing',type:'read'}
       ];
       return 'https://dash.cloudflare.com/profile/api-tokens'
         + '?permissionGroupKeys=' + encodeURIComponent(JSON.stringify(perms))
@@ -2503,11 +2505,23 @@ export function renderDashboard(userEmail: string): string {
             var cls = r.status === 'ok' ? 'badge-valid' : 'badge-invalid';
             var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
             return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
-          }).join('');
+          }).join('') + entitlementsLineHtml(data.entitlements);
         }
       } catch (e) {
         el.innerHTML = '<span class="badge-invalid">Error</span>';
       }
+    }
+
+    // Render a short line listing the account's entitled bindable services,
+    // derived from its subscriptions. Returns '' when the signal is unknown.
+    function entitlementsLineHtml(ent) {
+      if (!ent || !ent.available) return '';
+      var names = [];
+      if (ent.magic_transit) names.push('Magic Transit');
+      if (ent.spectrum) names.push('Spectrum');
+      if (ent.cdn) names.push('CDN');
+      var text = names.length ? names.join(', ') : 'None detected';
+      return '<div class="text-[10px] text-cf-gray mt-1.5">Entitled services: <span style="color:var(--text-strong)">' + escHtml(text) + '</span></div>';
     }
 
     async function testSavedAccountToken(accountId) {
@@ -2526,7 +2540,7 @@ export function renderDashboard(userEmail: string): string {
             var cls = r.status === 'ok' ? 'badge-valid' : 'badge-invalid';
             var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
             return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
-          }).join('');
+          }).join('') + entitlementsLineHtml(data.entitlements);
         } else {
           el.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Test failed') + '</span>';
         }
@@ -3889,16 +3903,23 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // Returns { services: [...], entitlements: {...} }. Entitlements default to
+    // "unknown" (available:false) when the lookup fails so callers don't treat a
+    // transient error as "not entitled".
+    function emptyEntitlements() {
+      return { magic_transit: false, spectrum: false, cdn: false, matched: [], available: false };
+    }
+
     async function loadServices(accountId) {
       if (servicesCache[accountId]) return servicesCache[accountId];
       try {
         var resp = await fetch('/api/services?account_id=' + encodeURIComponent(accountId));
         var data = await resp.json();
-        var services = data.services || [];
-        servicesCache[accountId] = services;
-        return services;
+        var result = { services: data.services || [], entitlements: data.entitlements || emptyEntitlements() };
+        servicesCache[accountId] = result;
+        return result;
       } catch (e) {
-        return [];
+        return { services: [], entitlements: emptyEntitlements() };
       }
     }
 
@@ -4387,25 +4408,37 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('binding-mask').onchange = function() { autoFillBindingIp(); };
       document.getElementById('binding-modal').classList.remove('hidden');
 
-      var allServicesList = await loadServices(modalContext.accountId);
+      var loaded = await loadServices(modalContext.accountId);
       if (bindingModalContext !== modalContext || document.getElementById('binding-modal').classList.contains('hidden')) return;
+      var allServicesList = loaded.services || [];
+      var entitlements = loaded.entitlements || emptyEntitlements();
       var existingBindings = (childData[rowKey] && childData[rowKey].bindings) || [];
       var available = getAvailableServices(allServicesList, existingBindings, parsed.maskLen);
+      var isFirstBinding = existingBindings.length === 0;
 
       if (available.length === 0) {
         svcSel.innerHTML = '<option value="">No eligible services</option>';
       } else {
+        // On the first (parent) binding, default to Magic Transit when available,
+        // then Spectrum, then CDN, so the parent binding keeps the most layered-
+        // service-binding flexibility. For sub-bindings keep natural order.
+        var defaultId = isFirstBinding ? pickDefaultServiceId(available) : null;
         svcSel.innerHTML = available.map(function(s) {
-          return '<option value="' + escAttr(s.id) + '">' + escHtml(s.name) + '</option>';
+          var sel = (defaultId && s.id === defaultId) ? ' selected' : '';
+          return '<option value="' + escAttr(s.id) + '"' + sel + '>' + escHtml(s.name) + '</option>';
         }).join('');
       }
 
       // Build initial mask dropdown based on the default-selected service
       rebuildMaskDropdown();
 
+      // Layered Service Bindings guidance — shown only for the first (parent)
+      // binding, where the parent-binding choice determines future flexibility.
+      updateBindingMtTip(isFirstBinding, entitlements);
+
       // If this is the first binding, lock CIDR to match parent prefix
       var maskSel = document.getElementById('binding-mask');
-      if (existingBindings.length === 0) {
+      if (isFirstBinding) {
         document.getElementById('binding-ip').value = ipToString(parsed.network, parsed.v6);
         maskSel.value = String(parsed.maskLen);
         document.getElementById('binding-ip').disabled = true;
@@ -4417,6 +4450,44 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('binding-ip').disabled = false;
         maskSel.disabled = false;
       }
+    }
+
+    // Service name classifiers used for default-selection priority.
+    function isSpectrum(name) { return !!name && name.toLowerCase().indexOf('spectrum') !== -1; }
+    function isCdn(name) {
+      if (!name) return false;
+      var l = name.toLowerCase();
+      return l.indexOf('cdn') !== -1 && l.indexOf('egress') === -1;
+    }
+
+    // Pick the preferred default service id from the available list, in priority
+    // order Magic Transit > Spectrum > CDN, falling back to the first available.
+    function pickDefaultServiceId(available) {
+      var preds = [isMagicTransit, isSpectrum, isCdn];
+      for (var p = 0; p < preds.length; p++) {
+        for (var i = 0; i < available.length; i++) {
+          if (preds[p](available[i].name)) return available[i].id;
+        }
+      }
+      return available.length ? available[0].id : null;
+    }
+
+    // Show/hide the Layered Service Bindings tip in the binding modal. Only shown
+    // on the first (parent) binding. When Magic Transit is not entitled we still
+    // explain the recommendation and that it is a gated add-on.
+    function updateBindingMtTip(isFirstBinding, entitlements) {
+      var tip = document.getElementById('binding-mt-tip');
+      if (!tip) return;
+      if (!isFirstBinding) { tip.classList.add('hidden'); tip.innerHTML = ''; return; }
+      var mtEntitled = entitlements && entitlements.magic_transit;
+      var msg = '<strong>Tip:</strong> Using <strong>Magic Transit</strong> as the parent binding offers the most flexibility — ' +
+        'it is required if you ever want <strong>Layered Service Bindings</strong> (adding more-specific CDN/Spectrum bindings under this prefix later). ' +
+        'Choose another service only if you will never need layered bindings.';
+      if (!mtEntitled) {
+        msg += ' <span class="text-yellow-500">Magic Transit is a gated add-on not currently enabled on this account — contact your Cloudflare account team to enable it.</span>';
+      }
+      tip.innerHTML = msg;
+      tip.classList.remove('hidden');
     }
 
     function closeBindingModal() {

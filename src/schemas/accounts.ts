@@ -45,6 +45,15 @@ export const TokenTestResultItemSchema = z.object({
   detail: z.string().optional(),
 });
 
+export const TokenTestEntitlementsSchema = z.object({
+  magic_transit: z.boolean(),
+  spectrum: z.boolean(),
+  cdn: z.boolean(),
+  matched: z.array(z.string()),
+  available: z.boolean(),
+});
+
 export const TokenTestResponseSchema = z.object({
   results: z.array(TokenTestResultItemSchema),
+  entitlements: TokenTestEntitlementsSchema,
 });

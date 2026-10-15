@@ -242,6 +242,30 @@ export interface CfService {
   name: string;
 }
 
+/** A single account subscription (trimmed to the fields we read). */
+export interface CfSubscription {
+  id?: string;
+  rate_plan?: {
+    id?: string;
+    public_name?: string;
+  };
+  component_values?: Array<{ name?: string; value?: number }>;
+}
+
+/**
+ * Which bindable Cloudflare services the account is entitled to, derived from
+ * its subscriptions. `available` is false when the subscriptions lookup could
+ * not be performed (e.g. missing Billing: Read), so the UI can treat the
+ * entitlement signal as unknown rather than "not entitled".
+ */
+export interface AccountEntitlements {
+  magic_transit: boolean;
+  spectrum: boolean;
+  cdn: boolean;
+  matched: string[];
+  available: boolean;
+}
+
 export interface CfDelegation {
   id: string;
   cidr: string;
