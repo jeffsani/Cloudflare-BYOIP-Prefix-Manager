@@ -4270,7 +4270,7 @@ export function renderDashboard(userEmail: string): string {
         return '<div class="text-[11px] text-cf-gray py-2">' + (w.zonesError ? escHtml(w.zonesError) : 'Loading domains...') + '</div>';
       }
       if (w.zones.length === 0) {
-        return '<div class="text-[11px] text-yellow-400 py-2">No zones found for this account (or token lacks Zone: Read).</div>';
+        return '<div class="text-[11px] text-yellow-400 py-2">No zones visible to this token. Confirm the API token has Zone: Read and that it is authorized for the account that owns your domains (the account ID configured in Settings must match the account that holds the zones).</div>';
       }
       var filter = (w.zoneFilter || '').toLowerCase();
       var selectedChips = Object.keys(w.zoneIds).filter(function(id) { return w.zoneIds[id]; }).map(function(id) {

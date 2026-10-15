@@ -632,30 +632,53 @@ export async function removeAddressMapAccount(
 
 // --- Zones (for the Address Map domain picker; needs Zone: Read) ---
 
-export async function listZones(
-  accountId: string,
+// Paginate through a zones listing (50/page is the API max). Returns the last
+// raw response (for success/errors) alongside the accumulated zones.
+async function fetchAllZones(
+  baseUrl: string,
   token: string,
-): Promise<CfApiResponse<CfZone[]>> {
-  // Paginate through all zones for the account (50/page is the API max).
+): Promise<{ ok: boolean; zones: CfZone[]; raw: CfApiResponse<CfZone[]> | null }> {
   const all: CfZone[] = [];
   let page = 1;
   let totalPages = 1;
   let last: CfApiResponse<CfZone[]> | null = null;
+  const sep = baseUrl.includes('?') ? '&' : '?';
   do {
     const r = await fetchWithRetry(
-      `${CF_API}/zones?account.id=${accountId}&per_page=50&page=${page}`,
+      `${baseUrl}${sep}per_page=50&page=${page}`,
       { headers: authHeaders(token) },
     );
-    const data = (await r.json()) as CfApiResponse<CfZone[]> & {
+    const data = (await r.json()) as CfApiResponse<Array<CfZone & { account?: { id?: string } }>> & {
       result_info?: { total_pages?: number };
     };
-    last = data;
-    if (!data.success) return data;
+    last = data as unknown as CfApiResponse<CfZone[]>;
+    if (!data.success) return { ok: false, zones: all, raw: last };
     for (const z of data.result || []) all.push({ id: z.id, name: z.name });
     totalPages = data.result_info?.total_pages ?? 1;
     page += 1;
   } while (page <= totalPages && page <= 40);
-  return { ...(last as CfApiResponse<CfZone[]>), result: all };
+  return { ok: true, zones: all, raw: last };
+}
+
+export async function listZones(
+  accountId: string,
+  token: string,
+): Promise<CfApiResponse<CfZone[]>> {
+  // Primary: filter by the configured account id.
+  const filtered = await fetchAllZones(`${CF_API}/zones?account.id=${accountId}`, token);
+  if (!filtered.ok) return filtered.raw as CfApiResponse<CfZone[]>;
+  if (filtered.zones.length > 0) {
+    return { ...(filtered.raw as CfApiResponse<CfZone[]>), result: filtered.zones };
+  }
+
+  // Fallback: the account.id filter returned nothing (e.g. the stored BYOIP
+  // account id differs from the zones' owning account, or the token's Zone:Read
+  // is scoped so the filter excludes them). An API token only ever sees zones it
+  // is authorized for, so an unfiltered listing surfaces exactly those — far more
+  // useful than an empty picker.
+  const unfiltered = await fetchAllZones(`${CF_API}/zones`, token);
+  if (!unfiltered.ok) return filtered.raw as CfApiResponse<CfZone[]>;
+  return { ...(unfiltered.raw as CfApiResponse<CfZone[]>), result: unfiltered.zones };
 }
 
 // --- BGP Advertisement Toggle ---
@@ -823,17 +846,18 @@ export async function verifyTokenPermissions(
   }
 
   // Test 8: Zone Read — required to resolve/select domains for zone-scoped maps.
+  // A successful call that returns zero zones for the account filter is a common
+  // gotcha (mismatched account id / scoped token), so surface the visible count.
   try {
-    const r = await fetchWithRetry(
-      `${CF_API}/zones?account.id=${accountId}&per_page=1`,
-      { headers: authHeaders(token) },
-    );
-    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
-    const ok = !!data?.success;
+    const zones = await listZones(accountId, token);
+    const ok = !!zones.success;
+    const count = Array.isArray(zones.result) ? zones.result.length : 0;
     results.push({
       permission: 'Zone: Read (address map domains)',
       status: ok ? 'ok' : 'fail',
-      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+      detail: ok
+        ? (count === 0 ? 'Readable, but 0 zones visible to this token' : `${count} zone(s) visible`)
+        : (zones.errors?.[0]?.message || 'Zone read failed'),
     });
   } catch (e) {
     results.push({ permission: 'Zone: Read (address map domains)', status: 'fail', detail: String(e) });
