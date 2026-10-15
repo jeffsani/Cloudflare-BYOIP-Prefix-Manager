@@ -4323,7 +4323,7 @@ export function renderDashboard(userEmail: string): string {
 
     function amAfterIpStepRender() {
       var w = addressMapWizard;
-      if (w.availableIps !== null) { amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard'); return; }
+      if (w.availableIps !== null) { amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard', w.ipSkippedNotAdvertised); return; }
       amLoadWizardIps();
     }
     async function amLoadWizardIps() {
@@ -4334,16 +4334,17 @@ export function renderDashboard(userEmail: string): string {
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load available IPs');
         w.availableIps = data.ips || [];
         w.ipTruncated = !!data.truncated;
+        w.ipSkippedNotAdvertised = !!data.skipped_not_advertised;
       } catch (e) {
         w.availableIps = [];
         w.ipsError = String(e && e.message || e);
       }
-      if (amWizardSteps()[w.step] === 'ips') amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard');
+      if (amWizardSteps()[w.step] === 'ips') amInitIpSelector(w.availableIps, w.selectedIps, w.ipTruncated, 'wizard', w.ipSkippedNotAdvertised);
     }
 
     // mode: 'wizard' | 'edit'
-    function amInitIpSelector(ips, selectedRef, truncated, mode) {
-      amIpSel = { ips: ips, selected: selectedRef, page: 1, filter: '', truncated: truncated, mode: mode };
+    function amInitIpSelector(ips, selectedRef, truncated, mode, skippedNotAdvertised) {
+      amIpSel = { ips: ips, selected: selectedRef, page: 1, filter: '', truncated: truncated, mode: mode, skippedNotAdvertised: !!skippedNotAdvertised };
       amRenderIpSelector();
     }
 
@@ -4351,8 +4352,9 @@ export function renderDashboard(userEmail: string): string {
       var el = document.getElementById('am-ip-selector');
       if (!el || !amIpSel) return;
       var s = amIpSel;
+      var advNote = s.skippedNotAdvertised ? '<div class="mb-2 text-[10px] text-yellow-400">Some binding IPs were hidden because their BGP prefix is not advertised. Advertise the prefix to map those IPs.</div>' : '';
       if (s.ips.length === 0) {
-        el.innerHTML = '<div class="rounded-lg border border-cf-border p-3 text-[11px] text-cf-gray">No available IPs. All CDN/Spectrum binding IPs may already be bound to another address map, or there are no CDN/Spectrum bindings on your prefixes.</div>';
+        el.innerHTML = advNote + '<div class="rounded-lg border border-cf-border p-3 text-[11px] text-cf-gray">No available IPs. Only IPs from advertised BGP prefixes with a CDN/Spectrum binding can be mapped, and IPs already bound to another address map are excluded.</div>';
         return;
       }
       var filter = (s.filter || '').toLowerCase();

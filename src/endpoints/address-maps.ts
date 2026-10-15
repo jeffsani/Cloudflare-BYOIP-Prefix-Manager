@@ -40,6 +40,20 @@ type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 const MAX_IPS_PER_BINDING = 1024;
 const MAX_TOTAL_IPS = 4096;
 
+// Cloudflare rejects adding an IP whose covering BGP prefix is not currently
+// advertised. Translate the opaque `is_not_advertised` slug into guidance.
+const NOT_ADVERTISED_MESSAGE =
+  'One or more selected IPs belong to a BGP prefix that is not currently advertised. ' +
+  'Advertise the prefix (or its covering BGP sub-prefix) before adding its IPs to an address map.';
+
+function friendlyAddressMapError(errors: unknown, fallback: string): string {
+  const haystack = JSON.stringify(errors || '').toLowerCase();
+  if (haystack.includes('is_not_advertised') || haystack.includes('not advertised')) {
+    return NOT_ADVERTISED_MESSAGE;
+  }
+  return fallback;
+}
+
 // A binding counts toward address-map eligibility / IP enumeration when its
 // service is CDN or Spectrum (Magic Transit IPs are not address-mappable here).
 function classifyService(name: string | undefined): 'cdn' | 'spectrum' | null {
@@ -488,7 +502,12 @@ export class AvailableIpsEndpoint extends OpenAPIRoute {
       const scan = await scanBindings(acct.account_id, token, true);
       const used = await collectUsedIps(acct.account_id, token);
       const available = scan.ips.filter((entry) => !used.has(entry.ip));
-      return c.json({ ips: available, used_ips: Array.from(used), truncated: scan.truncated });
+      return c.json({
+        ips: available,
+        used_ips: Array.from(used),
+        truncated: scan.truncated,
+        skipped_not_advertised: scan.skippedNotAdvertised,
+      });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);
     }
@@ -563,7 +582,7 @@ export class CreateAddressMapEndpoint extends OpenAPIRoute {
         token,
       );
       if (!result.success) {
-        return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
+        return c.json({ error: friendlyAddressMapError(result.errors, result.errors?.[0]?.message || 'API error') }, 502);
       }
       const mapId = result.result?.id || '';
       const details = `Address map "${body.name}" (${body.scope}) created with ${body.ips?.length || 0} IP(s) in account ${acct.account_id}`;
@@ -692,7 +711,7 @@ export class AddAddressMapIpEndpoint extends OpenAPIRoute {
       const token = await getToken(c.env.DB, email, acct.account_id);
       const result = await addAddressMapIp(acct.account_id, mapId, body.ip, token);
       if (!result.success) {
-        return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
+        return c.json({ error: friendlyAddressMapError(result.errors, result.errors?.[0]?.message || 'API error') }, 502);
       }
       const details = `IP ${body.ip} added to address map ${mapId} in account ${acct.account_id}`;
       await logActivity(c.env.DB, email, acct.account_id, 'update_address_map', details);

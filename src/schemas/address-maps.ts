@@ -48,6 +48,9 @@ export const AvailableIpsResponseSchema = z.object({
   used_ips: z.array(z.string()),
   // True when one or more bindings were too large to fully enumerate.
   truncated: z.boolean(),
+  // True when some binding IPs were excluded because their BGP prefix is not
+  // advertised (Cloudflare only maps advertised IPs).
+  skipped_not_advertised: z.boolean(),
 });
 
 export const ZonesListResponseSchema = z.object({
