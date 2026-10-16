@@ -669,6 +669,18 @@ export class DeleteAddressMapEndpoint extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
+
+      // Cloudflare requires an address map to be disabled before it can be
+      // deleted (it may still contain IPs and memberships — those are removed
+      // with the map). Disable it first if it is currently enabled.
+      const detail = await getAddressMap(acct.account_id, mapId, token).catch(() => null);
+      if (detail && detail.success && detail.result && detail.result.enabled) {
+        const disabled = await updateAddressMap(acct.account_id, mapId, { enabled: false }, token);
+        if (!disabled.success) {
+          return c.json({ error: 'Failed to disable the address map before deletion: ' + (disabled.errors?.[0]?.message || 'API error') }, 502);
+        }
+      }
+
       const result = await deleteAddressMap(acct.account_id, mapId, token);
       if (!result.success) {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);

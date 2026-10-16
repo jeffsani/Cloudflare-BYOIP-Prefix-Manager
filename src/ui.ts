@@ -3995,12 +3995,14 @@ export function renderDashboard(userEmail: string): string {
     function openAddressMapsModal() {
       document.getElementById('address-maps-modal').classList.remove('hidden');
       addressMapWizard = null;
+      amManageCtx = null;
       showAddressMapsListView();
       loadAddressMaps();
     }
     function closeAddressMapsModal() {
       document.getElementById('address-maps-modal').classList.add('hidden');
       addressMapWizard = null;
+      amManageCtx = null;
       amIpSel = null;
     }
     function showAddressMapsListView() {
@@ -4082,8 +4084,7 @@ export function renderDashboard(userEmail: string): string {
       var actions = [];
       if (!m.name) actions.push('<button onclick="amPromptName(' + mapRef + ')" class="am-link">Add name</button>');
       else actions.push('<button onclick="amPromptName(' + mapRef + ')" class="am-link">Rename</button>');
-      if (m.can_modify_ips) actions.push('<button onclick="amEditIps(' + mapRef + ')" class="am-link">Add IPs</button>');
-      if (m.scope === 'zone') actions.push('<button onclick="amEditDomains(' + mapRef + ')" class="am-link">Add domains</button>');
+      actions.push('<button onclick="amManageMap(' + mapRef + ')" class="am-link">Manage IPs / domains</button>');
       actions.push('<button onclick="amToggleEnabled(' + mapRef + ',' + (m.enabled ? 'false' : 'true') + ')" class="am-link">' + (m.enabled ? 'Disable' : 'Enable') + '</button>');
       if (m.can_delete) actions.push('<button onclick="amDeleteMap(' + mapRef + ')" class="am-link am-link-danger">Delete</button>');
 
@@ -4126,10 +4127,15 @@ export function renderDashboard(userEmail: string): string {
     }
 
     function amDeleteMap(mapId, accountId) {
+      var map = addressMapsData.maps.find(function(m) { return m.id === mapId && m.account_id === accountId; });
+      var enabled = map ? map.enabled : false;
+      var message = enabled
+        ? 'This address map is enabled. It must be disabled before it can be deleted — it will be disabled and then deleted (any IPs and domains on it are removed with the map). This cannot be undone.'
+        : 'Delete this address map? Any IPs and domains on it are removed with the map. This cannot be undone.';
       showConfirm({
         title: 'Delete address map',
-        message: 'Delete this address map? This cannot be undone.',
-        confirmLabel: 'Delete',
+        message: message,
+        confirmLabel: enabled ? 'Disable & delete' : 'Delete',
         danger: true,
         onConfirm: async function() {
           try {
@@ -4146,6 +4152,7 @@ export function renderDashboard(userEmail: string): string {
     // ─── Address Map wizard ─────────────────────────────────────
 
     function startAddressMapWizard() {
+      amManageCtx = null;
       var needAccount = activeAccountId === 'all';
       addressMapWizard = {
         needAccount: needAccount,
@@ -4384,7 +4391,7 @@ export function renderDashboard(userEmail: string): string {
 
       var truncNote = s.truncated ? '<div class="mt-2 text-[10px] text-yellow-400">Some large bindings were not fully enumerated. Manage those addresses via the Cloudflare API.</div>' : '';
 
-      el.innerHTML =
+      el.innerHTML = advNote +
         '<input type="text" value="' + escAttr(s.filter || '') + '" oninput="amIpFilter(this.value)" placeholder="Filter by IP or prefix..." class="w-full px-2 py-1 mb-2 rounded border border-cf-border bg-cf-dark text-xs text-white focus:border-cf-orange focus:outline-none">' +
         '<div class="rounded-lg border border-cf-border bg-cf-dark" style="max-height:260px;overflow-y:auto">' + rows + '</div>' + pager + truncNote;
     }
@@ -4481,6 +4488,99 @@ export function renderDashboard(userEmail: string): string {
       }
     }
 
+    // ─── Manage a map: view + remove IPs / domains ──────────────
+
+    var amManageCtx = null;
+
+    function amManageMap(mapId, accountId) {
+      amManageCtx = { mapId: mapId, accountId: accountId };
+      showAddressMapsWizardView();
+      amRenderManage();
+    }
+
+    function amCurrentManageMap() {
+      if (!amManageCtx) return null;
+      return addressMapsData.maps.find(function(m) { return m.id === amManageCtx.mapId && m.account_id === amManageCtx.accountId; });
+    }
+
+    function amRenderManage() {
+      var m = amCurrentManageMap();
+      var container = document.getElementById('address-maps-wizard-view');
+      if (!m) { amManageCtx = null; showAddressMapsListView(); return; }
+      var mapRef = "'" + escAttr(m.id) + "','" + escAttr(m.account_id) + "'";
+
+      var scopeBadge = m.scope === 'account'
+        ? '<span class="al-badge al-badge-blue">Account</span>'
+        : (m.scope === 'zone' ? '<span class="al-badge al-badge-teal">Zone</span>' : '<span class="al-badge">Unscoped</span>');
+      var enabledBadge = m.enabled ? '<span class="al-badge al-badge-green">Enabled</span>' : '<span class="al-badge al-badge-gray">Disabled</span>';
+      var nameHtml = m.name ? '<span class="font-semibold" style="color:var(--text-strong)">' + escHtml(m.name) + '</span>' : '<span class="italic text-cf-gray">Unnamed</span>';
+
+      // Domains section (zone-scoped maps).
+      var domainsSection = '';
+      if (m.scope === 'zone' || (m.domains && m.domains.length)) {
+        var domRows = (m.domains || []).map(function(d) {
+          var x = d.can_delete
+            ? '<button title="Remove domain" onclick="amRemoveDomain(\\'' + escAttr(d.zone_id) + '\\')" class="am-chip-x">&times;</button>'
+            : '';
+          return '<span class="al-badge">' + escHtml(d.name) + ' ' + x + '</span>';
+        }).join(' ') || '<span class="text-[11px] text-cf-gray italic">No domains</span>';
+        domainsSection =
+          '<div class="mt-3"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold" style="color:var(--text-strong)">Domains</span>' +
+          '<button onclick="amEditDomains(' + mapRef + ')" class="am-link">+ Add domains</button></div>' +
+          '<div class="flex flex-wrap gap-1">' + domRows + '</div></div>';
+      }
+
+      // IPs section.
+      var ips = m.ips || [];
+      var ipRows = ips.map(function(ip) {
+        var x = m.can_modify_ips
+          ? '<button title="Remove IP" onclick="amRemoveIp(\\'' + escAttr(ip) + '\\')" class="am-chip-x">&times;</button>'
+          : '';
+        return '<span class="al-badge" style="font-family:monospace">' + escHtml(ip) + ' ' + x + '</span>';
+      }).join(' ') || '<span class="text-[11px] text-cf-gray italic">No IPs</span>';
+      var addIpsBtn = m.can_modify_ips ? '<button onclick="amEditIps(' + mapRef + ')" class="am-link">+ Add IPs</button>' : '';
+      var ipsSection =
+        '<div class="mt-3"><div class="flex items-center justify-between mb-1"><span class="text-xs font-semibold" style="color:var(--text-strong)">IP addresses (' + ips.length + ')</span>' + addIpsBtn + '</div>' +
+        '<div class="flex flex-wrap gap-1">' + ipRows + '</div></div>';
+
+      container.innerHTML =
+        '<div class="mb-3"><button onclick="amManageBack()" class="text-xs text-cf-orange hover:underline">&larr; Back to Address Maps</button></div>' +
+        '<div class="flex items-center gap-2 flex-wrap mb-1">' + nameHtml + scopeBadge + enabledBadge + '</div>' +
+        '<p class="text-[11px] text-cf-gray">Add or remove the IPs and domains on this address map.</p>' +
+        domainsSection + ipsSection;
+    }
+
+    function amManageBack() {
+      amManageCtx = null;
+      showAddressMapsListView();
+    }
+
+    async function amRemoveIp(ip) {
+      if (!amManageCtx) return;
+      var ctx = amManageCtx;
+      try {
+        var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/ips/' + encodeURIComponent(ip) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to remove IP');
+        await loadAddressMaps();
+        amRenderManage();
+        amMsg('IP removed.', 'success');
+      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+    }
+
+    async function amRemoveDomain(zoneId) {
+      if (!amManageCtx) return;
+      var ctx = amManageCtx;
+      try {
+        var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/zones/' + encodeURIComponent(zoneId) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
+        var data = await resp.json();
+        if (!resp.ok || data.error) throw new Error(data.error || 'Failed to remove domain');
+        await loadAddressMaps();
+        amRenderManage();
+        amMsg('Domain removed.', 'success');
+      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+    }
+
     // ─── Edit existing maps: add IPs / add domains ──────────────
 
     function amEditIps(mapId, accountId) {
@@ -4506,7 +4606,7 @@ export function renderDashboard(userEmail: string): string {
         var resp = await fetch('/api/address-maps/available-ips?account_id=' + encodeURIComponent(accountId));
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load available IPs');
-        amInitIpSelector(data.ips || [], selected, !!data.truncated, 'edit');
+        amInitIpSelector(data.ips || [], selected, !!data.truncated, 'edit', !!data.skipped_not_advertised);
       } catch (e) {
         var el = document.getElementById('am-ip-selector');
         if (el) el.innerHTML = '<div class="text-[11px] text-red-400">' + escHtml(String(e && e.message || e)) + '</div>';
@@ -4528,10 +4628,9 @@ export function renderDashboard(userEmail: string): string {
           if (!resp.ok || data.error) throw new Error(data.error || 'Failed');
         } catch (e) { errors.push(selected[i] + ': ' + String(e && e.message || e)); }
       }
-      amCancelEdit();
+      await amReloadThenManageOrList();
       if (errors.length) amMsg('Added with ' + errors.length + ' error(s): ' + errors[0], 'error');
       else amMsg(selected.length + ' IP(s) added.', 'success');
-      loadAddressMaps();
     }
 
     function amEditDomains(mapId, accountId) {
@@ -4597,16 +4696,25 @@ export function renderDashboard(userEmail: string): string {
           if (!resp.ok || data.error) throw new Error(data.error || 'Failed');
         } catch (e) { errors.push(String(e && e.message || e)); }
       }
-      amCancelEdit();
+      amEditDomainState = null;
+      await amReloadThenManageOrList();
       if (errors.length) amMsg('Added with ' + errors.length + ' error(s): ' + errors[0], 'error');
       else amMsg(selected.length + ' domain(s) added.', 'success');
-      loadAddressMaps();
     }
 
     function amCancelEdit() {
       amIpSel = null;
       amEditDomainState = null;
-      showAddressMapsListView();
+      if (amManageCtx) amRenderManage();
+      else showAddressMapsListView();
+    }
+
+    // Refresh address-map data, then return to the Manage view (if open) or the list.
+    async function amReloadThenManageOrList() {
+      amIpSel = null;
+      await loadAddressMaps();
+      if (amManageCtx) amRenderManage();
+      else showAddressMapsListView();
     }
 
     // ─── Child Prefix Modal ─────────────────────────────────────
