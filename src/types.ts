@@ -269,6 +269,34 @@ export interface AccountEntitlements {
   available: boolean;
 }
 
+/** A single entitlement record from GET /accounts/{id}/entitlements. */
+export interface CfEntitlement {
+  id: string;
+  allocation?: {
+    type?: string;
+    value?: boolean | number | string | number[] | { min: number; max: number };
+  };
+  feature?: {
+    id?: number;
+    feature_set?: string;
+    key?: string;
+    name?: string;
+  };
+}
+
+/**
+ * BYOIP onboarding entitlements derived from the account's entitlements:
+ *   - `allowed` → `addressing.byoip_allowed`  (may onboard BYOIP at all)
+ *   - `max`     → `addressing.byoip_prefixes` (max onboardable prefix count)
+ * `available` is false when the lookup could not be performed (e.g. missing
+ * Account Read), so callers treat the signal as unknown and fail open.
+ */
+export interface ByoipEntitlement {
+  available: boolean;
+  allowed: boolean | null;
+  max: number | null;
+}
+
 export interface CfDelegation {
   id: string;
   cidr: string;

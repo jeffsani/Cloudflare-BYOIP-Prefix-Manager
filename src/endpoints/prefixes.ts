@@ -15,6 +15,7 @@ import {
   validatePrefix,
   lookupRpki,
   lookupIrrRecords,
+  getByoipEntitlement,
 } from '../api';
 import {
   CfPrefixSchema,
@@ -33,6 +34,34 @@ import { ErrorResponseSchema, OkResponseSchema, AccountIdQuerySchema } from '../
 import { toggleBgpAdvertisement } from '../api';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
+
+/**
+ * Enforce the account's BYOIP entitlement before onboarding `requested` new
+ * prefixes. Returns an error message string if onboarding should be blocked, or
+ * null to allow. Best-effort: when the entitlement is unavailable (e.g. missing
+ * Account Read) or the current count cannot be read, it fails open (allows).
+ */
+async function checkByoipEntitlement(accountId: string, token: string, requested: number): Promise<string | null> {
+  const ent = await getByoipEntitlement(accountId, token);
+  if (!ent.available) return null;
+  if (ent.allowed === false) {
+    return 'This account is not entitled to onboard BYOIP prefixes (addressing.byoip_allowed is false). Contact your Cloudflare account team.';
+  }
+  if (ent.max != null) {
+    let current = 0;
+    try {
+      const existing = await listPrefixes(accountId, token);
+      if (!existing.success) return null; // can't read current count → fail open
+      current = (existing.result || []).length;
+    } catch {
+      return null;
+    }
+    if (current + requested > ent.max) {
+      return `Onboarding ${requested} prefix(es) would exceed this account's BYOIP prefix entitlement (${current} of ${ent.max} used). Contact your Cloudflare account team to raise the limit.`;
+    }
+  }
+  return null;
+}
 
 // GET /api/prefixes
 export class ListPrefixes extends OpenAPIRoute {
@@ -115,6 +144,12 @@ export class CreatePrefix extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
+
+      // Enforce BYOIP entitlement before onboarding (best-effort; fail open when
+      // the entitlement cannot be read so a transient error never blocks).
+      const entErr = await checkByoipEntitlement(acct.account_id, token, 1);
+      if (entErr) return c.json({ error: entErr }, 400);
+
       const result = await createPrefix(
         acct.account_id,
         body.cidr,
@@ -189,6 +224,11 @@ export class BatchCreatePrefix extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
+
+      // Enforce BYOIP entitlement for the whole batch before onboarding any.
+      const entErr = await checkByoipEntitlement(acct.account_id, token, body.prefixes.length);
+      if (entErr) return c.json({ error: entErr }, 400);
+
       const results: Array<{ cidr: string; asn: number; ok: boolean; prefix?: unknown; error?: string }> = [];
 
       for (const item of body.prefixes) {
@@ -394,6 +434,10 @@ export class GetPrefixStats extends OpenAPIRoute {
           pending: prefixes.filter((p) => p.rpki_validation_state?.toLowerCase() === 'pending').length,
         },
         per_prefix: perPrefix,
+        byoip_entitlement: {
+          ...(await getByoipEntitlement(acct.account_id, token)),
+          current: prefixes.length,
+        },
       };
 
       return c.json({ stats });

@@ -155,6 +155,12 @@ export const PrefixStatsResponseSchema = z.object({
       pending: z.number(),
     }),
     per_prefix: z.record(z.string(), PerPrefixStatsSchema),
+    byoip_entitlement: z.object({
+      available: z.boolean(),
+      allowed: z.boolean().nullable(),
+      max: z.number().nullable(),
+      current: z.number(),
+    }).optional(),
   }),
 });
 

@@ -41,7 +41,7 @@ export const TokenTestRequestSchema = z.object({
 
 export const TokenTestResultItemSchema = z.object({
   permission: z.string(),
-  status: z.enum(['ok', 'fail']),
+  status: z.enum(['ok', 'fail', 'unknown']),
   detail: z.string().optional(),
 });
 

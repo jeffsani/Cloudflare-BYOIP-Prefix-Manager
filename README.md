@@ -54,7 +54,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **Aggregate Account View** — Enable aggregation in Settings to open prefixes and stats, activity, and notification history across all configured accounts. Each panel has an independent account filter, while its existing search and status filters continue to apply across the combined data.
 - **Account-Aware Actions** — Rows retain their source account, Add Prefix prompts for a target account in the combined view, and bulk advertisement changes are safely partitioned by account.
 - **Multi-Token Load Balancing** — Add multiple API tokens per account to distribute API requests via round-robin and avoid the Cloudflare API rate limit (1200 requests per endpoint per 5-minute window per token). Write operations (advertisement toggle) always use the first token for consistency.
-- **Token Testing** — Test any token's permissions before saving, with inline badge feedback for IP Prefixes Read, Addressing Services Read, Address Maps Read, and Zone Read
+- **Token Testing** — Test any token's permissions before saving, with inline badge feedback for token status, IP Prefixes Read/Write, BGP On Demand Read/Write, Addressing Services Read, Account Read (entitlements), Address Maps Read/Edit, and Zone Read. Write permissions are probed non-destructively (an invalid request is classified as authorized vs. unauthorized); checks with no resource to test against show as "unknown"
 
 ### UI
 - **Dark/Light Theme** — Toggle between dark and light mode (persisted in localStorage)
@@ -605,12 +605,15 @@ Each user creates their own Cloudflare API tokens in the Settings panel. Tokens 
 | Permission | Access | Scope | Required For |
 |-----------|--------|-------|-------------|
 | **IP Prefixes** | Read | Account | Viewing prefixes, service bindings |
-| **IP Prefixes** | Edit | Account | (future: prefix management) |
+| **IP Prefixes** | Edit | Account | Onboarding/deleting prefixes, service bindings, delegations |
 | **IP Prefixes: BGP On Demand** | Read | Account | Viewing BGP sub-prefixes |
 | **IP Prefixes: BGP On Demand** | Edit | Account | Toggling advertisement state |
+| **Account** | Read | Account | Reading account entitlements (BYOIP allowed + prefix limit) |
 | **Billing** | Read | Account | Reading account subscriptions to detect service entitlements (Magic Transit / Spectrum / CDN) |
 | **Address Maps** | Read/Edit | Account | Listing, creating, and managing BYOIP address maps |
 | **Zone** | Read | Account | Resolving/selecting domain names for zone-scoped address maps |
+
+The **Test** button probes each of these: it verifies the token is active (via `/user/tokens/verify`), checks the read permissions directly, and probes the write permissions (IP Prefixes: Write, BGP On Demand: Write, Address Maps: Edit) non-destructively by issuing a deliberately invalid request and inspecting whether it is rejected for authorization vs. validation — so a missing write permission is flagged without creating or changing anything. Write probes that have no resource to test against (e.g. no BGP sub-prefix exists yet) are reported as **unknown** rather than pass/fail.
 
 ### Rate Limit & Multi-Token Strategy
 

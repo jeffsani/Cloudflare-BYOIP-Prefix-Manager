@@ -6,6 +6,8 @@ import type {
   CfService,
   CfSubscription,
   AccountEntitlements,
+  ByoipEntitlement,
+  CfEntitlement,
   CfDelegation,
   CfAddressMap,
   CfAddressMapDetail,
@@ -391,6 +393,50 @@ export async function getAccountEntitlements(
   return result;
 }
 
+// --- BYOIP Entitlements ---
+
+/**
+ * Read the account's BYOIP entitlements from /accounts/{id}/entitlements:
+ *   - `addressing.byoip_allowed`  (bool)      → whether BYOIP onboarding is permitted
+ *   - `addressing.byoip_prefixes` (max_count) → max number of onboardable prefixes
+ * Best-effort: any failure (e.g. missing Account Read) yields `available: false`
+ * with null fields, so callers treat it as "unknown" and fail open rather than
+ * hard-blocking onboarding.
+ */
+export async function getByoipEntitlement(
+  accountId: string,
+  token: string,
+): Promise<ByoipEntitlement> {
+  const result: ByoipEntitlement = { available: false, allowed: null, max: null };
+
+  let resp: CfApiResponse<CfEntitlement[]>;
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/entitlements`,
+      { headers: authHeaders(token) },
+    );
+    resp = await r.json();
+  } catch {
+    return result;
+  }
+  if (!resp.success || !Array.isArray(resp.result)) return result;
+
+  result.available = true;
+
+  for (const ent of resp.result) {
+    const key = ent.feature?.key || ent.id;
+    const value = ent.allocation?.value;
+    if (key === 'addressing.byoip_allowed') {
+      result.allowed = value === true || value === 'true';
+    } else if (key === 'addressing.byoip_prefixes') {
+      const n = typeof value === 'number' ? value : Number(value);
+      result.max = Number.isFinite(n) ? n : null;
+    }
+  }
+
+  return result;
+}
+
 // --- Create Service Binding ---
 
 export async function createServiceBinding(
@@ -703,11 +749,61 @@ export async function toggleBgpAdvertisement(
 
 // --- Token Verification ---
 
+export type TokenProbeStatus = 'ok' | 'fail' | 'unknown';
+export interface TokenProbeResult {
+  permission: string;
+  status: TokenProbeStatus;
+  detail?: string;
+}
+
+// Cloudflare authorization/authentication error codes. A valid token that lacks
+// the permission for a resource returns HTTP 403 (commonly code 9109) or an
+// authentication error code — distinct from a 400 validation error, which means
+// the token WAS authorized but the request body/params were rejected.
+const AUTHZ_ERROR_CODES = new Set([9109, 9106, 9103, 10000, 10001]);
+
+/**
+ * Classify the result of a deliberately invalid/no-op WRITE request to infer
+ * whether the token holds the write permission, without causing a side effect:
+ *   - HTTP 403 or an authz error code  → 'fail'    (permission missing)
+ *   - HTTP 400 (validation error)       → 'ok'      (authorized; body rejected)
+ *   - unexpected success                → 'ok'      (authorized)
+ *   - 404 / 5xx / anything ambiguous    → 'unknown' (could not determine)
+ * Never reports 'ok' off an authz signal, so a missing permission is never
+ * misread as present.
+ */
+function classifyWriteProbe(status: number, body: { success?: boolean; errors?: Array<{ code?: number }> } | null): TokenProbeStatus {
+  if (status === 403 || status === 401) return 'fail';
+  const codes = (body?.errors || []).map((e) => e.code).filter((c): c is number => typeof c === 'number');
+  if (codes.some((c) => AUTHZ_ERROR_CODES.has(c))) return 'fail';
+  if (body?.success === true) return 'ok';
+  if (status === 400) return 'ok';
+  return 'unknown';
+}
+
 export async function verifyTokenPermissions(
   accountId: string,
   token: string,
-): Promise<Array<{ permission: string; status: 'ok' | 'fail'; detail?: string }>> {
-  const results: Array<{ permission: string; status: 'ok' | 'fail'; detail?: string }> = [];
+): Promise<TokenProbeResult[]> {
+  const results: TokenProbeResult[] = [];
+
+  // Test 0: Token status — confirms the token is live (active/not expired) via
+  // the user-scoped verify endpoint. This does NOT enumerate permissions (that
+  // is not exposed by the API); the probes below test each capability directly.
+  try {
+    const r = await fetchWithRetry(`${CF_API}/user/tokens/verify`, { headers: authHeaders(token) });
+    const data = (await r.json().catch(() => null)) as CfApiResponse<{ status?: string; expires_on?: string }> | null;
+    const tokenStatus = data?.result?.status;
+    const ok = !!data?.success && tokenStatus === 'active';
+    let detail: string | undefined;
+    if (tokenStatus && tokenStatus !== 'active') detail = `Token ${tokenStatus}`;
+    else if (!ok) detail = data?.errors?.[0]?.message || `HTTP ${r.status}`;
+    else if (data?.result?.expires_on) detail = `Active, expires ${data.result.expires_on}`;
+    else detail = 'Active';
+    results.push({ permission: 'Token status', status: ok ? 'ok' : 'fail', detail });
+  } catch (e) {
+    results.push({ permission: 'Token status', status: 'fail', detail: String(e) });
+  }
 
   // Test 1: IP Prefixes Read
   let firstPrefixId: string | null = null;
@@ -730,18 +826,22 @@ export async function verifyTokenPermissions(
   }
 
   // Test 2: BGP On Demand Read (requires a prefix to test against)
+  let firstBgpPrefixId: string | null = null;
   if (firstPrefixId) {
     try {
       const r = await fetchWithRetry(
         `${CF_API}/accounts/${accountId}/addressing/prefixes/${firstPrefixId}/bgp/prefixes`,
         { headers: authHeaders(token) },
       );
-      const data = (await r.json()) as CfApiResponse<unknown>;
+      const data = (await r.json()) as CfApiResponse<Array<{ id: string }>>;
       results.push({
         permission: 'BGP On Demand: Read',
         status: data.success ? 'ok' : 'fail',
         detail: data.success ? undefined : data.errors?.[0]?.message,
       });
+      if (data.success && Array.isArray(data.result) && data.result.length > 0) {
+        firstBgpPrefixId = data.result[0].id;
+      }
     } catch (e) {
       results.push({ permission: 'BGP On Demand: Read', status: 'fail', detail: String(e) });
     }
@@ -861,6 +961,105 @@ export async function verifyTokenPermissions(
     });
   } catch (e) {
     results.push({ permission: 'Zone: Read (address map domains)', status: 'fail', detail: String(e) });
+  }
+
+  // Test 9: Account Read — required to read account entitlements (BYOIP allowed
+  // + prefix limit) via /accounts/{id}/entitlements.
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/entitlements`,
+      { headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as CfApiResponse<unknown> | null;
+    const ok = !!data?.success;
+    results.push({
+      permission: 'Account: Read (BYOIP entitlements)',
+      status: ok ? 'ok' : 'fail',
+      detail: ok ? undefined : (data?.errors?.[0]?.message || `HTTP ${r.status}`),
+    });
+  } catch (e) {
+    results.push({ permission: 'Account: Read (BYOIP entitlements)', status: 'fail', detail: String(e) });
+  }
+
+  // --- Write-permission probes (non-destructive error-signature probing) ---
+  // Cloudflare exposes no API to enumerate a token's permissions, and provides
+  // no dry-run for writes. We send a deliberately invalid/no-op write and infer
+  // the permission from the response: an authz error (403 / code 9109, etc.)
+  // means the permission is missing; a 400 validation error means it is present
+  // (the request was authorized, then the body rejected). No resource is created
+  // because every probe body is guaranteed to fail validation.
+
+  // Test 10: IP Prefixes Write — governs create/delete prefix, bindings, and
+  // delegations. Probe: create-prefix with an empty body (fails validation).
+  try {
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/addressing/prefixes`,
+      { method: 'POST', headers: authHeaders(token), body: JSON.stringify({}) },
+    );
+    const data = (await r.json().catch(() => null)) as { success?: boolean; errors?: Array<{ code?: number; message?: string }> } | null;
+    const status = classifyWriteProbe(r.status, data);
+    results.push({
+      permission: 'IP Prefixes: Write',
+      status,
+      detail: status === 'fail' ? (data?.errors?.[0]?.message || `HTTP ${r.status}`)
+        : status === 'unknown' ? `Indeterminate (HTTP ${r.status})` : undefined,
+    });
+  } catch (e) {
+    results.push({ permission: 'IP Prefixes: Write', status: 'unknown', detail: String(e) });
+  }
+
+  // Test 11: BGP On Demand Write — governs advertisement toggling. Needs an
+  // existing BGP prefix to target (an invalid id would 404 before authz). The
+  // body is intentionally empty so this can never change advertisement state:
+  // a token lacking write returns 403/authz; one with write returns a 200 no-op
+  // or 400, both of which mean "authorized".
+  if (firstPrefixId && firstBgpPrefixId) {
+    try {
+      const r = await fetchWithRetry(
+        `${CF_API}/accounts/${accountId}/addressing/prefixes/${firstPrefixId}/bgp/prefixes/${firstBgpPrefixId}`,
+        { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({}) },
+      );
+      const data = (await r.json().catch(() => null)) as { success?: boolean; errors?: Array<{ code?: number; message?: string }> } | null;
+      const status = classifyWriteProbe(r.status, data);
+      results.push({
+        permission: 'BGP On Demand: Write',
+        status,
+        detail: status === 'fail' ? (data?.errors?.[0]?.message || `HTTP ${r.status}`)
+          : status === 'unknown' ? `Indeterminate (HTTP ${r.status})` : undefined,
+      });
+    } catch (e) {
+      results.push({ permission: 'BGP On Demand: Write', status: 'unknown', detail: String(e) });
+    }
+  } else {
+    results.push({ permission: 'BGP On Demand: Write', status: 'unknown', detail: 'No BGP prefix to test against' });
+  }
+
+  // Test 12: Address Maps Edit — governs creating/managing address maps. Probe:
+  // DELETE a syntactically-valid but non-existent map id. This never deletes a
+  // real resource: a token lacking edit returns an authz error (403/9109) while
+  // a token with edit returns 404/400 (not found) — i.e. it was authorized.
+  try {
+    const fakeMapId = '00000000000000000000000000000000';
+    const r = await fetchWithRetry(
+      `${CF_API}/accounts/${accountId}/addressing/address_maps/${fakeMapId}`,
+      { method: 'DELETE', headers: authHeaders(token) },
+    );
+    const data = (await r.json().catch(() => null)) as { success?: boolean; errors?: Array<{ code?: number; message?: string }> } | null;
+    const codes = (data?.errors || []).map((e) => e.code).filter((c): c is number => typeof c === 'number');
+    const isAuthzFail = r.status === 403 || r.status === 401 || codes.some((c) => AUTHZ_ERROR_CODES.has(c));
+    // Authorized if the request got past authz: success, a 404/400 not-found, or
+    // any non-authz 4xx. Only an authz signal counts as "missing".
+    const status: TokenProbeStatus = isAuthzFail ? 'fail'
+      : (data?.success === true || r.status === 404 || r.status === 400) ? 'ok'
+      : 'unknown';
+    results.push({
+      permission: 'Address Maps: Edit',
+      status,
+      detail: status === 'fail' ? (data?.errors?.[0]?.message || `HTTP ${r.status}`)
+        : status === 'unknown' ? `Indeterminate (HTTP ${r.status})` : undefined,
+    });
+  } catch (e) {
+    results.push({ permission: 'Address Maps: Edit', status: 'unknown', detail: String(e) });
   }
 
   return results;

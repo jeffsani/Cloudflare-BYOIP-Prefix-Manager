@@ -508,7 +508,7 @@ export function renderDashboard(userEmail: string): string {
     <div id="prefix-msg" class="mb-3 empty:hidden"></div>
 
     <!-- Stats Row -->
-    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-8 gap-3 mb-4">
+    <div id="stats-row" class="hidden grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-3 mb-4">
       <div class="panel p-3 text-center">
         <div id="stat-total" class="text-xl font-bold" style="color:var(--text-strong)">0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Total Prefixes</div>
@@ -523,6 +523,11 @@ export function renderDashboard(userEmail: string): string {
         <div id="stat-cap" class="text-xl font-bold text-green-400">0 / 0</div>
         <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">Advertised Cap</div>
         <div id="stat-cap-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
+      </div>
+      <div id="stat-byoip-card" class="panel p-3 text-center hidden">
+        <div id="stat-byoip" class="text-xl font-bold text-green-400">0 / 0</div>
+        <div class="text-[10px] text-cf-gray uppercase tracking-wider mt-0.5">BYOIP Entitlement</div>
+        <div id="stat-byoip-sub" class="text-[10px] text-cf-gray font-normal mt-0.5"></div>
       </div>
       <div class="panel p-3 text-center">
         <div id="stat-withdrawn" class="text-xl font-bold text-red-400">0</div>
@@ -1212,6 +1217,7 @@ export function renderDashboard(userEmail: string): string {
     var expandedRows = {};
     var childData = {};
     var prefixStats = null;
+    var byoipEntitlementByAccount = {};
     var pendingToggle = null;
     
     var rdapCache = {};
@@ -1382,6 +1388,7 @@ export function renderDashboard(userEmail: string): string {
       allPrefixes = [];
       filteredPrefixes = [];
       prefixStats = null;
+      byoipEntitlementByAccount = {};
       prefixLoadErrors = [];
       expandedRows = {};
       childData = {};
@@ -2539,15 +2546,21 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (data.results) {
-          el.innerHTML = data.results.map(function(r) {
-            var cls = r.status === 'ok' ? 'badge-valid' : 'badge-invalid';
-            var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
-            return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
-          }).join('') + entitlementsLineHtml(data.entitlements);
+          el.innerHTML = data.results.map(renderTokenBadge).join('') + entitlementsLineHtml(data.entitlements);
         }
       } catch (e) {
         el.innerHTML = '<span class="badge-invalid">Error</span>';
       }
+    }
+
+    // Render one token-permission probe as a badge. Status is ok | fail |
+    // unknown (unknown = could not determine, e.g. no resource to probe or an
+    // ambiguous response from a write probe). The detail becomes a tooltip.
+    function renderTokenBadge(r) {
+      var cls = r.status === 'ok' ? 'badge-valid' : (r.status === 'unknown' ? 'badge-unknown' : 'badge-invalid');
+      var icon = r.status === 'ok' ? '&#10003;' : (r.status === 'unknown' ? '?' : '&#10007;');
+      var title = r.detail ? ' title="' + escAttr(r.detail) + '"' : '';
+      return '<span class="' + cls + ' mr-1"' + title + '>' + icon + ' ' + escHtml(r.permission) + '</span>';
     }
 
     // Render a short line listing the account's entitled bindable services,
@@ -2574,11 +2587,7 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (data.results) {
-          el.innerHTML = data.results.map(function(r) {
-            var cls = r.status === 'ok' ? 'badge-valid' : 'badge-invalid';
-            var icon = r.status === 'ok' ? '&#10003;' : '&#10007;';
-            return '<span class="' + cls + ' mr-1">' + icon + ' ' + r.permission + '</span>';
-          }).join('') + entitlementsLineHtml(data.entitlements);
+          el.innerHTML = data.results.map(renderTokenBadge).join('') + entitlementsLineHtml(data.entitlements);
         } else {
           el.innerHTML = '<span class="badge-invalid">' + escHtml(data.error || 'Test failed') + '</span>';
         }
@@ -2656,6 +2665,20 @@ export function renderDashboard(userEmail: string): string {
           });
         });
       });
+      // Combine BYOIP entitlement across accounts: available only if every
+      // in-scope account reported it; current = sum of counts; allowed is false
+      // if any account is not allowed, null if any is unknown, else true; max is
+      // the sum of per-account maxes, or null if any account's max is unknown.
+      var ents = statsList.map(function(s) { return s && s.byoip_entitlement; }).filter(Boolean);
+      if (ents.length === statsList.length && ents.length > 0) {
+        var available = ents.every(function(e) { return e.available; });
+        var allowed = ents.some(function(e) { return e.allowed === false; }) ? false
+          : (ents.some(function(e) { return e.allowed == null; }) ? null : true);
+        var maxNull = ents.some(function(e) { return e.max == null; });
+        var max = maxNull ? null : ents.reduce(function(sum, e) { return sum + e.max; }, 0);
+        var current = ents.reduce(function(sum, e) { return sum + (typeof e.current === 'number' ? e.current : 0); }, 0);
+        result.byoip_entitlement = { available: available, allowed: allowed, max: max, current: current };
+      }
       return result;
     }
 
@@ -2701,6 +2724,7 @@ export function renderDashboard(userEmail: string): string {
             var statsData = await statsResp.json();
             if (!statsResp.ok || statsData.error || !statsData.stats) throw new Error(statsData.error || 'Failed to load account stats');
             stats = statsData.stats;
+            if (stats.byoip_entitlement) byoipEntitlementByAccount[accountId] = stats.byoip_entitlement;
           } catch (e) {
             loadErrors.push({ account_id: accountId, label: label, error: 'Account stats: ' + String(e && e.message || e) });
           }
@@ -2793,7 +2817,43 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('stat-rpki').className = 'text-xl font-bold ' + (rpkiInvalid > 0 ? 'text-yellow-400' : 'text-green-400');
       }
       updateCapCard(advertisedForCap);
+      updateByoipCard();
       document.getElementById('stats-row').classList.toggle('hidden', total === 0);
+    }
+
+    // BYOIP entitlement card: onboarded prefixes vs the account's entitled max
+    // (addressing.byoip_prefixes), gated by addressing.byoip_allowed. Hidden when
+    // the entitlement is unavailable (e.g. token lacks Account Read) so an
+    // unknown signal is never shown as a limit. Color mirrors updateCapCard.
+    function updateByoipCard() {
+      var card = document.getElementById('stat-byoip-card');
+      var el = document.getElementById('stat-byoip');
+      var sub = document.getElementById('stat-byoip-sub');
+      if (!card || !el) return;
+      var ent = prefixStats && prefixStats.byoip_entitlement;
+      if (!ent || !ent.available) { card.classList.add('hidden'); return; }
+      card.classList.remove('hidden');
+      if (ent.allowed === false) {
+        el.textContent = 'Not allowed';
+        el.className = 'text-xl font-bold text-red-400';
+        if (sub) sub.textContent = 'BYOIP not entitled';
+        return;
+      }
+      if (ent.max == null) {
+        el.textContent = String(ent.current);
+        el.className = 'text-xl font-bold text-green-400';
+        if (sub) sub.textContent = 'Onboarded (no limit)';
+        return;
+      }
+      el.textContent = ent.current + ' / ' + ent.max;
+      var color = 'text-green-400';
+      if (ent.max > 0 && ent.current >= ent.max) color = 'text-red-400';
+      else if (ent.max > 0 && ent.current >= Math.ceil(ent.max * 0.8)) color = 'text-yellow-400';
+      el.className = 'text-xl font-bold ' + color;
+      if (sub) {
+        var pctUsed = ent.max > 0 ? Math.round((ent.current / ent.max) * 100) : 0;
+        sub.textContent = pctUsed + '% of entitlement';
+      }
     }
 
     // Advertised-prefix cap card. The cap is per-account; in the aggregate view
@@ -6831,6 +6891,25 @@ export function renderDashboard(userEmail: string): string {
       return bytes;
     }
 
+    // Returns an error message if onboarding the requested prefixes to the given
+    // account is blocked by the BYOIP entitlement, or '' to allow. Fails open
+    // (allows) when the entitlement is unavailable for the target account.
+    function checkByoipLimit(accountId, requested) {
+      var ent = accountId && byoipEntitlementByAccount[accountId];
+      if (!ent || !ent.available) return '';
+      if (ent.allowed === false) {
+        return 'This account is not entitled to onboard BYOIP prefixes. Contact your Cloudflare account team.';
+      }
+      if (ent.max != null) {
+        var current = typeof ent.current === 'number' ? ent.current : 0;
+        if (current + requested > ent.max) {
+          return 'Onboarding ' + requested + ' prefix(es) would exceed this account\\'s BYOIP prefix entitlement (' +
+            current + ' of ' + ent.max + ' used). Contact your Cloudflare account team to raise the limit.';
+        }
+      }
+      return '';
+    }
+
     async function submitNewPrefix() {
       var clientError = validateNewPrefix();
       if (clientError) {
@@ -6853,6 +6932,17 @@ export function renderDashboard(userEmail: string): string {
       var prefixes = [];
       for (var i = 0; i < addPrefixRows.length; i++) {
         prefixes.push({ cidr: addPrefixRows[i].cidr.trim(), asn: parseInt(addPrefixRows[i].asn.trim(), 10) });
+      }
+
+      // BYOIP entitlement gate — hard-block onboarding that is not permitted or
+      // would exceed the account's prefix limit. Fails open when the entitlement
+      // is unavailable (e.g. token lacks Account Read).
+      var byoipError = checkByoipLimit(workflowAccountId(), prefixes.length);
+      if (byoipError) {
+        var byoipErrEl = document.getElementById('add-prefix-error');
+        byoipErrEl.textContent = byoipError;
+        byoipErrEl.classList.remove('hidden');
+        return;
       }
 
       // Single prefix: check parent overlap
