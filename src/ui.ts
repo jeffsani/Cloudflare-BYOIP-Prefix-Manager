@@ -924,6 +924,7 @@ export function renderDashboard(userEmail: string): string {
         <p id="bulk-confirm-message" class="text-xs text-cf-gray mb-3"></p>
         <div id="bulk-confirm-list" class="max-h-48 overflow-y-auto mb-3 border border-cf-border rounded-lg p-2 text-xs font-mono"></div>
         <div id="bulk-confirm-warning" class="text-[10px] text-red-500 mb-3 hidden"></div>
+        <div id="bulk-confirm-am-warning"></div>
         <div id="bulk-confirm-results" class="hidden mb-3 text-xs"></div>
         <div class="flex justify-end gap-2">
           <button onclick="closeBulkConfirmModal()" class="px-3 py-1.5 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition">Cancel</button>
@@ -3346,8 +3347,10 @@ export function renderDashboard(userEmail: string): string {
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> the BGP prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
-        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' this prefix to the Internet.</span>';
+        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' this prefix to the Internet.</span>' +
+        '<div id="confirm-am-warning"></div>';
       document.getElementById('confirm-modal').classList.remove('hidden');
+      if (!newState) amPopulateConfirmWarning(prefix._account_id, [cidr]);
     }
 
     function closeConfirmModal() {
@@ -3397,11 +3400,13 @@ export function renderDashboard(userEmail: string): string {
       var action = newState ? 'ADVERTISE' : 'WITHDRAW';
       document.getElementById('confirm-message').innerHTML =
         'Are you sure you want to <strong>' + action + '</strong> prefix <strong class="font-mono">' + escHtml(cidr) + '</strong>?<br><br>' +
-        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>';
+        '<span class="text-red-500">This will ' + (newState ? 'start announcing' : 'stop announcing') + ' all BGP sub-prefixes under this prefix to the Internet.</span>' +
+        '<div id="confirm-am-warning"></div>';
 
       // We need to fetch BGP sub-prefixes to toggle them
       pendingToggle = { rowKey: rowKey, prefixId: prefix.id, accountId: prefix._account_id, advertised: newState, cidr: cidr, isParent: true };
       document.getElementById('confirm-modal').classList.remove('hidden');
+      if (!newState) amPopulateConfirmWarning(prefix._account_id, [cidr]);
     }
 
     async function executeParentToggle(t) {
@@ -3610,8 +3615,11 @@ export function renderDashboard(userEmail: string): string {
       document.getElementById('bulk-confirm-results').classList.add('hidden');
       document.getElementById('bulk-confirm-btn').disabled = false;
       document.getElementById('bulk-confirm-btn').textContent = 'Confirm';
+      var amWarnEl = document.getElementById('bulk-confirm-am-warning');
+      if (amWarnEl) amWarnEl.innerHTML = '';
       pendingBulkToggle = { prefixes: selected, advertised: advertised };
       document.getElementById('bulk-confirm-modal').classList.remove('hidden');
+      if (!advertised) amPopulateBulkWarning(selected);
     }
 
     function closeBulkConfirmModal() {
@@ -3978,6 +3986,76 @@ export function renderDashboard(userEmail: string): string {
       return null;
     }
 
+    // ─── Withdraw guardrail: warn when mapped IPs would stop serving ────
+
+    var amWithdrawMapsCache = {}; // accountId -> { ts, maps }
+    async function amFetchMapsForAccount(accountId) {
+      var c = amWithdrawMapsCache[accountId];
+      if (c && (Date.now() - c.ts) < 15000) return c.maps;
+      var maps = [];
+      try {
+        var resp = await fetch('/api/address-maps?account_id=' + encodeURIComponent(accountId));
+        var data = await resp.json();
+        if (resp.ok && !data.error) maps = data.maps || [];
+      } catch (e) { maps = []; }
+      amWithdrawMapsCache[accountId] = { ts: Date.now(), maps: maps };
+      return maps;
+    }
+    // Invalidate the cache after advertisement/map changes so warnings stay fresh.
+    function amInvalidateWithdrawCache() { amWithdrawMapsCache = {}; }
+
+    function amIpInCidrs(ip, parents) {
+      var child = parseCIDR(ip + (ip.indexOf(':') !== -1 ? '/128' : '/32'));
+      if (!child) return false;
+      for (var i = 0; i < parents.length; i++) { if (parents[i] && cidrContains(parents[i], child)) return true; }
+      return false;
+    }
+
+    // Returns [{ name, ips: [...] }] for maps that have IPs within any of the given cidrs.
+    async function amMappedIpsWithin(accountId, cidrs) {
+      var maps = await amFetchMapsForAccount(accountId);
+      var parents = cidrs.map(parseCIDR).filter(Boolean);
+      var out = [];
+      maps.forEach(function(m) {
+        var matched = (m.ips || []).filter(function(ip) { return amIpInCidrs(ip, parents); });
+        if (matched.length) out.push({ name: m.name || '(unnamed)', ips: matched });
+      });
+      return out;
+    }
+
+    function amWithdrawWarningHtml(hits) {
+      if (!hits.length) return '';
+      var total = hits.reduce(function(n, h) { return n + h.ips.length; }, 0);
+      var lines = hits.map(function(h) {
+        return '<li><span class="font-mono">' + escHtml(h.ips.join(', ')) + '</span> &rarr; map <strong>' + escHtml(h.name) + '</strong></li>';
+      }).join('');
+      return '<div class="mt-3 text-[11px] text-yellow-400 border border-yellow-600/40 rounded-lg px-3 py-2">' +
+        '<div class="font-semibold mb-1">&#9888; ' + total + ' IP' + (total === 1 ? '' : 's') + ' on this prefix ' + (total === 1 ? 'is' : 'are') + ' used by ' + hits.length + ' address map' + (hits.length === 1 ? '' : 's') + '.</div>' +
+        'Withdrawing will stop serving traffic for ' + (total === 1 ? 'that address' : 'those addresses') + ' until the prefix is re-advertised.' +
+        '<ul class="list-disc ml-4 mt-1">' + lines + '</ul></div>';
+    }
+
+    // Populate the single/parent-toggle confirmation warning (async; advisory).
+    async function amPopulateConfirmWarning(accountId, cidrs) {
+      var hits = await amMappedIpsWithin(accountId, cidrs);
+      var el = document.getElementById('confirm-am-warning');
+      if (el) el.innerHTML = amWithdrawWarningHtml(hits);
+    }
+
+    // Populate the bulk-withdraw confirmation warning across (possibly multiple) accounts.
+    async function amPopulateBulkWarning(selected) {
+      var byAccount = {};
+      selected.forEach(function(p) { (byAccount[p._account_id] = byAccount[p._account_id] || []).push(p.cidr); });
+      var allHits = [];
+      var accts = Object.keys(byAccount);
+      for (var i = 0; i < accts.length; i++) {
+        var hits = await amMappedIpsWithin(accts[i], byAccount[accts[i]]);
+        allHits = allHits.concat(hits);
+      }
+      var el = document.getElementById('bulk-confirm-am-warning');
+      if (el) el.innerHTML = amWithdrawWarningHtml(allHits);
+    }
+
     async function refreshAddressMapEligibility() {
       var btn = document.getElementById('address-maps-btn');
       if (!btn) return;
@@ -4033,6 +4111,7 @@ export function renderDashboard(userEmail: string): string {
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to load address maps');
         addressMapsData = { maps: data.maps || [], zonesUnavailable: !!data.zones_unavailable };
+        amInvalidateWithdrawCache();
         renderAddressMapsList();
       } catch (e) {
         listEl.innerHTML = '<div class="py-6 text-center text-red-400 text-xs">' + escHtml(String(e && e.message || e)) + '</div>';
