@@ -720,11 +720,13 @@ Per-account API keys for the Query API (SHA‑256 hashed), inbound webhook secre
 
 The API is fully documented with an auto-generated **OpenAPI 3.1** specification, powered by [chanfana](https://chanfana.pages.dev/) with [Zod](https://zod.dev/) schemas for request/response validation.
 
-### Interactive Docs (Swagger UI)
+![API Reference (Scalar)](src/api-ui.png)
 
-Browse and test all API endpoints interactively:
+### Interactive Docs (Scalar API Reference)
 
-- **Swagger UI:** [`/api/docs`](https://prefix-mgr.example.com/api/docs)
+Browse and test all API endpoints interactively. The docs are rendered with the [Scalar API Reference](https://github.com/scalar/scalar), which includes ready-to-run code snippets in 21+ languages:
+
+- **Scalar API Reference:** [`/api/docs`](https://prefix-mgr.example.com/api/docs)
 - **OpenAPI JSON:** [`/api/openapi.json`](https://prefix-mgr.example.com/api/openapi.json)
 
 The OpenAPI spec can be imported into tools like Postman, Insomnia, or used for client code generation.
@@ -743,7 +745,7 @@ curl -o openapi.json http://localhost:8787/api/openapi.json
 
 ### API Endpoint Summary
 
-The API is organized into the following groups (see Swagger UI for full request/response schemas):
+The API is organized into the following groups (see the Scalar API Reference for full request/response schemas):
 
 | Group | Endpoints | Description |
 |-------|-----------|-------------|
@@ -753,6 +755,7 @@ The API is organized into the following groups (see Swagger UI for full request/
 | **Service Bindings** | 3 | Bind/unbind Cloudflare services to prefixes |
 | **Delegations** | 4 | Delegate prefix CIDRs to other accounts |
 | **Services** | 1 | List available Cloudflare services |
+| **Address Maps** | 11 | List/create/manage BYOIP address maps, IPs, and zone domains |
 | **RIR Credentials** | 5 | Manage ARIN/RIPE credentials for automated IRR |
 | **RIR Operations** | 3 | Create/update route objects and aut-num at ARIN/RIPE |
 | **Lookups** | 4 | BGP looking glass, RDAP, RPKI, RIPEstat visibility |
