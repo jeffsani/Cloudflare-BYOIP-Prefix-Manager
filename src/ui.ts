@@ -497,9 +497,9 @@ export function renderDashboard(userEmail: string): string {
         </select>
       </div>
       <div class="flex items-center gap-1.5">
-        <label class="text-xs text-cf-gray font-medium flex items-center gap-1 cursor-pointer select-none" title="Hide service binding rows in the expanded prefix tree">
+        <label class="text-xs text-cf-gray font-medium flex items-center gap-1 cursor-pointer select-none whitespace-nowrap" title="Hide service binding rows in the expanded prefix tree">
           <input id="filter-hide-bindings" type="checkbox" onchange="toggleHideBindings(this.checked)" class="cursor-pointer" style="accent-color:#F6821F">
-          Hide service bindings
+          Hide SVC Bindings
         </label>
       </div>
       <div class="ml-auto flex-shrink-0">
