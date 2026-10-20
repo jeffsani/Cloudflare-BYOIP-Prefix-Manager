@@ -41,7 +41,7 @@ type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
  * null to allow. Best-effort: when the entitlement is unavailable (e.g. missing
  * Account Read) or the current count cannot be read, it fails open (allows).
  */
-async function checkByoipEntitlement(accountId: string, token: string, requested: number): Promise<string | null> {
+export async function checkByoipEntitlement(accountId: string, token: string, requested: number): Promise<string | null> {
   const ent = await getByoipEntitlement(accountId, token);
   if (!ent.available) return null;
   if (ent.allowed === false) {
@@ -52,7 +52,19 @@ async function checkByoipEntitlement(accountId: string, token: string, requested
     try {
       const existing = await listPrefixes(accountId, token);
       if (!existing.success) return null; // can't read current count → fail open
-      current = (existing.result || []).length;
+      const parents = existing.result || [];
+      // The entitlement counts parent prefixes plus their BGP child prefixes.
+      const bgpCounts = await Promise.all(
+        parents.map(async (p) => {
+          try {
+            const bgp = await listBgpPrefixes(accountId, p.id, token);
+            return bgp.success ? (bgp.result || []).length : 0;
+          } catch {
+            return 0;
+          }
+        }),
+      );
+      current = parents.length + bgpCounts.reduce((sum, n) => sum + n, 0);
     } catch {
       return null;
     }
@@ -436,7 +448,9 @@ export class GetPrefixStats extends OpenAPIRoute {
         per_prefix: perPrefix,
         byoip_entitlement: {
           ...(await getByoipEntitlement(acct.account_id, token)),
-          current: prefixes.length,
+          // Onboarded count toward the entitlement includes both parent prefixes
+          // and their BGP child prefixes.
+          current: prefixes.length + allBgpPrefixes.length,
         },
       };
 

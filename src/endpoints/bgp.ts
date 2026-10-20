@@ -13,6 +13,7 @@ import {
 } from '../api';
 import { CfBgpPrefixSchema, CreateBgpPrefixRequestSchema, ToggleBgpRequestSchema } from '../schemas/prefixes';
 import { ErrorResponseSchema, OkResponseSchema, AccountIdQuerySchema } from '../schemas/common';
+import { checkByoipEntitlement } from './prefixes';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 
@@ -98,6 +99,12 @@ export class CreateBgpPrefix extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
+
+      // BGP child prefixes count toward the account's BYOIP prefix entitlement,
+      // so enforce the limit here too (best-effort; fails open when unknown).
+      const entErr = await checkByoipEntitlement(acct.account_id, token, 1);
+      if (entErr) return c.json({ error: entErr }, 400);
+
       const result = await createBgpPrefix(acct.account_id, prefixId, body.cidr, token);
       if (!result.success) {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);

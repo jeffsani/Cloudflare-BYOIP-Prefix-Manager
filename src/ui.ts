@@ -496,6 +496,12 @@ export function renderDashboard(userEmail: string): string {
           <option value="all">All</option>
         </select>
       </div>
+      <div class="flex items-center gap-1.5">
+        <label class="text-xs text-cf-gray font-medium flex items-center gap-1 cursor-pointer select-none" title="Hide service binding rows in the expanded prefix tree">
+          <input id="filter-hide-bindings" type="checkbox" onchange="toggleHideBindings(this.checked)" class="cursor-pointer" style="accent-color:#F6821F">
+          Hide service bindings
+        </label>
+      </div>
       <div class="ml-auto flex-shrink-0">
         <button onclick="resetFilters()" class="px-2.5 py-1 border border-cf-border text-cf-gray text-xs font-medium rounded-lg hover:border-cf-orange hover:text-cf-orange transition flex items-center gap-1" title="Reset all filters to defaults">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
@@ -1216,6 +1222,7 @@ export function renderDashboard(userEmail: string): string {
     var filteredPrefixes = [];
     var expandedRows = {};
     var childData = {};
+    var hideBindings = false;
     var prefixStats = null;
     var byoipEntitlementByAccount = {};
     var pendingToggle = null;
@@ -1307,6 +1314,9 @@ export function renderDashboard(userEmail: string): string {
         document.getElementById('theme-sun').classList.add('active');
         document.getElementById('theme-moon').classList.remove('active');
       }
+      hideBindings = localStorage.getItem('hideBindings') === '1';
+      var hideBindingsEl = document.getElementById('filter-hide-bindings');
+      if (hideBindingsEl) hideBindingsEl.checked = hideBindings;
       loadAccounts();
     })();
 
@@ -2944,12 +2954,22 @@ export function renderDashboard(userEmail: string): string {
       renderPrefixTable();
     }
 
+    function toggleHideBindings(on) {
+      hideBindings = on;
+      localStorage.setItem('hideBindings', on ? '1' : '0');
+      renderPrefixTable();
+    }
+
     function resetFilters() {
       document.getElementById('filter-status').value = 'all';
       document.getElementById('filter-prefix').value = '';
       document.getElementById('filter-family').value = 'all';
       document.getElementById('filter-asn').value = '';
       document.getElementById('filter-tag').value = 'all';
+      hideBindings = false;
+      localStorage.setItem('hideBindings', '0');
+      var hideBindingsEl = document.getElementById('filter-hide-bindings');
+      if (hideBindingsEl) hideBindingsEl.checked = false;
       applyFilters();
     }
 
@@ -3199,7 +3219,7 @@ export function renderDashboard(userEmail: string): string {
       var items = [];
       (data.bgp_prefixes || []).forEach(function (x) { items.push({ kind: 'bgp', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
       (data.delegations || []).forEach(function (x) { items.push({ kind: 'delegation', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
-      (data.bindings || []).forEach(function (x) { items.push({ kind: 'binding', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
+      if (!hideBindings) (data.bindings || []).forEach(function (x) { items.push({ kind: 'binding', cidr: x.cidr, parsed: parseCIDR(x.cidr), data: x, children: [] }); });
 
       // The whole-prefix BGP advertisement (cidr == parent) is the parent-level
       // route, not a more-specific child; exclude it from being a container so
@@ -5109,6 +5129,14 @@ export function renderDashboard(userEmail: string): string {
         return;
       }
 
+      var byoipError = checkByoipLimit(childPrefixModalContext.accountId, 1);
+      if (byoipError) {
+        var byoipErrEl = document.getElementById('child-prefix-error');
+        byoipErrEl.textContent = byoipError;
+        byoipErrEl.classList.remove('hidden');
+        return;
+      }
+
       var ip = document.getElementById('child-prefix-ip').value.trim();
       var mask = document.getElementById('child-prefix-mask').value;
       var cidr = ip + '/' + mask;
@@ -5172,6 +5200,13 @@ export function renderDashboard(userEmail: string): string {
       }
       if (blocks.length > MAX_BULK_CHILD_CREATE) {
         errEl.textContent = 'Too many (' + blocks.length + ') prefixes — choose a larger mask (limit ' + MAX_BULK_CHILD_CREATE + ')';
+        errEl.classList.remove('hidden');
+        return;
+      }
+
+      var byoipError = checkByoipLimit(childPrefixModalContext.accountId, blocks.length);
+      if (byoipError) {
+        errEl.textContent = byoipError;
         errEl.classList.remove('hidden');
         return;
       }
