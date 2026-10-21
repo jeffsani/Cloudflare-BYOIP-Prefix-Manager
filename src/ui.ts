@@ -306,6 +306,18 @@ export function renderDashboard(userEmail: string): string {
       </div>
 
       <div class="mt-3">
+        <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Address Maps</h3>
+        <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
+          <div>&bull; List &amp; inspect maps (scope, domains, bound IPs) &mdash; per-account or aggregate</div>
+          <div>&bull; Step-by-step create wizard (account- or zone-scoped)</div>
+          <div>&bull; IP selection from your CDN / Spectrum bindings</div>
+          <div>&bull; Manage existing maps &mdash; add/remove IPs &amp; domains, rename, enable/disable, delete</div>
+          <div>&bull; Entitlement-aware entry point (shown when a CDN/Spectrum binding exists)</div>
+          <div>&bull; Withdraw guardrail warns when a prefix's IPs are on a map</div>
+        </div>
+      </div>
+
+      <div class="mt-3">
         <h3 class="text-xs font-semibold mb-1" style="color:var(--text-strong)">Monitoring &amp; lookups</h3>
         <div class="text-xs text-cf-gray leading-relaxed grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1">
           <div>&bull; Looking Glass &mdash; interactive BGP path graph via Cloudflare Radar</div>
@@ -337,7 +349,7 @@ export function renderDashboard(userEmail: string): string {
               <div class="arch-box-title">Cloudflare Worker &middot; Hono + chanfana</div>
               <div class="arch-box-sub">Static UI (/) &bull; OpenAPI (/api/docs, /api/openapi.json) &bull; fetch() + scheduled() cron + queue() consumer &bull; KV read-through cache &bull; Durable Object coordination</div>
               <div style="margin-top:4px">
-                <span class="arch-chip">settings</span><span class="arch-chip">prefixes</span><span class="arch-chip">bgp</span><span class="arch-chip">bindings</span><span class="arch-chip">delegations</span><span class="arch-chip">services</span><span class="arch-chip">rir</span><span class="arch-chip">lookups</span><span class="arch-chip">activity</span><span class="arch-chip">notifications</span><span class="arch-chip">integrations</span><span class="arch-chip">public (Query API)</span>
+                <span class="arch-chip">settings</span><span class="arch-chip">prefixes</span><span class="arch-chip">bgp</span><span class="arch-chip">bindings</span><span class="arch-chip">delegations</span><span class="arch-chip">address-maps</span><span class="arch-chip">services</span><span class="arch-chip">rir</span><span class="arch-chip">lookups</span><span class="arch-chip">activity</span><span class="arch-chip">notifications</span><span class="arch-chip">integrations</span><span class="arch-chip">public (Query API)</span>
               </div>
             </div>
           </div>
@@ -4226,6 +4238,19 @@ export function renderDashboard(userEmail: string): string {
       el.classList.remove('hidden');
     }
 
+    // Immediate in-progress feedback for address-map mutations. These actions are
+    // network round-trips (Worker -> Cloudflare API) followed by a full list
+    // reload, so without this the UI looks frozen after a click. Shows a spinner
+    // + message in the status banner; cleared/replaced by the success or error
+    // message (or by loadAddressMaps(), which resets the banner).
+    function amBusy(message) {
+      var el = document.getElementById('address-maps-msg');
+      if (!el) return;
+      el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border text-cf-gray border-cf-border flex items-center gap-2';
+      el.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span><span>' + escHtml(message) + '</span>';
+      el.classList.remove('hidden');
+    }
+
     async function loadAddressMaps() {
       var listEl = document.getElementById('address-maps-list');
       listEl.innerHTML = AM_SPINNER;
@@ -4305,6 +4330,7 @@ export function renderDashboard(userEmail: string): string {
       if (name === null) return;
       name = name.trim();
       if (!name) { amMsg('Name cannot be empty.', 'error'); return; }
+      amBusy('Updating name…');
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -4318,6 +4344,7 @@ export function renderDashboard(userEmail: string): string {
     }
 
     async function amToggleEnabled(mapId, accountId, enabled) {
+      amBusy(enabled ? 'Enabling address map…' : 'Disabling address map…');
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -4341,6 +4368,7 @@ export function renderDashboard(userEmail: string): string {
         confirmLabel: enabled ? 'Disable & delete' : 'Delete',
         danger: true,
         onConfirm: async function() {
+          amBusy(enabled ? 'Disabling & deleting address map…' : 'Deleting address map…');
           try {
             var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId) + '?account_id=' + encodeURIComponent(accountId), { method: 'DELETE' });
             var data = await resp.json();
@@ -4761,6 +4789,7 @@ export function renderDashboard(userEmail: string): string {
     async function amRemoveIp(ip) {
       if (!amManageCtx) return;
       var ctx = amManageCtx;
+      amBusy('Removing IP…');
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/ips/' + encodeURIComponent(ip) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
         var data = await resp.json();
@@ -4774,6 +4803,7 @@ export function renderDashboard(userEmail: string): string {
     async function amRemoveDomain(zoneId) {
       if (!amManageCtx) return;
       var ctx = amManageCtx;
+      amBusy('Removing domain…');
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/zones/' + encodeURIComponent(zoneId) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
         var data = await resp.json();
