@@ -65,14 +65,70 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 
 | Layer | Technology |
 |-------|-----------|
-| Runtime | Cloudflare Workers |
+| Runtime | Cloudflare Workers (`fetch` + `scheduled` + `queue` handlers) |
 | Framework | [Hono](https://hono.dev/) v4.6+ with [chanfana](https://chanfana.pages.dev/) OpenAPI |
 | Frontend | Server-rendered HTML + vanilla JS |
 | CSS | Tailwind CSS (CDN) + CSS custom properties |
-| Database | Cloudflare D1 (SQLite) |
+| Database | Cloudflare D1 (SQLite) — source of truth |
+| Cache | Workers KV — read-through cache for slow lookups |
+| Coordination | Durable Objects (SQLite-backed): rate limiter, poller, bulk toggle |
+| Async delivery | Cloudflare Queues + dead-letter queue |
+| Scheduling | Cron Triggers + Durable Object Alarms |
+| Placement | Smart Placement |
+| Observability | Workers Logs (persisted invocation logs) |
 | Auth | Cloudflare Access (Zero Trust) with Google IdP |
+| Secrets | Wrangler secrets (`CF_ACCESS_AUD`, `RESEND_API_KEY`) |
 | Build | Wrangler v4 |
 | Language | TypeScript 5.9+ |
+
+See [Platform Components](#platform-components) for how each Cloudflare primitive is used, [Costs](#costs) for pricing, and [Rollback](#rollback) for how to disable the newer components.
+
+## Platform Components
+
+How this app uses each Cloudflare Workers platform primitive:
+
+- **Workers runtime** — a single Worker serves the dashboard and OpenAPI, and exports three handlers: `fetch` (the Hono app), `scheduled` (the cron entry point), and `queue` (the notification consumer). See <ins>`src/index.ts`</ins>.
+- **D1 (`DB`)** — the relational source of truth: user accounts and API tokens, RIR credentials, the activity/audit/notification/webhook logs, and the Radar prefix-state snapshots. Schema in `schema.sql`.
+- **Workers KV (`CACHE`)** — a read-through cache (`src/cache.ts`) for slow, read-heavy lookups that change infrequently: RDAP/Whois (24h), RPKI ROAs (1h), IRR (1h), RIPEstat visibility (15m), looking-glass routes (5m), and per-account zones (10m)/services (1h)/entitlements (10m). It is **fail-open** — a disabled flag, an unbound namespace, or any KV error falls straight through to a live fetch. KV is eventually consistent, so it is a cache only; D1 remains authoritative. The Radar poller deliberately bypasses the cache and always reads live.
+- **Durable Objects** — three SQLite-backed objects provide strongly-consistent, single-writer coordination that KV/D1 cannot:
+  - **`RateLimiterDO`** (one per account) keeps a rolling 5-minute count of Cloudflare API calls across all isolates so concurrent requests stay within the account's budget. The budget is the editable `api_rate_limit_5min` value passed on every check, so a granted rate-limit increase takes effect immediately. It is consulted transparently via an `AsyncLocalStorage` gate around the CF API helpers in `src/api.ts`.
+  - **`PollerDO`** (one per user+account) runs the Radar advertisement poll on its own **DO Alarm** schedule (~60s), giving each account an isolated, non-overlapping loop instead of one global cron fan-out. The cron now just heartbeats `/ensure` so new accounts get an alarm and stalled loops restart.
+  - **`BulkToggleDO`** (one per account) serializes bulk advertise/withdraw jobs for the same account so they don't race each other or the API budget. The HTTP response is unchanged (same per-prefix result array).
+- **Cloudflare Queues + DLQ (`NOTIFY_QUEUE`)** — notifications are enqueued on prefix events and delivered by the `queue` consumer with retries; exhausted messages land in the dead-letter queue and are surfaced (with manual retry) in the Notifications Queue panel.
+- **Cron Triggers** — fire every minute to drive the poller (directly, or by ensuring the PollerDOs) and, at the top of each hour, to purge expired local logs per each account's retention window.
+- **Smart Placement** (`[placement] mode = "smart"`) — lets Cloudflare place the Worker close to the services it talks to most, reducing round-trip latency to the Cloudflare API and registries.
+- **Workers Logs / Observability** (`[observability]`) — persisted, sampled invocation logs for debugging the cron, queue consumer, and API calls.
+- **Cloudflare Access (Zero Trust)** — every dashboard request's Access JWT is cryptographically verified (signature, issuer, audience, expiry) in `accessAuthMiddleware`; the user's email becomes their identity. Machine-facing paths (Query API, inbound webhooks, Logpush) bypass Access and use their own auth.
+- **Secrets** — `CF_ACCESS_AUD` (Access audience tag, required in production) and `RESEND_API_KEY` (email delivery) are stored with `wrangler secret put`, never in `wrangler.toml`.
+
+All of the newer behaviors are **feature-flagged** (`USE_KV_CACHE`, `USE_RATE_LIMIT_GATE`, `USE_DO_POLLER`, `USE_DO_BULK`) so they can be disabled without a code change — see [Rollback](#rollback).
+
+## Costs
+
+KV and SQLite-backed Durable Objects are available on both the Workers Free and Paid plans; the **Workers Paid plan has a $5/month account minimum** that already covers Workers, KV, and Durable Objects usage. For a single account's workload this app's incremental KV + DO usage is effectively **$0 beyond that minimum** — it stays well inside the included allotments.
+
+Figures below are current as of 2026-10 and may change; always confirm against the live pricing pages.
+
+- **Workers KV** ([pricing](https://developers.cloudflare.com/kv/platform/pricing/)) — Paid plan includes **10M reads, 1M writes, 1 GB storage** per month; overage is **$0.50/M reads, $5.00/M writes, $0.50/GB-month**. Cache keys here are small and TTL'd, and reads vastly outnumber writes, so usage realistically stays within the included tier. Egress is free; expiring a key is not billed as a delete.
+- **Durable Objects compute** ([pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)) — Paid plan includes **1M requests + 400,000 GB-s** per month; overage is **$0.15/M requests, $12.50/M GB-s**. The dominant usage is the `PollerDO` alarm firing ~once/minute per account (~43k alarm invocations/account/month — each alarm is one request; duration is brief at the 128 MB allocation). `RateLimiterDO`/`BulkToggleDO` add minor request/duration. A handful of accounts stays comfortably within the included amounts.
+- **Durable Objects SQLite storage** ([pricing](https://developers.cloudflare.com/durable-objects/platform/pricing/)) — includes **5 GB-month, 25B row reads, 50M row writes** per month; overage is **$0.20/GB-month, $0.001/M rows read, $1.00/M rows written**. Each `setAlarm()` counts as one row written (~43k/account/month) and each object's SQLite DB is ~12 KB empty — negligible.
+
+Note: raising an account's `api_rate_limit_5min` only changes how many Cloudflare API calls the gate allows; it does **not** increase Durable Object cost.
+
+## Rollback
+
+Every newer component is additive and reversible. In order of least to most effort:
+
+1. **Flip a feature flag** (fastest). Each behavior is ON unless its `[vars]` flag is set to a falsey value (`"0"`/`"false"`/`"off"`/`"no"`). The legacy code path is kept intact, so disabling a flag fully restores prior behavior with no code change:
+   - `USE_KV_CACHE="0"` → all lookups go live (KV untouched; entries self-expire).
+   - `USE_RATE_LIMIT_GATE="0"` → CF API calls skip the RateLimiterDO.
+   - `USE_DO_POLLER="0"` → the cron polls every account inline again instead of via PollerDO alarms.
+   - `USE_DO_BULK="0"` → bulk toggles run inline in the request instead of via BulkToggleDO.
+   Update the var (dashboard or `wrangler deploy`) to apply.
+2. **Revert the deployment** — `wrangler deployments list` then `wrangler rollback [version-id]` reverts the whole Worker to a previous version near-instantly, no rebuild.
+3. **Fully remove the Durable Objects** (only if you want them gone permanently) — add a `[[migrations]]` block with `deleted_classes = ["RateLimiterDO", "PollerDO", "BulkToggleDO"]` and deploy. This is a deliberate, separate step and is **not** needed for an emergency rollback.
+
+Durable Object storage holds only derived/ephemeral state (rate-limit counters, poll alarms, bulk-job progress), so losing it is harmless — D1 remains the source of truth. The DO classes stay exported even when their flags are off, so a rollback deploy never trips the "class referenced by a migration is missing" error.
 
 ## Setup
 
@@ -81,7 +137,7 @@ A Cloudflare Workers dashboard for viewing, managing, and monitoring BYOIP (Brin
 - **Node.js 18+** — required to run Wrangler and install dependencies
 - **Wrangler CLI v4+** — install globally with `npm install -g wrangler`, then authenticate with `wrangler login`
 - **A Cloudflare account** — with a zone (domain) you control and BYOIP prefixes to manage
-- **Workers Paid plan** — required for D1, Queues, and Cron Triggers (the free tier does not support Queues)
+- **Workers Paid plan** — required for Queues (the free tier does not support them). D1, Workers KV, Durable Objects (SQLite), and Cron Triggers are all included; the Paid plan's $5/month account minimum covers them (see [Costs](#costs))
 
 ### 1. Clone and install
 
@@ -112,6 +168,16 @@ database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
 
 Copy the `database_id` value — you will need it in the next step.
 
+### 2b. Create the KV cache namespace
+
+Create the Workers KV namespace used for the read-through lookup cache and note the `id`:
+
+```bash
+npx wrangler kv namespace create CACHE
+```
+
+Copy the `id` value — you will paste it into `wrangler.toml` in the next step. (KV is a cache only and fail-open, so the app still runs if you skip this; lookups just always go live.)
+
 ### 3. Configure `wrangler.toml`
 
 ```bash
@@ -127,6 +193,15 @@ Open `wrangler.toml` and make the following changes:
    database_name = "prefix-mgr-db"
    database_id = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"  # ← your actual ID
    ```
+
+   **Set the KV namespace ID** — paste the `id` from step 2b:
+   ```toml
+   [[kv_namespaces]]
+   binding = "CACHE"
+   id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"  # ← your actual ID
+   ```
+
+   The `[[durable_objects.bindings]]` and `[[migrations]]` blocks for `RateLimiterDO`, `PollerDO`, and `BulkToggleDO` are already in the example and need no changes — they are created automatically on first `wrangler deploy`. The `USE_*` feature flags in `[vars]` default to on; see [Rollback](#rollback) to disable any of them.
 
 2. **Set your route** — replace with your actual domain and zone:
    ```toml

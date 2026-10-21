@@ -8,6 +8,33 @@ export interface Env {
   NOTIFY_QUEUE: Queue<NotifyMessage>;
   RESEND_API_KEY?: string;
   ALERT_FROM_EMAIL?: string;
+
+  // ─── Workers platform: cache + coordination (all optional / fail-open) ───
+  // Workers KV namespace used as a read-through cache for slow, read-heavy
+  // external/Cloudflare lookups. Unbound (e.g. local dev without the namespace)
+  // or disabled → callers fall back to a live fetch.
+  CACHE?: KVNamespace;
+  // Durable Objects. RATE_LIMITER coordinates each account's Cloudflare API
+  // budget across isolates; POLLER self-schedules the Radar advertisement poll
+  // via alarms; BULK_TOGGLE serializes bulk advertise/withdraw per account.
+  RATE_LIMITER?: DurableObjectNamespace;
+  POLLER?: DurableObjectNamespace;
+  BULK_TOGGLE?: DurableObjectNamespace;
+
+  // ─── Feature flags ───────────────────────────────────────────────────────
+  // Each new Workers-platform behavior is flag-gated so it can be disabled
+  // (reverting to the legacy path) without a code rollback. Unset defaults to
+  // ON in production; set to "0"/"false" to disable. See isFlagOn().
+  USE_KV_CACHE?: string;
+  USE_RATE_LIMIT_GATE?: string;
+  USE_DO_POLLER?: string;
+  USE_DO_BULK?: string;
+}
+
+// A feature flag is ON unless explicitly disabled ("0"/"false"/"off"/"no").
+export function isFlagOn(value: string | undefined): boolean {
+  if (value == null) return true;
+  return !['0', 'false', 'off', 'no'].includes(value.trim().toLowerCase());
 }
 
 export interface UserAccount {

@@ -24,9 +24,12 @@ import type {
   IrrExplorerResult,
   RirApiResult,
 } from './types';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { isFlagOn, type Env } from './types';
 
 const CF_API = 'https://api.cloudflare.com/client/v4';
 const RADAR_API = 'https://api.cloudflare.com/client/v4';
+const CF_API_HOST = 'api.cloudflare.com';
 
 const MAX_RETRIES = 3;
 
@@ -84,13 +87,70 @@ async function fetchExternalWithRetry(input: RequestInfo, init?: RequestInit, ma
   throw lastErr instanceof Error ? lastErr : new Error('Retry loop exited unexpectedly');
 }
 
+// ─── Per-account API-budget gate (Durable Object) ───────────────────────────
+//
+// An ApiGate carries the account context needed to count Cloudflare API calls
+// against that account's rolling 5-minute budget via the RateLimiterDO. It is
+// propagated implicitly with AsyncLocalStorage (nodejs_compat) so the dozens of
+// CF API helpers below need no signature changes: callers that want gating wrap
+// their work in `withApiGate(...)`, everyone else is unaffected.
+export interface ApiGate {
+  env: Env;
+  accountId: string;
+  // The account's editable `api_rate_limit_5min`; defaults to 1200 when unknown.
+  // Using this field means a granted rate-limit increase takes effect here too.
+  budget?: number;
+}
+
+const gateStore = new AsyncLocalStorage<ApiGate>();
+
+/** Run `fn` with an API gate in context; CF API calls it makes are rate-limited. */
+export function withApiGate<T>(gate: ApiGate, fn: () => Promise<T>): Promise<T> {
+  return gateStore.run(gate, fn);
+}
+
+function urlOf(input: RequestInfo): string {
+  return typeof input === 'string' ? input : (input as Request).url;
+}
+
+// Consult the account's RateLimiterDO before a Cloudflare API request. Fail-open:
+// any error (unbound namespace, DO failure) lets the request proceed unthrottled.
+async function consumeApiBudget(gate: ApiGate): Promise<void> {
+  try {
+    const ns = gate.env.RATE_LIMITER;
+    if (!ns) return;
+    const budget = gate.budget && gate.budget > 0 ? gate.budget : 1200;
+    const stub = ns.get(ns.idFromName(gate.accountId));
+    const resp = await stub.fetch(`https://rate-limiter/take?budget=${budget}&n=1`);
+    if (!resp.ok) return;
+    const data = (await resp.json()) as { allowed: boolean; retryAfterMs?: number };
+    if (!data.allowed && data.retryAfterMs) {
+      await new Promise((r) => setTimeout(r, Math.min(data.retryAfterMs ?? 0, 5000)));
+    }
+  } catch {
+    // Fail-open — never block a request because the limiter is unavailable.
+  }
+}
+
+// Drop-in replacement for fetchWithRetry used by all CF API helpers. When an
+// ApiGate is in context, the rate-limit flag is on, and the target is the
+// Cloudflare API host, the call is first counted against the account budget.
+// External (RIR/IRR/RDAP/RIPEstat) hosts are never gated.
+async function cfFetch(input: RequestInfo, init?: RequestInit): Promise<Response> {
+  const gate = gateStore.getStore();
+  if (gate && isFlagOn(gate.env.USE_RATE_LIMIT_GATE) && gate.env.RATE_LIMITER) {
+    if (urlOf(input).includes(CF_API_HOST)) await consumeApiBudget(gate);
+  }
+  return fetchWithRetry(input, init);
+}
+
 // --- Addressing Prefixes ---
 
 export async function listPrefixes(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes`,
     { headers: authHeaders(token) },
   );
@@ -112,7 +172,7 @@ export async function createPrefix(
   if (description) body.description = description;
   if (loaDocumentId) body.loa_document_id = loaDocumentId;
 
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes`,
     {
       method: 'POST',
@@ -130,7 +190,7 @@ export async function deletePrefix(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<{ id: string }>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}`,
     {
       method: 'DELETE',
@@ -152,7 +212,7 @@ export async function uploadLoaDocument(
   const blob = new Blob([fileData], { type: 'application/pdf' });
   formData.append('loa_document', blob, filename);
 
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/loa_documents`,
     {
       method: 'POST',
@@ -184,7 +244,7 @@ interface RipestatRoutingConsistencyResponse {
 }
 
 export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `https://stat.ripe.net/data/prefix-routing-consistency/data.json?resource=${encodeURIComponent(prefix)}&sourceapp=prefix-mgr`,
     {
       headers: {
@@ -217,7 +277,7 @@ export async function lookupIrrRecords(prefix: string): Promise<IrrLookupResult>
 // --- IRR Explorer Lookup ---
 
 export async function lookupIrrExplorer(prefix: string): Promise<IrrExplorerResult> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `https://irrexplorer.nlnog.net/api/prefixes/exact/${encodeURIComponent(prefix)}`,
     {
       headers: {
@@ -253,7 +313,7 @@ export async function listBgpPrefixes(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes`,
     { headers: authHeaders(token) },
   );
@@ -266,7 +326,7 @@ export async function createBgpPrefix(
   cidr: string,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes`,
     {
       method: 'POST',
@@ -285,7 +345,7 @@ export async function deleteBgpPrefix(
   bgpPrefixId: string,
   token: string,
 ): Promise<CfApiResponse<null>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes/${bgpPrefixId}`,
     {
       method: 'DELETE',
@@ -300,7 +360,7 @@ export async function listServiceBindings(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfServiceBinding[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings`,
     { headers: authHeaders(token) },
   );
@@ -311,7 +371,7 @@ export async function listServices(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfService[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/services`,
     { headers: authHeaders(token) },
   );
@@ -324,7 +384,7 @@ export async function listSubscriptions(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfSubscription[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/subscriptions`,
     { headers: authHeaders(token) },
   );
@@ -411,7 +471,7 @@ export async function getByoipEntitlement(
 
   let resp: CfApiResponse<CfEntitlement[]>;
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/entitlements`,
       { headers: authHeaders(token) },
     );
@@ -446,7 +506,7 @@ export async function createServiceBinding(
   serviceId: string,
   token: string,
 ): Promise<CfApiResponse<CfServiceBinding>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings`,
     {
       method: 'POST',
@@ -465,7 +525,7 @@ export async function deleteServiceBinding(
   bindingId: string,
   token: string,
 ): Promise<CfApiResponse<null>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bindings/${bindingId}`,
     {
       method: 'DELETE',
@@ -482,7 +542,7 @@ export async function listDelegations(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfDelegation[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations`,
     { headers: authHeaders(token) },
   );
@@ -496,7 +556,7 @@ export async function createDelegation(
   delegatedAccountId: string,
   token: string,
 ): Promise<CfApiResponse<CfDelegation>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations`,
     {
       method: 'POST',
@@ -513,7 +573,7 @@ export async function deleteDelegation(
   delegationId: string,
   token: string,
 ): Promise<CfApiResponse<{ id: string }>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/delegations/${delegationId}`,
     {
       method: 'DELETE',
@@ -529,7 +589,7 @@ export async function listAddressMaps(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<CfAddressMap[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps`,
     { headers: authHeaders(token) },
   );
@@ -541,7 +601,7 @@ export async function getAddressMap(
   mapId: string,
   token: string,
 ): Promise<CfApiResponse<CfAddressMapDetail>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
     { headers: authHeaders(token) },
   );
@@ -558,7 +618,7 @@ export async function createAddressMap(
   },
   token: string,
 ): Promise<CfApiResponse<CfAddressMapDetail>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps`,
     {
       method: 'POST',
@@ -575,7 +635,7 @@ export async function updateAddressMap(
   body: { description?: string; enabled?: boolean; default_sni?: string | null },
   token: string,
 ): Promise<CfApiResponse<CfAddressMapDetail>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
     {
       method: 'PATCH',
@@ -591,7 +651,7 @@ export async function deleteAddressMap(
   mapId: string,
   token: string,
 ): Promise<CfApiResponse<{ id: string }>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}`,
     { method: 'DELETE', headers: authHeaders(token) },
   );
@@ -604,7 +664,7 @@ export async function addAddressMapIp(
   ip: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/ips/${encodeURIComponent(ip)}`,
     { method: 'PUT', headers: authHeaders(token), body: '{}' },
   );
@@ -617,7 +677,7 @@ export async function removeAddressMapIp(
   ip: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/ips/${encodeURIComponent(ip)}`,
     { method: 'DELETE', headers: authHeaders(token) },
   );
@@ -630,7 +690,7 @@ export async function addAddressMapZone(
   zoneId: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/zones/${zoneId}`,
     { method: 'PUT', headers: authHeaders(token), body: '{}' },
   );
@@ -643,7 +703,7 @@ export async function removeAddressMapZone(
   zoneId: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/zones/${zoneId}`,
     { method: 'DELETE', headers: authHeaders(token) },
   );
@@ -656,7 +716,7 @@ export async function addAddressMapAccount(
   memberAccountId: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/accounts/${memberAccountId}`,
     { method: 'PUT', headers: authHeaders(token), body: '{}' },
   );
@@ -669,7 +729,7 @@ export async function removeAddressMapAccount(
   memberAccountId: string,
   token: string,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/address_maps/${mapId}/accounts/${memberAccountId}`,
     { method: 'DELETE', headers: authHeaders(token) },
   );
@@ -690,7 +750,7 @@ async function fetchAllZones(
   let last: CfApiResponse<CfZone[]> | null = null;
   const sep = baseUrl.includes('?') ? '&' : '?';
   do {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${baseUrl}${sep}per_page=50&page=${page}`,
       { headers: authHeaders(token) },
     );
@@ -736,7 +796,7 @@ export async function toggleBgpAdvertisement(
   advertised: boolean,
   token: string,
 ): Promise<CfApiResponse<CfBgpPrefix>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/bgp/prefixes/${bgpPrefixId}`,
     {
       method: 'PATCH',
@@ -791,7 +851,7 @@ export async function verifyTokenPermissions(
   // the user-scoped verify endpoint. This does NOT enumerate permissions (that
   // is not exposed by the API); the probes below test each capability directly.
   try {
-    const r = await fetchWithRetry(`${CF_API}/user/tokens/verify`, { headers: authHeaders(token) });
+    const r = await cfFetch(`${CF_API}/user/tokens/verify`, { headers: authHeaders(token) });
     const data = (await r.json().catch(() => null)) as CfApiResponse<{ status?: string; expires_on?: string }> | null;
     const tokenStatus = data?.result?.status;
     const ok = !!data?.success && tokenStatus === 'active';
@@ -808,7 +868,7 @@ export async function verifyTokenPermissions(
   // Test 1: IP Prefixes Read
   let firstPrefixId: string | null = null;
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/addressing/prefixes`,
       { headers: authHeaders(token) },
     );
@@ -829,7 +889,7 @@ export async function verifyTokenPermissions(
   let firstBgpPrefixId: string | null = null;
   if (firstPrefixId) {
     try {
-      const r = await fetchWithRetry(
+      const r = await cfFetch(
         `${CF_API}/accounts/${accountId}/addressing/prefixes/${firstPrefixId}/bgp/prefixes`,
         { headers: authHeaders(token) },
       );
@@ -855,7 +915,7 @@ export async function verifyTokenPermissions(
 
   // Test 3: Services Read (tests addressing scope)
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/addressing/services`,
       { headers: authHeaders(token) },
     );
@@ -874,7 +934,7 @@ export async function verifyTokenPermissions(
   try {
     const now = new Date();
     const since = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/logs/audit?since=${encodeURIComponent(since.toISOString())}` +
         `&before=${encodeURIComponent(now.toISOString())}&limit=1`,
       { headers: authHeaders(token) },
@@ -894,7 +954,7 @@ export async function verifyTokenPermissions(
   // job that streams Audit Logs v2 into this tool. Listing jobs needs Logs Read;
   // creating one needs Logs Edit (Enterprise plan).
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/logpush/jobs`,
       { headers: authHeaders(token) },
     );
@@ -913,7 +973,7 @@ export async function verifyTokenPermissions(
   // /accounts/{id}/subscriptions endpoint. Without it that call fails with a 9106
   // authentication error even though the token is otherwise valid.
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/subscriptions`,
       { headers: authHeaders(token) },
     );
@@ -930,7 +990,7 @@ export async function verifyTokenPermissions(
 
   // Test 7: Address Maps Read — required to list and manage address maps.
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/addressing/address_maps`,
       { headers: authHeaders(token) },
     );
@@ -966,7 +1026,7 @@ export async function verifyTokenPermissions(
   // Test 9: Account Read — required to read account entitlements (BYOIP allowed
   // + prefix limit) via /accounts/{id}/entitlements.
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/entitlements`,
       { headers: authHeaders(token) },
     );
@@ -992,7 +1052,7 @@ export async function verifyTokenPermissions(
   // Test 10: IP Prefixes Write — governs create/delete prefix, bindings, and
   // delegations. Probe: create-prefix with an empty body (fails validation).
   try {
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/addressing/prefixes`,
       { method: 'POST', headers: authHeaders(token), body: JSON.stringify({}) },
     );
@@ -1015,7 +1075,7 @@ export async function verifyTokenPermissions(
   // or 400, both of which mean "authorized".
   if (firstPrefixId && firstBgpPrefixId) {
     try {
-      const r = await fetchWithRetry(
+      const r = await cfFetch(
         `${CF_API}/accounts/${accountId}/addressing/prefixes/${firstPrefixId}/bgp/prefixes/${firstBgpPrefixId}`,
         { method: 'PATCH', headers: authHeaders(token), body: JSON.stringify({}) },
       );
@@ -1040,7 +1100,7 @@ export async function verifyTokenPermissions(
   // a token with edit returns 404/400 (not found) — i.e. it was authorized.
   try {
     const fakeMapId = '00000000000000000000000000000000';
-    const r = await fetchWithRetry(
+    const r = await cfFetch(
       `${CF_API}/accounts/${accountId}/addressing/address_maps/${fakeMapId}`,
       { method: 'DELETE', headers: authHeaders(token) },
     );
@@ -1116,7 +1176,7 @@ export async function listAuditLogs(
       `&before=${encodeURIComponent(before)}&limit=100&direction=desc`;
     if (cursor) url += `&cursor=${encodeURIComponent(cursor)}`;
 
-    const r = await fetchWithRetry(url, { headers: authHeaders(token) });
+    const r = await cfFetch(url, { headers: authHeaders(token) });
     const data = (await r.json().catch(() => null)) as AuditLogListResponse | null;
     if (!data || !data.success) {
       const msg = data?.errors?.[0]?.message || `Audit log API error (HTTP ${r.status})`;
@@ -1154,7 +1214,7 @@ export async function listLogpushJobs(
   accountId: string,
   token: string,
 ): Promise<CfApiResponse<LogpushJobResult[]>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/logpush/jobs`,
     { headers: authHeaders(token) },
   );
@@ -1180,7 +1240,7 @@ export async function createAuditLogpushJob(
   const destination_conf =
     `${webhookUrl}?header_cf-webhook-auth=${encodeURIComponent(webhookSecret)}`;
 
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/logpush/jobs`,
     {
       method: 'POST',
@@ -1203,7 +1263,7 @@ export async function deleteLogpushJob(
   token: string,
   jobId: number,
 ): Promise<CfApiResponse<unknown>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/logpush/jobs/${jobId}`,
     { method: 'DELETE', headers: authHeaders(token) },
   );
@@ -1254,7 +1314,7 @@ export async function updatePrefixDescription(
   description: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}`,
     {
       method: 'PATCH',
@@ -1272,7 +1332,7 @@ export async function validatePrefix(
   prefixId: string,
   token: string,
 ): Promise<CfApiResponse<CfPrefix>> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${CF_API}/accounts/${accountId}/addressing/prefixes/${prefixId}/validate`,
     {
       method: 'POST',
@@ -1285,7 +1345,7 @@ export async function validatePrefix(
 // --- Looking Glass (Cloudflare Radar) ---
 
 export async function lookupBgpRoutes(prefix: string, token: string): Promise<LgResult> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `${RADAR_API}/radar/bgp/routes/realtime?prefix=${encodeURIComponent(prefix)}`,
     { headers: authHeaders(token) },
   );
@@ -1320,7 +1380,7 @@ interface RipestatRpkiValidationResponse {
 export async function lookupRpki(prefix: string, _token: string, asn?: number): Promise<RpkiLookupResult> {
   // Use the ASN if provided for targeted validation, otherwise just query the prefix
   const asnParam = asn ? `&resource=${asn}` : '&resource=0';
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `https://stat.ripe.net/data/rpki-validation/data.json?prefix=${encodeURIComponent(prefix)}${asnParam}&sourceapp=prefix-mgr`,
     {
       headers: {
@@ -1422,7 +1482,7 @@ function parseRipestatVisibility(
 }
 
 async function fetchRipestatVisibility(resource: string): Promise<RipestatVisibilityResponse> {
-  const r = await fetchWithRetry(
+  const r = await cfFetch(
     `https://stat.ripe.net/data/visibility/data.json?resource=${encodeURIComponent(resource)}&sourceapp=prefix-mgr`,
     {
       headers: {

@@ -335,7 +335,7 @@ export function renderDashboard(userEmail: string): string {
           <div class="arch-layer">
             <div class="arch-box arch-box-worker">
               <div class="arch-box-title">Cloudflare Worker &middot; Hono + chanfana</div>
-              <div class="arch-box-sub">Static UI (/) &bull; OpenAPI (/api/docs, /api/openapi.json) &bull; scheduled() cron &bull; queue() consumer</div>
+              <div class="arch-box-sub">Static UI (/) &bull; OpenAPI (/api/docs, /api/openapi.json) &bull; fetch() + scheduled() cron + queue() consumer &bull; KV read-through cache &bull; Durable Object coordination</div>
               <div style="margin-top:4px">
                 <span class="arch-chip">settings</span><span class="arch-chip">prefixes</span><span class="arch-chip">bgp</span><span class="arch-chip">bindings</span><span class="arch-chip">delegations</span><span class="arch-chip">services</span><span class="arch-chip">rir</span><span class="arch-chip">lookups</span><span class="arch-chip">activity</span><span class="arch-chip">notifications</span><span class="arch-chip">integrations</span><span class="arch-chip">public (Query API)</span>
               </div>
@@ -343,9 +343,14 @@ export function renderDashboard(userEmail: string): string {
           </div>
           <div class="arch-conn">&darr;</div>
           <div class="arch-layer">
-            <div class="arch-box arch-box-store"><div class="arch-box-title">D1 (prefix-mgr-db)</div><div class="arch-box-sub">accounts, tokens, RIR creds,<br>activity, notifications, prefix state</div></div>
+            <div class="arch-box arch-box-store"><div class="arch-box-title">D1 (prefix-mgr-db)</div><div class="arch-box-sub">source of truth: accounts, tokens,<br>RIR creds, activity, notifications, prefix state</div></div>
+            <div class="arch-box arch-box-store"><div class="arch-box-title">Workers KV (CACHE)</div><div class="arch-box-sub">read-through cache for RDAP/RPKI/IRR,<br>visibility, zones, services (fail-open)</div></div>
             <div class="arch-box arch-box-queue"><div class="arch-box-title">Queue + DLQ</div><div class="arch-box-sub">prefix-mgr-notifications</div></div>
-            <div class="arch-box arch-box-store"><div class="arch-box-title">Cron (every 1 min)</div><div class="arch-box-sub">Radar advertisement poller</div></div>
+          </div>
+          <div class="arch-conn">&darr;</div>
+          <div class="arch-layer">
+            <div class="arch-box arch-box-worker"><div class="arch-box-title">Durable Objects</div><div class="arch-box-sub">RateLimiterDO (per-account API budget) &bull; PollerDO (alarm-driven poll) &bull; BulkToggleDO (serialized bulk)</div></div>
+            <div class="arch-box arch-box-store"><div class="arch-box-title">Cron + DO Alarms</div><div class="arch-box-sub">per-account Radar poll (~60s)<br>+ hourly log purge</div></div>
           </div>
           <div class="arch-conn">&darr;</div>
           <div class="arch-layer" style="flex-direction:column">
@@ -355,7 +360,7 @@ export function renderDashboard(userEmail: string): string {
             </div>
           </div>
         </div>
-        <p class="arch-caption">Requests flow top &rarr; bottom through Access into the Worker; the cron poller and queue consumer run asynchronously inside the Worker against D1 and external services.</p>
+        <p class="arch-caption">Requests flow top &rarr; bottom through Access into the Worker; KV is read first for cacheable lookups, Durable Objects coordinate the per-account API budget and schedule the Radar poll via alarms, and the queue consumer delivers notifications &mdash; all asynchronously against D1 (the source of truth) and external services.</p>
 
         <div class="mt-3">
           <div class="arch-group-label" style="margin-bottom:4px">Key workflows</div>
@@ -377,6 +382,45 @@ export function renderDashboard(userEmail: string): string {
               <div class="arch-lane-flow"><span class="arch-lane-step">Radar poller detects change</span> &rarr; <span class="arch-lane-step">Queue + DLQ</span> &rarr; <span class="arch-lane-step">Email / PagerDuty / Webhook</span></div>
             </div>
           </div>
+        </div>
+
+        <div class="mt-3">
+          <div class="arch-group-label" style="margin-bottom:4px">Cloudflare Workers platform &mdash; how each component is used</div>
+          <div class="arch-lanes">
+            <div class="arch-lane">
+              <div class="arch-lane-title">Workers runtime</div>
+              <div class="arch-lane-flow">One Worker exports fetch() (Hono app + OpenAPI), scheduled() (cron), and queue() (notification consumer).</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">D1 &mdash; source of truth</div>
+              <div class="arch-lane-flow">Accounts, API tokens, RIR creds, activity/audit/notification logs, and Radar prefix-state snapshots.</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Workers KV &mdash; cache</div>
+              <div class="arch-lane-flow">Read-through, fail-open cache of slow lookups (RDAP 24h, RPKI/IRR 1h, visibility 15m, routes 5m, zones/services/entitlements). Cache only &mdash; the poller always reads live.</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Durable Objects</div>
+              <div class="arch-lane-flow"><span class="arch-lane-step">RateLimiterDO</span> per-account 5-min API budget (uses editable api_rate_limit_5min) <span class="arch-lane-step">PollerDO</span> alarm-driven per-account Radar poll <span class="arch-lane-step">BulkToggleDO</span> serializes bulk advertise/withdraw</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Queues + DLQ</div>
+              <div class="arch-lane-flow">Async notification delivery with retries; exhausted messages dead-letter and surface in the Notifications Queue panel.</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Cron Triggers + DO Alarms</div>
+              <div class="arch-lane-flow">Cron heartbeats the PollerDOs each minute and purges expired logs hourly; DO Alarms drive the actual per-account poll cadence.</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Smart Placement &amp; Logs</div>
+              <div class="arch-lane-flow">Placement = smart keeps the Worker near the APIs it calls; Workers Logs persist sampled invocation logs for the cron/queue/API paths.</div>
+            </div>
+            <div class="arch-lane">
+              <div class="arch-lane-title">Access &amp; Secrets</div>
+              <div class="arch-lane-flow">Access JWT verified per request (signature/issuer/audience/expiry); CF_ACCESS_AUD and RESEND_API_KEY stored as Wrangler secrets.</div>
+            </div>
+          </div>
+          <p class="arch-caption">KV caching, the API-budget gate, the DO poller, and DO bulk toggle are each feature-flagged (USE_KV_CACHE, USE_RATE_LIMIT_GATE, USE_DO_POLLER, USE_DO_BULK) and revert to the legacy path when disabled.</p>
         </div>
       </div>
 

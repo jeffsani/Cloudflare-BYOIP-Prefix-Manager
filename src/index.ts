@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { fromHono } from 'chanfana';
 import type { Env } from './types';
+import { isFlagOn } from './types';
 import { accessAuthMiddleware } from './auth';
 import { renderDashboard } from './ui';
 import { uploadLoaDocument } from './api';
@@ -27,6 +28,7 @@ import {
 } from './endpoints/notifications';
 import { handleQueueBatch } from './queue';
 import { pollAdvertisementChanges } from './poller';
+import { ensureAccountPollers } from './poller-bootstrap';
 import { apiKeyAuthMiddleware, webhookAuthMiddleware } from './machine-auth';
 import { handleCloudflareWebhook, handleLogpushWebhook } from './webhooks';
 import { listPrefixStates, lookupPrefixState, publicHealth } from './endpoints/public';
@@ -351,11 +353,18 @@ export default {
   async scheduled(_event: ScheduledController, env: Env, ctx: ExecutionContext) {
     ctx.waitUntil((async () => {
       try {
-        const res = await pollAdvertisementChanges(env);
-        console.log(`Radar poll: ${res.checked} checked, ${res.errors.length} errors`);
-        if (res.errors.length) console.error('Poll errors:', res.errors.slice(0, 10).join('; '));
+        if (isFlagOn(env.USE_DO_POLLER) && env.POLLER) {
+          // DO-driven path: ensure each account's PollerDO is alarmed; the DOs
+          // do the actual polling on their own alarm schedule.
+          await ensureAccountPollers(env);
+        } else {
+          // Legacy path: poll every account inline from the cron.
+          const res = await pollAdvertisementChanges(env);
+          console.log(`Radar poll: ${res.checked} checked, ${res.errors.length} errors`);
+          if (res.errors.length) console.error('Poll errors:', res.errors.slice(0, 10).join('; '));
+        }
       } catch (err) {
-        console.error('pollAdvertisementChanges failed:', err);
+        console.error('scheduled poll bootstrap failed:', err);
       }
     })());
 
@@ -378,3 +387,10 @@ export default {
     await handleQueueBatch(batch, env);
   },
 };
+
+// ─── Durable Object exports ──────────────────────────────────────────
+// Must be exported from the Worker entrypoint so the runtime can instantiate the
+// classes referenced by the [[durable_objects.bindings]] / [[migrations]] config.
+export { RateLimiterDO } from './do/rate-limiter';
+export { PollerDO } from './do/poller';
+export { BulkToggleDO } from './do/bulk-toggle';

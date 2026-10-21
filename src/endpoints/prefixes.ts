@@ -2,6 +2,9 @@ import { OpenAPIRoute, contentJson } from 'chanfana';
 import { z } from 'zod';
 import type { Context } from 'hono';
 import type { Env } from '../types';
+import { isFlagOn } from '../types';
+import { performBulkToggle, type BulkToggleResultItem } from '../bulk';
+import { cachedJson, cacheKeys, cacheTtl } from '../cache';
 import { getToken, logActivity, resolveAccount } from '../helpers';
 import { enqueueNotification } from '../queue';
 import { checkAdvertisementCap } from '../cap';
@@ -31,7 +34,6 @@ import {
   BatchCreateResultItemSchema,
 } from '../schemas/prefixes';
 import { ErrorResponseSchema, OkResponseSchema, AccountIdQuerySchema } from '../schemas/common';
-import { toggleBgpAdvertisement } from '../api';
 
 type AppContext = Context<{ Bindings: Env; Variables: { userEmail: string } }>;
 
@@ -493,10 +495,14 @@ export class ValidateNewPrefix extends OpenAPIRoute {
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
 
-      // Run validation checks in parallel
+      // Run validation checks in parallel (cached: RPKI keyed by cidr+asn since
+      // the ASN changes the query; IRR keyed by cidr). Fetchers throw on failure,
+      // so only successful lookups are cached.
       const [rpkiResult, irrResult] = await Promise.allSettled([
-        lookupRpki(body.cidr, token, body.asn),
-        lookupIrrRecords(body.cidr),
+        cachedJson(c.env, `${cacheKeys.rpki(body.cidr)}:${body.asn}`, cacheTtl.rpki, () =>
+          lookupRpki(body.cidr, token, body.asn),
+        ),
+        cachedJson(c.env, cacheKeys.irrRecords(body.cidr), cacheTtl.irr, () => lookupIrrRecords(body.cidr)),
       ]);
 
       // Process ROA/RPKI results
@@ -745,80 +751,28 @@ export class BulkToggle extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
-      const results: Array<{
-        prefix_id: string;
-        cidr: string;
-        toggled: number;
-        skipped: number;
-        errors: string[];
-      }> = [];
+      const bulkArgs = {
+        accountId: acct.account_id,
+        token,
+        prefixIds: body.prefix_ids,
+        advertised: body.advertised,
+        budget: acct.api_rate_limit_5min,
+      };
 
-      // Fetch all prefixes once to check approval status
-      const allPrefixData = await listPrefixes(acct.account_id, token);
-      const prefixApprovalMap = new Map<string, string>();
-      if (allPrefixData.success && allPrefixData.result) {
-        for (const p of allPrefixData.result) {
-          prefixApprovalMap.set(p.id, p.approved);
-        }
-      }
-
-      for (const prefixId of body.prefix_ids) {
-        const result = { prefix_id: prefixId, cidr: '', toggled: 0, skipped: 0, errors: [] as string[] };
-
-        // Skip prefixes that are still pending approval
-        if (prefixApprovalMap.get(prefixId) === 'P') {
-          result.skipped++;
-          results.push(result);
-          continue;
-        }
-
-        try {
-          // Fetch BGP sub-prefixes for this prefix
-          const bgpData = await listBgpPrefixes(acct.account_id, prefixId, token);
-          if (!bgpData.success || !bgpData.result) {
-            result.errors.push(bgpData.errors?.[0]?.message || 'Failed to fetch BGP prefixes');
-            results.push(result);
-            continue;
-          }
-
-          for (const bp of bgpData.result) {
-            if (!result.cidr && bp.cidr) result.cidr = bp.cidr;
-
-            if (bp.on_demand?.on_demand_locked) {
-              result.skipped++;
-              continue;
-            }
-
-            // Skip if already in desired state
-            if (bp.on_demand?.advertised === body.advertised) {
-              result.skipped++;
-              continue;
-            }
-
-            try {
-              const toggleData = await toggleBgpAdvertisement(
-                acct.account_id,
-                prefixId,
-                bp.id,
-                body.advertised,
-                token,
-              );
-              if (toggleData.success) {
-                result.toggled++;
-              } else {
-                result.errors.push(
-                  `${bp.cidr}: ${toggleData.errors?.[0]?.message || 'Toggle failed'}`,
-                );
-              }
-            } catch (err) {
-              result.errors.push(`${bp.cidr}: ${err instanceof Error ? err.message : 'Toggle failed'}`);
-            }
-          }
-        } catch (err) {
-          result.errors.push(err instanceof Error ? err.message : 'Failed to process prefix');
-        }
-
-        results.push(result);
+      // Run the toggles either inside the per-account BulkToggleDO (serializes
+      // concurrent jobs for the same account) or inline (legacy path). Both share
+      // the exact same loop in performBulkToggle, so the response is identical.
+      let results: BulkToggleResultItem[];
+      if (isFlagOn(c.env.USE_DO_BULK) && c.env.BULK_TOGGLE) {
+        const ns = c.env.BULK_TOGGLE;
+        const stub = ns.get(ns.idFromName(acct.account_id));
+        const resp = await stub.fetch('https://bulk-toggle/run', {
+          method: 'POST',
+          body: JSON.stringify(bulkArgs),
+        });
+        ({ results } = (await resp.json()) as { results: BulkToggleResultItem[] });
+      } else {
+        results = await performBulkToggle(c.env, bulkArgs);
       }
 
       // Log activity

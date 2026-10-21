@@ -12,6 +12,7 @@ import {
   buildPrefixCidrMap,
 } from '../api';
 import type { AuditLogEntry } from '../api';
+import { cachedJson, cacheKeys, cacheTtl } from '../cache';
 import {
   LookingGlassRequestSchema,
   LgResultSchema,
@@ -71,7 +72,12 @@ export class LookingGlass extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
-      const result = await lookupBgpRoutes(body.prefix, token);
+      const result = await cachedJson(
+        c.env,
+        cacheKeys.lookingGlass(body.prefix),
+        cacheTtl.lookingGlass,
+        () => lookupBgpRoutes(body.prefix, token),
+      );
       return c.json({ result });
     } catch (e) {
       console.error('Looking glass error:', e);
@@ -112,7 +118,7 @@ export class RdapLookup extends OpenAPIRoute {
     const prefix = data.query.prefix;
 
     try {
-      const result = await lookupRdap(prefix);
+      const result = await cachedJson(c.env, cacheKeys.rdap(prefix), cacheTtl.rdap, () => lookupRdap(prefix));
       return c.json({ result });
     } catch (e) {
       console.error('RDAP lookup error:', e);
@@ -159,7 +165,12 @@ export class RpkiLookup extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
-      const result = await lookupRpki(prefix, token);
+      const result = await cachedJson(
+        c.env,
+        cacheKeys.rpki(prefix),
+        cacheTtl.rpki,
+        () => lookupRpki(prefix, token),
+      );
       return c.json({ result });
     } catch (e) {
       console.error('RPKI lookup error:', e);
@@ -200,7 +211,12 @@ export class RipestatVisibility extends OpenAPIRoute {
     const prefix = data.query.prefix;
 
     try {
-      const result = await lookupRipestatVisibility(prefix);
+      const result = await cachedJson(
+        c.env,
+        cacheKeys.visibility(prefix),
+        cacheTtl.visibility,
+        () => lookupRipestatVisibility(prefix),
+      );
       return c.json({ result });
     } catch (e) {
       console.error('RIPEstat visibility error:', e);

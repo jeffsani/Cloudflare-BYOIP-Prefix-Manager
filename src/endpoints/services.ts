@@ -4,6 +4,7 @@ import type { Context } from 'hono';
 import type { Env } from '../types';
 import { getToken, resolveAccount } from '../helpers';
 import { listServices, getAccountEntitlements } from '../api';
+import { cachedJson, cacheKeys, cacheTtl } from '../cache';
 import { CfServiceSchema, EntitlementsSchema } from '../schemas/prefixes';
 import { ErrorResponseSchema, AccountIdQuerySchema } from '../schemas/common';
 
@@ -42,12 +43,24 @@ export class ListServicesEndpoint extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
-      const result = await listServices(acct.account_id, token);
+      const result = await cachedJson(
+        c.env,
+        cacheKeys.services(acct.account_id),
+        cacheTtl.services,
+        () => listServices(acct.account_id, token),
+        (v) => v.success,
+      );
       if (!result.success) {
         return c.json({ error: result.errors?.[0]?.message || 'API error' }, 502);
       }
       // Best-effort entitlement lookup; never fail the services call over it.
-      const entitlements = await getAccountEntitlements(acct.account_id, token);
+      const entitlements = await cachedJson(
+        c.env,
+        cacheKeys.entitlements(acct.account_id),
+        cacheTtl.entitlements,
+        () => getAccountEntitlements(acct.account_id, token),
+        (v) => v.available,
+      );
       return c.json({ services: result.result || [], entitlements });
     } catch (e) {
       return c.json({ error: e instanceof Error ? e.message : 'No API tokens configured' }, 400);

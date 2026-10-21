@@ -1,5 +1,5 @@
 import type { Env } from './types';
-import { listPrefixes, listBgpPrefixes, lookupBgpRoutes } from './api';
+import { listPrefixes, listBgpPrefixes, lookupBgpRoutes, withApiGate } from './api';
 import { enqueueNotification } from './queue';
 import { logActivity } from './helpers';
 import { safeParse } from './notifications-db';
@@ -11,7 +11,7 @@ const BUDGET_FRACTION = 0.5;          // Use at most half the account's API budg
 const CONFIRM_POLLS = 3;              // Consecutive polls a changed state must hold before we commit + emit it.
 const MIN_VISIBILITY = 0.25;          // Min peer-visibility ratio to treat an exact-prefix origin as announced.
 
-interface AccountRow {
+export interface AccountRow {
   user_email: string;
   account_id: string;
   api_token: string;
@@ -37,16 +37,40 @@ export async function pollAdvertisementChanges(env: Env): Promise<{ checked: num
   let checked = 0;
 
   const accounts = await env.DB.prepare(
-    'SELECT user_email, account_id, api_token, api_rate_limit_5min, prefix_advertise_limit, prefix_advertise_threshold_pct, cap_alert_level FROM user_accounts'
+    `SELECT ${ACCOUNT_COLUMNS} FROM user_accounts`
   ).all<AccountRow>();
+
+  for (const acct of accounts.results || []) {
+    const res = await pollAccount(env, acct);
+    checked += res.checked;
+    errors.push(...res.errors);
+  }
+
+  return { checked, errors };
+}
+
+// Columns selected for an AccountRow; shared by the aggregate sweep and the
+// per-account PollerDO lookup so both stay in sync.
+export const ACCOUNT_COLUMNS =
+  'user_email, account_id, api_token, api_rate_limit_5min, prefix_advertise_limit, prefix_advertise_threshold_pct, cap_alert_level';
+
+/**
+ * Poll a single account's monitored CIDR slice for this tick. Extracted so it can
+ * be driven either by the aggregate cron sweep (above) or by a per-account
+ * PollerDO alarm. CF API calls run inside an ApiGate so they count against the
+ * account's rolling 5-min budget.
+ */
+export async function pollAccount(env: Env, acct: AccountRow): Promise<{ checked: number; errors: string[] }> {
+  const errors: string[] = [];
+  let checked = 0;
+  if (!acct.api_token || !acct.account_id) return { checked, errors };
 
   const nowMinute = Math.floor(Date.now() / 60000);
 
-  for (const acct of accounts.results || []) {
-    if (!acct.api_token || !acct.account_id) continue;
+  await withApiGate({ env, accountId: acct.account_id, budget: acct.api_rate_limit_5min }, async () => {
     try {
       const cidrs = await getMonitoredCidrs(env, acct);
-      if (!cidrs.length) continue;
+      if (!cidrs.length) return;
 
       // Size this tick's slice from the per-account API budget.
       const budget = Math.max(1, Math.floor((acct.api_rate_limit_5min || 1200) * BUDGET_FRACTION));
@@ -74,7 +98,7 @@ export async function pollAdvertisementChanges(env: Env): Promise<{ checked: num
     } catch (err) {
       errors.push(`${acct.account_id}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  });
 
   return { checked, errors };
 }

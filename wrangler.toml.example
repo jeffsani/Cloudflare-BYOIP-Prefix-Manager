@@ -17,12 +17,48 @@ CF_ACCESS_TEAM_DOMAIN = "YOUR_ACCESS_TEAM_NAME"
 # JWT signature + issuer + audience + expiry, and fails closed (HTTP 500) if
 # this is unset. Store it as a secret, not here:
 #   npx wrangler secret put CF_ACCESS_AUD
+#
+# Workers-platform feature flags. Each new behavior is ON unless set to a falsey
+# value ("0"/"false"/"off"/"no"). Flip one OFF to instantly revert to the legacy
+# path without a code rollback (see the Rollback section in the README).
+USE_KV_CACHE = "1"         # read-through KV cache for slow lookups
+USE_RATE_LIMIT_GATE = "1"  # per-account API-budget coordination via RateLimiterDO
+USE_DO_POLLER = "1"        # alarm-driven per-account Radar poller (vs. cron fan-out)
+USE_DO_BULK = "1"          # serialize bulk advertise/withdraw via BulkToggleDO
 
 [[d1_databases]]
 binding = "DB"
 database_name = "prefix-mgr-db"
 # Replace with your D1 database ID after running: npx wrangler d1 create prefix-mgr-db
 database_id = "YOUR_D1_DATABASE_ID"
+
+# Workers KV — read-through cache for slow, read-heavy external/Cloudflare
+# lookups (RDAP, RPKI, IRR, RIPEstat visibility, looking-glass routes, and
+# per-account zones/services/entitlements). Create it, then paste the id:
+#   npx wrangler kv namespace create CACHE
+[[kv_namespaces]]
+binding = "CACHE"
+id = "YOUR_KV_NAMESPACE_ID"
+
+# Durable Objects — RATE_LIMITER coordinates each account's Cloudflare API budget
+# across isolates; POLLER self-schedules the Radar advertisement poll via alarms;
+# BULK_TOGGLE serializes bulk advertise/withdraw per account.
+[[durable_objects.bindings]]
+name = "RATE_LIMITER"
+class_name = "RateLimiterDO"
+
+[[durable_objects.bindings]]
+name = "POLLER"
+class_name = "PollerDO"
+
+[[durable_objects.bindings]]
+name = "BULK_TOGGLE"
+class_name = "BulkToggleDO"
+
+# SQLite-backed Durable Object classes (required migration).
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RateLimiterDO", "PollerDO", "BulkToggleDO"]
 
 [placement]
 mode = "smart"

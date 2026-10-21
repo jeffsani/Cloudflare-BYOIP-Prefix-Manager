@@ -20,6 +20,7 @@ import {
   listZones,
   getAccountEntitlements,
 } from '../api';
+import { cachedJson, cacheKeys, cacheTtl } from '../cache';
 import {
   AddressMapsListResponseSchema,
   AddressMapEligibilitySchema,
@@ -536,7 +537,13 @@ export class ListZonesEndpoint extends OpenAPIRoute {
 
     try {
       const token = await getToken(c.env.DB, email, acct.account_id);
-      const resp = await listZones(acct.account_id, token);
+      const resp = await cachedJson(
+        c.env,
+        cacheKeys.zones(acct.account_id),
+        cacheTtl.zones,
+        () => listZones(acct.account_id, token),
+        (v) => v.success,
+      );
       if (!resp.success) {
         return c.json({ error: resp.errors?.[0]?.message || 'API error' }, 502);
       }
