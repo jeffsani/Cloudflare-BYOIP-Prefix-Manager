@@ -223,6 +223,11 @@ export function renderDashboard(userEmail: string): string {
     .arch-lane-title { font-size: 10px; font-weight: 700; color: var(--text-strong); margin-bottom: 4px; }
     .arch-lane-flow { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; font-size: 9px; color: var(--muted); }
     .arch-lane-step { border: 1px solid var(--border); border-radius: 4px; background: var(--surface); padding: 1px 5px; color: var(--text-primary); white-space: nowrap; }
+    .am-howto-svg { width: 100%; height: auto; display: block; }
+    .am-summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--text-primary); font-size: 11px; }
+    .am-summary::-webkit-details-marker { display: none; }
+    .am-summary:hover .info-ico { color: #F6821F; border-color: #F6821F; }
+    .am-code { background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; margin: 6px 0; font-family: monospace; font-size: 11px; line-height: 1.5; color: var(--text-primary); overflow-x: auto; white-space: pre; }
     /* ── Secret reveal (press-and-hold eye on token/password/API-key fields) ── */
     .secret-wrap { position: relative; display: block; }
     .secret-wrap > input { padding-right: 34px; }
@@ -1171,6 +1176,73 @@ export function renderDashboard(userEmail: string): string {
         <div id="address-maps-msg" class="hidden mb-3"></div>
         <!-- List view -->
         <div id="address-maps-list-view">
+          <!-- How address maps work -->
+          <div class="rounded-lg border border-cf-border p-3 mb-3">
+            <div class="text-xs font-semibold mb-2" style="color:var(--text-strong)">How address maps work</div>
+            <svg class="am-howto-svg" viewBox="0 0 784 210" role="img" aria-label="Diagram: your BYOIP IP addresses are bound by an address map to either your whole account or specific zones, and Cloudflare answers DNS for those with your IPs" preserveAspectRatio="xMidYMid meet">
+              <title>How address maps work</title>
+              <desc>Your BYOIP IPs flow into an address map, which applies either to the whole account (all zones) or to specific zones such as example.com.</desc>
+              <defs>
+                <marker id="am-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                  <path d="M0,0 L10,5 L0,10 z" style="fill:#F6821F"></path>
+                </marker>
+              </defs>
+              <!-- Node A: BYOIP IPs -->
+              <rect x="16" y="64" width="170" height="82" rx="8" style="fill:var(--input-bg);stroke:var(--border)"></rect>
+              <text x="101" y="86" text-anchor="middle" style="fill:var(--text-strong);font-size:13px;font-weight:600">Your BYOIP IPs</text>
+              <rect x="41" y="98" width="120" height="16" rx="4" style="fill:var(--surface);stroke:var(--border)"></rect>
+              <text x="101" y="110" text-anchor="middle" style="fill:var(--text-primary);font-family:monospace;font-size:10px">203.0.113.10</text>
+              <rect x="41" y="120" width="120" height="16" rx="4" style="fill:var(--surface);stroke:var(--border)"></rect>
+              <text x="101" y="132" text-anchor="middle" style="fill:var(--text-primary);font-family:monospace;font-size:10px">203.0.113.11</text>
+              <!-- Node B: Address Map -->
+              <rect x="300" y="72" width="170" height="66" rx="8" style="fill:var(--input-bg);stroke:#F6821F"></rect>
+              <path d="M320,92 c-5,0 -9,4 -9,9 c0,6 9,15 9,15 c0,0 9,-9 9,-15 c0,-5 -4,-9 -9,-9 z" style="fill:#F6821F"></path>
+              <circle cx="320" cy="101" r="3" style="fill:var(--input-bg)"></circle>
+              <text x="396" y="100" text-anchor="middle" style="fill:var(--text-strong);font-size:13px;font-weight:600">Address Map</text>
+              <text x="396" y="118" text-anchor="middle" style="fill:var(--muted);font-size:10px">binds your IPs, when enabled</text>
+              <!-- Node C1: Account scope -->
+              <rect x="600" y="26" width="168" height="62" rx="8" style="fill:var(--input-bg);stroke:var(--border)"></rect>
+              <text x="684" y="52" text-anchor="middle" style="fill:var(--text-strong);font-size:12px;font-weight:600">Account scope</text>
+              <text x="684" y="70" text-anchor="middle" style="fill:var(--muted);font-size:10px">All zones in the account</text>
+              <!-- Node C2: Zone scope -->
+              <rect x="600" y="122" width="168" height="62" rx="8" style="fill:var(--input-bg);stroke:var(--border)"></rect>
+              <text x="684" y="148" text-anchor="middle" style="fill:var(--text-strong);font-size:12px;font-weight:600">Zone scope</text>
+              <text x="684" y="166" text-anchor="middle" style="fill:var(--muted);font-family:monospace;font-size:10px">example.com</text>
+              <!-- Connectors -->
+              <line x1="188" y1="105" x2="296" y2="105" style="stroke:#F6821F;stroke-width:2" marker-end="url(#am-arrow)"></line>
+              <path d="M472,96 C530,96 540,57 596,57" style="fill:none;stroke:#F6821F;stroke-width:2" marker-end="url(#am-arrow)"></path>
+              <path d="M472,114 C530,114 540,153 596,153" style="fill:none;stroke:#F6821F;stroke-width:2" marker-end="url(#am-arrow)"></path>
+            </svg>
+            <p class="text-[11px] text-cf-gray leading-relaxed mt-2">
+              For zones using Cloudflare's authoritative DNS, proxied hostnames normally resolve to Cloudflare's shared
+              <a href="https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none">anycast IPs</a>.
+              When you <a href="https://developers.cloudflare.com/fundamentals/concepts/cloudflare-ip-addresses/#customize-cloudflare-ip-addresses" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none">customize Cloudflare's IPs</a>
+              and use an address map, Cloudflare instead answers DNS for the mapped account or zones with the IP address(es) on the map.
+            </p>
+            <p class="text-[11px] text-cf-gray leading-relaxed mt-1.5">
+              Address maps don't change <a href="https://developers.cloudflare.com/fundamentals/concepts/how-cloudflare-works/#cloudflare-as-a-reverse-proxy" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none">how Cloudflare reaches your origin</a>
+              &mdash; the IP addresses in your zone's DNS records still tell Cloudflare how to connect to the origin.
+            </p>
+            <details class="mt-2">
+              <summary class="am-summary"><span class="info-ico">i</span><span>Spectrum compatibility</span></summary>
+              <div class="text-[11px] text-cf-gray leading-relaxed mt-2">
+                <p>
+                  You can use address maps to set up
+                  <a href="https://developers.cloudflare.com/byoip/address-maps/setup/#spectrum-https-applications" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none">non-SNI support</a>
+                  for Spectrum HTTPS applications. To control which IP Cloudflare uses when responding to requests for your Spectrum applications,
+                  set the application's edge_ips field to static, e.g.:
+                </p>
+                <div class="am-code">"edge_ips": {
+  "type": "static",
+  "ips": ["1.2.3.4"]
+}</div>
+                <p>
+                  For details, refer to the
+                  <a href="https://developers.cloudflare.com/api/resources/spectrum#%28resource%29%20spectrum%20%3E%20%28model%29%20edge_ips%20%3E%20%28schema%29%20%3E%20%28variant%29%201" target="_blank" rel="noopener" style="color:#F6821F;text-decoration:none">Spectrum API</a>.
+                </p>
+              </div>
+            </details>
+          </div>
           <div class="flex items-center justify-between mb-3">
             <div id="address-maps-count" class="text-xs text-cf-gray"></div>
             <button onclick="startAddressMapWizard()" class="px-2.5 py-1 border border-cf-orange text-cf-orange text-xs font-medium rounded-lg hover:bg-cf-orange hover:text-white transition inline-flex items-center gap-1">
