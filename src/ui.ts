@@ -4238,23 +4238,27 @@ export function renderDashboard(userEmail: string): string {
       el.classList.remove('hidden');
     }
 
-    // Immediate in-progress feedback for address-map mutations. These actions are
-    // network round-trips (Worker -> Cloudflare API) followed by a full list
-    // reload, so without this the UI looks frozen after a click. Shows a spinner
-    // + message in the status banner; cleared/replaced by the success or error
-    // message (or by loadAddressMaps(), which resets the banner).
-    function amBusy(message) {
-      var el = document.getElementById('address-maps-msg');
-      if (!el) return;
-      el.className = 'mb-3 text-xs px-3 py-2 rounded-lg border text-cf-gray border-cf-border flex items-center gap-2';
-      el.innerHTML = '<span class="spinner" style="width:12px;height:12px"></span><span>' + escHtml(message) + '</span>';
-      el.classList.remove('hidden');
+    // Find a map in the local cache by id + account.
+    function amFindMap(mapId, accountId) {
+      return addressMapsData.maps.find(function(m) { return m.id === mapId && m.account_id === accountId; });
     }
 
-    async function loadAddressMaps() {
+    // Background reconcile after an optimistic mutation: silently re-fetch the
+    // canonical state and re-render, without the list spinner or clearing the
+    // success banner. Keeps the Manage view in sync if it is open.
+    function amReconcile() {
+      loadAddressMaps(true).then(function() {
+        if (amManageCtx) amRenderManage();
+      });
+    }
+
+    // Load (or silently reconcile) the address-map list. When silent is true the
+    // list spinner and banner are left untouched so an optimistic re-render is not
+    // visibly disturbed; a failed silent refresh simply leaves the optimistic view
+    // in place to be reconciled by the next action or manual refresh.
+    async function loadAddressMaps(silent) {
       var listEl = document.getElementById('address-maps-list');
-      listEl.innerHTML = AM_SPINNER;
-      amMsg('');
+      if (!silent) { listEl.innerHTML = AM_SPINNER; amMsg(''); }
       try {
         var resp = await fetch('/api/address-maps?account_id=' + encodeURIComponent(activeAccountId));
         var data = await resp.json();
@@ -4263,7 +4267,7 @@ export function renderDashboard(userEmail: string): string {
         amInvalidateWithdrawCache();
         renderAddressMapsList();
       } catch (e) {
-        listEl.innerHTML = '<div class="py-6 text-center text-red-400 text-xs">' + escHtml(String(e && e.message || e)) + '</div>';
+        if (!silent) listEl.innerHTML = '<div class="py-6 text-center text-red-400 text-xs">' + escHtml(String(e && e.message || e)) + '</div>';
       }
     }
 
@@ -4330,7 +4334,10 @@ export function renderDashboard(userEmail: string): string {
       if (name === null) return;
       name = name.trim();
       if (!name) { amMsg('Name cannot be empty.', 'error'); return; }
-      amBusy('Updating name…');
+      // Optimistic: apply the new name locally, then reconcile.
+      var m = amFindMap(mapId, accountId);
+      var prevName = m ? m.name : undefined;
+      if (m) { m.name = name; renderAddressMapsList(); if (amManageCtx) amRenderManage(); }
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -4339,12 +4346,18 @@ export function renderDashboard(userEmail: string): string {
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to update');
         amMsg('Name updated.', 'success');
-        loadAddressMaps();
-      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+        amReconcile();
+      } catch (e) {
+        if (m) { m.name = prevName; renderAddressMapsList(); if (amManageCtx) amRenderManage(); } // roll back
+        amMsg(String(e && e.message || e), 'error');
+      }
     }
 
     async function amToggleEnabled(mapId, accountId, enabled) {
-      amBusy(enabled ? 'Enabling address map…' : 'Disabling address map…');
+      // Optimistic: flip the local state and re-render immediately, then reconcile.
+      var m = amFindMap(mapId, accountId);
+      var prev = m ? m.enabled : undefined;
+      if (m) { m.enabled = enabled; renderAddressMapsList(); }
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId), {
           method: 'PATCH', headers: { 'Content-Type': 'application/json' },
@@ -4352,8 +4365,12 @@ export function renderDashboard(userEmail: string): string {
         });
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to update');
-        loadAddressMaps();
-      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+        amMsg(enabled ? 'Address map enabled.' : 'Address map disabled.', 'success');
+        amReconcile();
+      } catch (e) {
+        if (m) { m.enabled = prev; renderAddressMapsList(); } // roll back on failure
+        amMsg(String(e && e.message || e), 'error');
+      }
     }
 
     function amDeleteMap(mapId, accountId) {
@@ -4368,14 +4385,20 @@ export function renderDashboard(userEmail: string): string {
         confirmLabel: enabled ? 'Disable & delete' : 'Delete',
         danger: true,
         onConfirm: async function() {
-          amBusy(enabled ? 'Disabling & deleting address map…' : 'Deleting address map…');
+          // Optimistic: remove the card immediately, restore it if the delete fails.
+          var idx = addressMapsData.maps.findIndex(function(m) { return m.id === mapId && m.account_id === accountId; });
+          var removed = idx >= 0 ? addressMapsData.maps[idx] : null;
+          if (idx >= 0) { addressMapsData.maps.splice(idx, 1); renderAddressMapsList(); }
           try {
             var resp = await fetch('/api/address-maps/' + encodeURIComponent(mapId) + '?account_id=' + encodeURIComponent(accountId), { method: 'DELETE' });
             var data = await resp.json();
             if (!resp.ok || data.error) throw new Error(data.error || 'Failed to delete');
             amMsg('Address map deleted.', 'success');
-            loadAddressMaps();
-          } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+            amReconcile();
+          } catch (e) {
+            if (removed) { addressMapsData.maps.splice(idx, 0, removed); renderAddressMapsList(); } // roll back
+            amMsg(String(e && e.message || e), 'error');
+          }
         }
       });
     }
@@ -4789,29 +4812,39 @@ export function renderDashboard(userEmail: string): string {
     async function amRemoveIp(ip) {
       if (!amManageCtx) return;
       var ctx = amManageCtx;
-      amBusy('Removing IP…');
+      // Optimistic: drop the IP chip immediately, restore it if the call fails.
+      var m = amCurrentManageMap();
+      var prevIps = m ? m.ips : null;
+      if (m && m.ips) { m.ips = m.ips.filter(function(x) { return x !== ip; }); amRenderManage(); }
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/ips/' + encodeURIComponent(ip) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to remove IP');
-        await loadAddressMaps();
-        amRenderManage();
         amMsg('IP removed.', 'success');
-      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+        amReconcile();
+      } catch (e) {
+        if (m) { m.ips = prevIps; amRenderManage(); } // roll back
+        amMsg(String(e && e.message || e), 'error');
+      }
     }
 
     async function amRemoveDomain(zoneId) {
       if (!amManageCtx) return;
       var ctx = amManageCtx;
-      amBusy('Removing domain…');
+      // Optimistic: drop the domain chip immediately, restore it if the call fails.
+      var m = amCurrentManageMap();
+      var prevDomains = m ? m.domains : null;
+      if (m && m.domains) { m.domains = m.domains.filter(function(d) { return d.zone_id !== zoneId; }); amRenderManage(); }
       try {
         var resp = await fetch('/api/address-maps/' + encodeURIComponent(ctx.mapId) + '/zones/' + encodeURIComponent(zoneId) + '?account_id=' + encodeURIComponent(ctx.accountId), { method: 'DELETE' });
         var data = await resp.json();
         if (!resp.ok || data.error) throw new Error(data.error || 'Failed to remove domain');
-        await loadAddressMaps();
-        amRenderManage();
         amMsg('Domain removed.', 'success');
-      } catch (e) { amMsg(String(e && e.message || e), 'error'); }
+        amReconcile();
+      } catch (e) {
+        if (m) { m.domains = prevDomains; amRenderManage(); } // roll back
+        amMsg(String(e && e.message || e), 'error');
+      }
     }
 
     // ─── Edit existing maps: add IPs / add domains ──────────────
