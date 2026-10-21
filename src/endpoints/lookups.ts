@@ -477,6 +477,7 @@ function mapAuditRow(
     actor_ip: r.actor_ip,
     prefix_id: prefixId,
     cidr,
+    resource_type: r.resource_type,
   };
 }
 
@@ -507,5 +508,6 @@ function mapAuditEntry(
     actor_ip: e.actor?.ip_address,
     prefix_id: prefixId,
     cidr,
+    resource_type: e.resource?.type,
   };
 }

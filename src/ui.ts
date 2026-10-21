@@ -695,6 +695,9 @@ export function renderDashboard(userEmail: string): string {
           <select id="activity-log-action" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogAction(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by action">
             <option value="all">All actions</option>
           </select>
+          <select id="activity-log-component" onclick="event.stopPropagation()" onchange="event.stopPropagation();setActivityLogComponent(this.value)" class="hidden bg-cf-bg border border-cf-border text-cf-gray text-[10px] rounded px-1.5 py-0.5 focus:outline-none focus:border-cf-orange" title="Filter by component">
+            <option value="all">All components</option>
+          </select>
           <span id="activity-log-hint" class="text-[10px] text-cf-gray">Click to expand</span>
           <button id="activity-log-refresh" onclick="event.stopPropagation();loadActivityLog()" class="hidden text-cf-gray hover:text-cf-orange p-1 rounded hover:bg-[rgba(246,130,31,0.1)] transition" title="Refresh">
             <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
@@ -1371,6 +1374,7 @@ export function renderDashboard(userEmail: string): string {
     var activityLogEntries = [];
     var activityLogSource = 'all';
     var activityLogAction = 'all';
+    var activityLogComponent = 'all';
     var activityLogDays = 30;
     var activityLogSortDir = 'desc';
     var activityLogAuditError = '';
@@ -9023,6 +9027,7 @@ export function renderDashboard(userEmail: string): string {
       var refreshBtn = document.getElementById('activity-log-refresh');
       var sourceSel = document.getElementById('activity-log-source');
       var actionSel = document.getElementById('activity-log-action');
+      var componentSel = document.getElementById('activity-log-component');
       var windowSel = document.getElementById('activity-log-window');
       var accountSel = document.getElementById('activity-log-account');
       if (activityLogExpanded) {
@@ -9032,6 +9037,7 @@ export function renderDashboard(userEmail: string): string {
         if (refreshBtn) refreshBtn.classList.remove('hidden');
         if (sourceSel) sourceSel.classList.remove('hidden');
         if (actionSel) actionSel.classList.remove('hidden');
+        if (componentSel) componentSel.classList.remove('hidden');
         if (windowSel) windowSel.classList.remove('hidden');
         if (accountSel && savedAccounts.length > 1) accountSel.classList.remove('hidden');
         if (!activityLogLoaded) loadActivityLog();
@@ -9042,6 +9048,7 @@ export function renderDashboard(userEmail: string): string {
         if (refreshBtn) refreshBtn.classList.add('hidden');
         if (sourceSel) sourceSel.classList.add('hidden');
         if (actionSel) actionSel.classList.add('hidden');
+        if (componentSel) componentSel.classList.add('hidden');
         if (windowSel) windowSel.classList.add('hidden');
         if (accountSel) accountSel.classList.add('hidden');
       }
@@ -9062,6 +9069,7 @@ export function renderDashboard(userEmail: string): string {
         activityLogEntries = data.activity || [];
         activityLogAuditError = data.audit_error || '';
         updateActivityLogActionFilter(activityLogEntries);
+        updateActivityLogComponentFilter(activityLogEntries);
         renderActivityLog(activityLogEntries);
       } catch (e) {
         if (loadGeneration !== activityLoadGeneration) return;
@@ -9078,6 +9086,11 @@ export function renderDashboard(userEmail: string): string {
 
     function setActivityLogAction(value) {
       activityLogAction = value;
+      renderActivityLog(activityLogEntries);
+    }
+
+    function setActivityLogComponent(value) {
+      activityLogComponent = value;
       renderActivityLog(activityLogEntries);
     }
 
@@ -9117,6 +9130,26 @@ export function renderDashboard(userEmail: string): string {
       sel.value = activityLogAction;
     }
 
+    function updateActivityLogComponentFilter(entries) {
+      var sel = document.getElementById('activity-log-component');
+      if (!sel) return;
+      var labels = {};
+      (entries || []).forEach(function(e) {
+        var label = activityComponentLabel(e);
+        if (label) labels[label] = true;
+      });
+      var sorted = Object.keys(labels).sort();
+      var current = activityLogComponent;
+      var html = '<option value="all">All components</option>';
+      sorted.forEach(function(label) {
+        html += '<option value="' + escAttr(label) + '">' + escHtml(label) + '</option>';
+      });
+      sel.innerHTML = html;
+      // Preserve the current selection if still available, else reset to all.
+      if (current !== 'all' && !labels[current]) activityLogComponent = 'all';
+      sel.value = activityLogComponent;
+    }
+
     function refreshActivityLog() {
       if (activityLogExpanded) loadActivityLog();
     }
@@ -9154,6 +9187,55 @@ export function renderDashboard(userEmail: string): string {
         'view': { label: 'View', css: 'al-badge-gray' }
       };
       var info = map[action] || { label: action, css: 'al-badge-gray' };
+      return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';
+    }
+
+    // Derive the affected component for an activity entry. Local/webhook/radar
+    // rows categorize by their action; Cloudflare audit rows use resource_type.
+    function activityComponent(e) {
+      var actionMap = {
+        'create_prefix': 'Prefixes', 'delete_prefix': 'Prefixes', 'batch_create_prefix': 'Prefixes',
+        'update_description': 'Prefixes', 'validate': 'Prefixes',
+        'advertise': 'Prefixes', 'withdraw': 'Prefixes',
+        'bulk_advertise': 'Prefixes', 'bulk_withdraw': 'Prefixes',
+        'prefix_cap_reached': 'Prefixes', 'prefix_cap_threshold': 'Prefixes',
+        'external_advertise': 'Prefixes', 'external_withdraw': 'Prefixes', 'external_origin_change': 'Prefixes',
+        'webhook_advertise': 'Prefixes', 'webhook_withdraw': 'Prefixes',
+        'create_bgp_prefix': 'Prefixes', 'delete_bgp_prefix': 'Prefixes',
+        'create_binding': 'SVC Bindings', 'delete_binding': 'SVC Bindings',
+        'create_delegation': 'Delegations', 'delete_delegation': 'Delegations',
+        'create_address_map': 'Address Maps', 'update_address_map': 'Address Maps', 'delete_address_map': 'Address Maps',
+        'rir_ensure_route': 'RIR', 'rir_ensure_autnum': 'RIR'
+      };
+      var cssMap = {
+        'Prefixes': 'al-badge-blue',
+        'SVC Bindings': 'al-badge-green',
+        'Delegations': 'al-badge-yellow',
+        'Address Maps': 'al-badge-blue',
+        'RIR': 'al-badge-yellow',
+        'Cloudflare': 'al-badge-gray',
+        'Other': 'al-badge-gray'
+      };
+      var label;
+      if (e.source === 'audit') {
+        var rt = String(e.resource_type || '').toLowerCase();
+        if (rt.indexOf('address_map') !== -1 || rt.indexOf('addressmap') !== -1) label = 'Address Maps';
+        else if (rt.indexOf('binding') !== -1 || rt.indexOf('service') !== -1) label = 'SVC Bindings';
+        else if (rt.indexOf('delegation') !== -1) label = 'Delegations';
+        else if (rt.indexOf('prefix') !== -1) label = 'Prefixes';
+        else label = 'Cloudflare';
+      } else {
+        label = actionMap[e.action] || 'Other';
+      }
+      return { label: label, css: cssMap[label] || 'al-badge-gray' };
+    }
+
+    function activityComponentLabel(e) {
+      return activityComponent(e).label;
+    }
+
+    function formatComponentBadge(e) {
+      var info = activityComponent(e);
       return '<span class="al-badge ' + info.css + '">' + escHtml(info.label) + '</span>';
     }
 
@@ -9207,8 +9289,9 @@ export function renderDashboard(userEmail: string): string {
       var filtered = (entries || []).filter(function(e) {
         var sourceOk = activityLogSource === 'all' || (e.source || 'local') === activityLogSource;
         var actionOk = activityLogAction === 'all' || activityLogActionLabel(e.action) === activityLogAction;
+        var componentOk = activityLogComponent === 'all' || activityComponentLabel(e) === activityLogComponent;
         var accountOk = activityAccountId === 'all' || !activityAccountId || e.account_id === activityAccountId;
-        return sourceOk && actionOk && accountOk;
+        return sourceOk && actionOk && componentOk && accountOk;
       });
 
       filtered.sort(function(a, b) {
@@ -9244,6 +9327,7 @@ export function renderDashboard(userEmail: string): string {
         (showAccounts ? '<th class="px-3 py-2.5 text-cf-gray font-medium">Account</th>' : '') +
         '<th class="px-4 py-2.5 text-cf-gray font-medium cursor-pointer select-none hover:text-cf-orange transition" style="min-width:150px" onclick="toggleActivityLogSort()" title="Sort by date">Date / Time' + sortArrow + '</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:70px">Source</th>' +
+        '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:110px">Component</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">Action</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium">Details</th>' +
         '<th class="px-3 py-2.5 text-cf-gray font-medium" style="min-width:140px">User / Actor</th>' +
@@ -9255,6 +9339,7 @@ export function renderDashboard(userEmail: string): string {
           (showAccounts ? '<td class="px-3 py-2.5">' + accountBadge(e.account_id, e.account_label) + '</td>' : '') +
           '<td class="px-4 py-2.5 text-cf-gray whitespace-nowrap">' + formatActivityTime(e.created_at) + '</td>' +
           '<td class="px-3 py-2.5">' + sourceBadge(e.source) + '</td>' +
+          '<td class="px-3 py-2.5">' + formatComponentBadge(e) + '</td>' +
           '<td class="px-3 py-2.5">' + formatActionBadge(e.action) + '</td>' +
           '<td class="px-3 py-2.5" style="color:var(--text-primary)">' + escHtml(e.details) + '</td>' +
           '<td class="px-3 py-2.5 text-cf-gray">' + activityActorHtml(e) + '</td>' +

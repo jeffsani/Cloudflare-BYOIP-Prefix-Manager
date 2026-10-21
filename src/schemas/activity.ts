@@ -21,4 +21,5 @@ export const ActivityLogEntrySchema = z.object({
   actor_ip: z.string().optional(),
   prefix_id: z.string().optional(),
   cidr: z.string().optional(),
+  resource_type: z.string().optional(),
 });
